@@ -33,14 +33,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
             if (token && storedUser) {
                 try {
+                    // Pre-load from localStorage for instant UI feedback
                     setUser(JSON.parse(storedUser));
-                    // Optionally verify token with /me endpoint
-                    // const data = await authApi.getMe();
-                    // setUser(data.user);
+
+                    // Verify token with backend to ensure it's still valid and user is active
+                    const data: any = await authApi.getMe();
+                    if (data.success) {
+                        setUser(data.user);
+                        localStorage.setItem('user', JSON.stringify(data.user));
+                    } else {
+                        throw new Error('User verification failed');
+                    }
                 } catch (error) {
-                    console.error('Failed to parse stored user', error);
+                    console.error('Session verification failed:', error);
                     localStorage.removeItem('token');
                     localStorage.removeItem('user');
+                    setUser(null);
                 }
             }
             setLoading(false);
