@@ -99,6 +99,7 @@ export const authApi = {
     login: (credentials: any) => api.post('/auth/login', credentials),
     register: (userData: any) => api.post('/auth/register', userData),
     getMe: () => api.get('/auth/me'),
+    logout: () => api.get('/auth/logout'),
 };
 
 export default api;

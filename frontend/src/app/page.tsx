@@ -1,9 +1,24 @@
+'use client';
+
 import Link from 'next/link';
 import Image from 'next/image';
+import { useAuth } from '@/context/AuthContext';
 
 export default function Home() {
+  const { user, logout } = useAuth();
+
   return (
     <div className="min-h-screen flex flex-col items-center p-8">
+      {user && (
+        <div className="fixed top-8 right-8 z-50">
+          <button
+            onClick={logout}
+            className="bg-white/5 hover:bg-white/10 text-white border border-white/10 px-4 py-2 rounded-xl text-sm font-semibold transition-all"
+          >
+            Log Out
+          </button>
+        </div>
+      )}
       <main className="w-full max-w-[1200px] flex flex-col gap-16 mt-16 md:mt-24">
         <div className="text-center max-w-[850px] mx-auto flex flex-col items-center">
           <Image
@@ -28,9 +43,15 @@ export default function Home() {
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link href="/login" className="bg-indigo-600 hover:bg-indigo-500 text-white px-8 py-4 rounded-2xl font-bold text-lg transition-all hover:-translate-y-1 hover:shadow-2xl hover:shadow-indigo-500/30 text-center">
-              Start Building
-            </Link>
+            {user ? (
+              <Link href="/dashboard" className="bg-indigo-600 hover:bg-indigo-500 text-white px-8 py-4 rounded-2xl font-bold text-lg transition-all hover:-translate-y-1 hover:shadow-2xl hover:shadow-indigo-500/30 text-center">
+                Go to Dashboard
+              </Link>
+            ) : (
+              <Link href="/login" className="bg-indigo-600 hover:bg-indigo-500 text-white px-8 py-4 rounded-2xl font-bold text-lg transition-all hover:-translate-y-1 hover:shadow-2xl hover:shadow-indigo-500/30 text-center">
+                Start Building
+              </Link>
+            )}
             <a href="#features" className="bg-white/5 hover:bg-white/10 text-white px-8 py-4 rounded-2xl font-bold text-lg border border-white/10 transition-all hover:border-white/20 text-center">
               Explore Features
             </a>

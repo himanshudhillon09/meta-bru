@@ -3,8 +3,10 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { authApi } from '@/lib/apiClient';
+import { useAuth } from '@/context/AuthContext';
 
 export default function LoginPage() {
+    const { login: authLogin } = useAuth();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
@@ -21,10 +23,13 @@ export default function LoginPage() {
             const data: any = await authApi.login({ email, password });
             setSuccess('Login successful! Redirecting...');
 
-            // Store token for future requests
             if (data && typeof data === 'object' && 'token' in data) {
-                localStorage.setItem('token', data.token as string);
-                localStorage.setItem('user', JSON.stringify(data.user));
+                authLogin(data.token as string, {
+                    id: data._id,
+                    name: data.name,
+                    email: data.email,
+                    role: data.role
+                });
             }
         } catch (err: any) {
             setError(err || 'Login failed');

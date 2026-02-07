@@ -3,8 +3,10 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { authApi } from '@/lib/apiClient';
+import { useAuth } from '@/context/AuthContext';
 
 export default function RegisterPage() {
+    const { login: authLogin } = useAuth();
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -19,12 +21,17 @@ export default function RegisterPage() {
         setSuccess('');
 
         try {
-            await authApi.register({ name, email, password });
-            setSuccess('Registration successful! You can now log in.');
-            // Clear form
-            setName('');
-            setEmail('');
-            setPassword('');
+            const data: any = await authApi.register({ name, email, password });
+            setSuccess('Registration successful! Logging you in...');
+
+            if (data && typeof data === 'object' && 'token' in data) {
+                authLogin(data.token as string, {
+                    id: data._id,
+                    name: data.name,
+                    email: data.email,
+                    role: data.role
+                });
+            }
         } catch (err: any) {
             setError(err || 'Registration failed');
         } finally {

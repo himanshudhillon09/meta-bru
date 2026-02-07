@@ -22,7 +22,7 @@ export const registerUser = async (req: Request, res: Response) => {
             name,
             email,
             password,
-            role:'user'
+            role: 'user'
         });
 
         if (user) {
@@ -87,6 +87,13 @@ export const getMe = async (req: any, res: Response) => {
     } catch (error: any) {
         res.status(500).json({ success: false, message: error.message });
     }
+};
+
+// @desc    Logout user
+// @route   GET /api/auth/logout
+// @access  Private
+export const logoutUser = async (req: Request, res: Response) => {
+    res.status(200).json({ success: true, message: 'Logged out successfully' });
 };
 
 // Generate JWT
