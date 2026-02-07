@@ -32,6 +32,7 @@ export const registerUser = async (req: Request, res: Response) => {
                 name: user.name,
                 email: user.email,
                 role: user.role,
+                isActive: user.isActive,
                 token: generateToken(user._id.toString())
             });
         } else {
@@ -53,12 +54,18 @@ export const loginUser = async (req: Request, res: Response) => {
         const user = await User.findOne({ email }).select('+password');
 
         if (user && (await (user as any).matchPassword(password))) {
+            if (!user.isActive) {
+                res.status(403).json({ success: false, message: 'Your account has been deactivated. Please contact support.' });
+                return;
+            }
+
             res.json({
                 success: true,
                 _id: user._id,
                 name: user.name,
                 email: user.email,
                 role: user.role,
+                isActive: user.isActive,
                 token: generateToken(user._id.toString())
             });
         } else {
@@ -81,7 +88,8 @@ export const getMe = async (req: any, res: Response) => {
                 id: user?._id,
                 name: user?.name,
                 email: user?.email,
-                role: user?.role
+                role: user?.role,
+                isActive: user?.isActive
             }
         });
     } catch (error: any) {
