@@ -4,7 +4,8 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { authApi } from '@/lib/apiClient';
 
-export default function LoginPage() {
+export default function RegisterPage() {
+    const [name, setName] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
@@ -18,16 +19,14 @@ export default function LoginPage() {
         setSuccess('');
 
         try {
-            const data = await authApi.login({ email, password });
-            setSuccess('Login successful! Redirecting...');
-
-            // Store token for future requests
-            if (data.token) {
-                localStorage.setItem('token', data.token);
-                localStorage.setItem('user', JSON.stringify(data.user));
-            }
+            await authApi.register({ name, email, password });
+            setSuccess('Registration successful! You can now log in.');
+            // Clear form
+            setName('');
+            setEmail('');
+            setPassword('');
         } catch (err: any) {
-            setError(err || 'Login failed');
+            setError(err || 'Registration failed');
         } finally {
             setLoading(false);
         }
@@ -35,15 +34,30 @@ export default function LoginPage() {
 
     return (
         <div className="min-h-screen flex items-center justify-center p-4">
-            <div className="bg-slate-900/70 backdrop-blur-xl border border-white/10 rounded-[24px] p-8 md:p-12 w-full max-w-[440px] shadow-2xl transition-all duration-700">
+            <div className="bg-slate-900/70 backdrop-blur-xl border border-white/10 rounded-[24px] p-8 md:p-12 w-full max-w-[440px] shadow-2xl">
                 <div className="text-center mb-8">
                     <h1 className="text-3xl font-extrabold mb-2 bg-gradient-to-br from-white to-slate-400 bg-clip-text text-transparent">
-                        Welcome Back
+                        Create Account
                     </h1>
-                    <p className="text-slate-400">Log in to your Meta-Bru account</p>
+                    <p className="text-slate-400">Join Meta-Bru today</p>
                 </div>
 
                 <form className="flex flex-col gap-5" onSubmit={handleSubmit}>
+                    <div className="flex flex-col gap-2">
+                        <label className="text-sm font-medium text-slate-400 ml-1" htmlFor="name">
+                            Full Name
+                        </label>
+                        <input
+                            className="bg-slate-950/80 border border-white/10 rounded-xl px-4 py-3.5 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all placeholder:text-slate-600"
+                            id="name"
+                            type="text"
+                            placeholder="John Doe"
+                            value={name}
+                            onChange={(e) => setName(e.target.value)}
+                            required
+                        />
+                    </div>
+
                     <div className="flex flex-col gap-2">
                         <label className="text-sm font-medium text-slate-400 ml-1" htmlFor="email">
                             Email Address
@@ -90,13 +104,13 @@ export default function LoginPage() {
                         type="submit"
                         disabled={loading}
                     >
-                        {loading ? 'Signing in...' : 'Sign In'}
+                        {loading ? 'Creating account...' : 'Create Account'}
                     </button>
 
                     <p className="text-center text-slate-400 text-sm mt-4">
-                        Don't have an account?{' '}
-                        <Link href="/register" className="text-indigo-400 hover:text-indigo-300 font-semibold">
-                            Create Account
+                        Already have an account?{' '}
+                        <Link href="/login" className="text-indigo-400 hover:text-indigo-300 font-semibold">
+                            Sign In
                         </Link>
                     </p>
                 </form>
