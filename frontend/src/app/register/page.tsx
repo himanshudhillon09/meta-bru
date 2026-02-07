@@ -66,7 +66,7 @@ export default function RegisterPage() {
                             className="bg-slate-950/80 border border-white/10 rounded-xl px-4 py-3.5 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all placeholder:text-slate-600"
                             id="email"
                             type="email"
-                            placeholder="name@example.com"
+                            placeholder="johndoe@gmail.com"
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
                             required

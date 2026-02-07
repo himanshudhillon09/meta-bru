@@ -18,12 +18,12 @@ export default function LoginPage() {
         setSuccess('');
 
         try {
-            const data = await authApi.login({ email, password });
+            const data: any = await authApi.login({ email, password });
             setSuccess('Login successful! Redirecting...');
 
             // Store token for future requests
-            if (data.token) {
-                localStorage.setItem('token', data.token);
+            if (data && typeof data === 'object' && 'token' in data) {
+                localStorage.setItem('token', data.token as string);
                 localStorage.setItem('user', JSON.stringify(data.user));
             }
         } catch (err: any) {
@@ -52,7 +52,7 @@ export default function LoginPage() {
                             className="bg-slate-950/80 border border-white/10 rounded-xl px-4 py-3.5 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all placeholder:text-slate-600"
                             id="email"
                             type="email"
-                            placeholder="name@example.com"
+                            placeholder="johndoe@gmail.com"
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
                             required
