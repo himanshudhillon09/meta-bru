@@ -23,15 +23,23 @@ export default function RegisterPage() {
 
         try {
             const data: any = await authApi.register({ name, email, password });
-            setSuccess('Registration successful! Logging you in...');
 
             if (data && typeof data === 'object' && 'token' in data) {
-                authLogin(data.token as string, {
-                    id: data._id,
-                    name: data.name,
-                    email: data.email,
-                    role: data.role
-                });
+                if (data.isActive) {
+                    setSuccess('Registration successful! Logging you in...');
+                    authLogin(data.token as string, {
+                        id: data._id,
+                        name: data.name,
+                        email: data.email,
+                        role: data.role
+                    });
+                } else {
+                    setSuccess('Account created successfully! Your account is pending admin approval.');
+                    // Clear form
+                    setName('');
+                    setEmail('');
+                    setPassword('');
+                }
             }
         } catch (err: any) {
             setError(err || 'Registration failed');

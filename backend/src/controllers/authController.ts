@@ -104,6 +104,41 @@ export const logoutUser = async (req: Request, res: Response) => {
     res.status(200).json({ success: true, message: 'Logged out successfully' });
 };
 
+// @desc    Get all users (Admin only)
+// @route   GET /api/auth/users
+// @access  Private/Admin
+export const getUsers = async (req: Request, res: Response) => {
+    try {
+        const users = await User.find({}).sort({ createdAt: -1 });
+        res.json({ success: true, users });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// @desc    Update user status (Admin only)
+// @route   PATCH /api/auth/users/:id/status
+// @access  Private/Admin
+export const updateUserStatus = async (req: any, res: Response) => {
+    try {
+        if (req.params.id === req.user.id) {
+            res.status(400).json({ success: false, message: 'You cannot change your own activation status' });
+            return;
+        }
+
+        const user = await User.findById(req.params.id);
+        if (user) {
+            user.isActive = req.body.isActive !== undefined ? req.body.isActive : !user.isActive;
+            await user.save();
+            res.json({ success: true, user });
+        } else {
+            res.status(404).json({ success: false, message: 'User not found' });
+        }
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 // Generate JWT
 const generateToken = (id: string) => {
     return jwt.sign({ id }, process.env.JWT_SECRET || 'secret', {

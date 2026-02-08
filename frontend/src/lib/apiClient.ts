@@ -100,6 +100,8 @@ export const authApi = {
     register: (userData: any) => api.post('/auth/register', userData),
     getMe: () => api.get('/auth/me'),
     logout: () => api.get('/auth/logout'),
+    getUsers: () => api.get('/auth/users'),
+    toggleUserStatus: (userId: string, isActive?: boolean) => api.patch(`/auth/users/${userId}/status`, { isActive }),
 };
 
 export default api;
