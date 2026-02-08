@@ -31,7 +31,7 @@ export const protect = async (req: AuthRequest, res: Response, next: NextFunctio
             }
 
             if (!req.user.isActive) {
-                res.status(403).json({ success: false, message: 'Your account has been deactivated' });
+                res.status(403).json({ success: false, message: 'Your account is inactive' });
                 return;
             }
 

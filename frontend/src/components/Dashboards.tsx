@@ -74,12 +74,14 @@ export function AdminDashboard() {
         isOpen: boolean;
         title: string;
         message: string;
+        confirmText: string;
         onConfirm: () => void;
         type: 'danger' | 'info' | 'success';
     }>({
         isOpen: false,
         title: '',
         message: '',
+        confirmText: 'Confirm',
         onConfirm: () => { },
         type: 'info'
     });
@@ -102,13 +104,14 @@ export function AdminDashboard() {
     };
 
     const handleToggleStatusRequest = (targetUser: any) => {
-        const action = targetUser.isActive ? 'deactivate' : 'approve';
+        const action = targetUser.isActive ? 'inactive' : 'approve';
         setModalConfig({
             isOpen: true,
-            title: action === 'approve' ? 'Approve Account?' : 'Deactivate Account?',
+            title: action === 'approve' ? 'Approve Account?' : 'Mark as Inactive?',
             message: action === 'approve'
                 ? `This will grant ${targetUser.name} full access to the platform.`
-                : `This will immediately block ${targetUser.name} from all platform features.`,
+                : `This will immediately restrict ${targetUser.name} from accessing platform features.`,
+            confirmText: action === 'approve' ? 'Approve' : 'Mark Inactive',
             type: action === 'approve' ? 'success' : 'danger',
             onConfirm: () => performToggleStatus(targetUser._id, targetUser.isActive)
         });
@@ -134,7 +137,6 @@ export function AdminDashboard() {
             <Modal
                 {...modalConfig}
                 onClose={() => setModalConfig(prev => ({ ...prev, isOpen: false }))}
-                confirmText={modalConfig.title.split(' ')[0]}
             />
 
             <header className="flex justify-between items-center mb-12 bg-slate-900/50 backdrop-blur-md p-6 rounded-3xl border border-white/5 shadow-xl">
@@ -235,7 +237,7 @@ export function AdminDashboard() {
                                                             : 'bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg shadow-indigo-500/20'
                                                         }`}
                                                 >
-                                                    {u._id === user.id ? 'You' : (u.isActive ? 'Deactivate' : 'Approve Access')}
+                                                    {u._id === user.id ? 'You' : (u.isActive ? 'Mark Inactive' : 'Approve Access')}
                                                 </button>
                                             </td>
                                         </tr>

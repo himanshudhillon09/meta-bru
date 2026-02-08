@@ -55,7 +55,7 @@ export const loginUser = async (req: Request, res: Response) => {
 
         if (user && (await (user as any).matchPassword(password))) {
             if (!user.isActive) {
-                res.status(403).json({ success: false, message: 'Your account has been deactivated. Please contact support.' });
+                res.status(403).json({ success: false, message: 'Your account is currently inactive. Please contact support.' });
                 return;
             }
 
@@ -122,7 +122,7 @@ export const getUsers = async (req: Request, res: Response) => {
 export const updateUserStatus = async (req: any, res: Response) => {
     try {
         if (req.params.id === req.user.id) {
-            res.status(400).json({ success: false, message: 'You cannot change your own activation status' });
+            res.status(400).json({ success: false, message: 'You cannot change your own account status' });
             return;
         }
 
