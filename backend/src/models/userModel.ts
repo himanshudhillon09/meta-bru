@@ -10,8 +10,10 @@ const userSchema = new mongoose.Schema({
         type: String,
         required: [true, 'Please add an email'],
         unique: true,
+        trim: true,
+        lowercase: true,
         match: [
-            /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/,
+            /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
             'Please add a valid email'
         ]
     },
@@ -29,6 +31,16 @@ const userSchema = new mongoose.Schema({
     isActive: {
         type: Boolean,
         default: false
+    },
+    timezone: {
+        type: String,
+        default: process.env.APP_DEFAULT_TIMEZONE || 'Asia/Kolkata'
+    },
+    brandProfile: {
+        niche: { type: String, default: '' },
+        tone: { type: String, default: 'friendly and engaging' },
+        audience: { type: String, default: '' },
+        keywords: { type: String, default: '' }
     }
 }, {
     timestamps: true

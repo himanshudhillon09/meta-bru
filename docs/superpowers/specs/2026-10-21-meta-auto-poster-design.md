@@ -1,7 +1,7 @@
 # Meta-Bru Auto-Poster — Design Spec
 
 **Date:** 2026-10-21
-**Status:** Approved scope; implementation in progress
+**Status:** Implemented; live Meta/Cloudinary/Gemini verification pending credentials
 **Stack:** Next.js 16 / React 19 / Tailwind 4 · Express 5 / TypeScript / Mongoose 9 / MongoDB Atlas
 
 ## 1. Goal
@@ -61,7 +61,7 @@ One row per Facebook Page per user.
 | tokenStatus | `active` \| `needs_reauth` | |
 | instagram | `{ id, username, profilePictureUrl }` \| null | linked business account |
 | dailyTime | `HH:mm` | default `09:00` |
-| timezone | IANA string | default from env |
+| timezone | IANA string | default from env when connecting |
 | publishToFacebook | boolean | default true |
 | publishToInstagram | boolean | default true if linked |
 | isActive | boolean | default true |
@@ -94,13 +94,15 @@ One row per Facebook Page per user.
 
 ### OAuth
 - Start: authenticated `GET /api/connections/meta/start` returns the Facebook OAuth URL.
-- `state` is a short-lived signed JWT containing `userId` and a nonce; no DB row.
+- `state` is a short-lived signed JWT containing the user ID, a purpose marker, and the requested timezone; no DB row.
 - Scopes: `pages_show_list`, `pages_read_engagement`, `pages_manage_posts`, `instagram_basic`, `instagram_content_publish`. Override with `META_SCOPES`.
-- Callback: verify state → exchange code → exchange short-lived token for long-lived → `GET /me/accounts?fields=id,name,access_token,instagram_business_account{...}` → upsert connections.
+- Callback: validate the signed state, then redirect to the frontend with the one-time `code` and `state` in the URL fragment (so they are not sent to the frontend server, logs, or third-party assets).
+- Completion: the authenticated frontend calls `POST /api/connections/meta/complete`. The backend verifies the state belongs to the authenticated user, exchanges the code → long-lived token → `GET /me/accounts?fields=id,name,access_token,instagram_business_account{...}`, then upserts connections.
+- Binding completion to the authenticated user prevents a crafted OAuth start from linking a victim's Pages to a different account.
 - Page tokens are encrypted immediately and never returned by the API.
 
 ### Publishing
-- Facebook: `POST /{page-id}/photos` with `url` and `caption` using the Page token.
+- Facebook: `POST /{page-id}/photos` with `url` and `caption` using the Page token. Cloudinary uploads are delivered as JPEG (WebP/PNG uploads are transcoded); external URLs are used as-is.
 - Instagram:
   1. `POST /{ig-user-id}/media` with `image_url` (JPEG) and `caption`
   2. `POST /{ig-user-id}/media_publish` with `creation_id`
@@ -110,19 +112,19 @@ One row per Facebook Page per user.
 - Store the container `creationId` before publishing so retries reuse it (containers live 24h).
 
 ### Errors
-- HTTP 429 / Meta rate limits: exponential backoff, max 3 attempts.
+- Meta rate-limit and API errors are recorded on the failed target with an actionable message; the user can retry manually.
 - OAuth error code 190 / invalid token: mark connection `needs_reauth`, surface reconnect CTA.
 - Partial success (FB ok, IG failed): post status `partial`; failed target keeps its error.
 - Ambiguous network failure: do not blindly duplicate a Facebook post; mark failed with "check page before retrying".
-- Stuck `publishing` posts older than 15 minutes are marked failed on startup.
+- Stuck `publishing` posts older than 15 minutes are marked failed on scheduler ticks.
 
 ## 6. Scheduler
 
-- `node-cron` tick every 60 seconds, single instance deployment.
+- In-process interval tick every 60 seconds, single always-on instance deployment.
 - Claim due connections atomically:
   `findOneAndUpdate({ nextRunAt <= now, lockedAt stale }, { lockedAt: now })`
-- Pick oldest `queued` post for the connection. If none, advance `nextRunAt` and unlock.
-- Publish, update post/targets, set `nextRunAt` to the next occurrence of `dailyTime` in `timezone`.
+- Advance `nextRunAt` to the next occurrence of `dailyTime` in `timezone` before publishing, then persist it. This makes a crash after Meta accepts a post safe from a second same-day publish.
+- Pick oldest `queued` post for the connection and publish it.
 - Grace window (`SCHEDULER_GRACE_MINUTES`, default 180): if the server was down and the slot is older than the window, skip to the next day rather than posting very late.
 - Time math in Luxon; DST-safe.
 - "Post now" bypasses the slot and does not change `nextRunAt`.
@@ -133,18 +135,19 @@ One row per Facebook Page per user.
 |---|---|---|---|
 | GET | `/api/connections` | user | list own connections |
 | GET | `/api/connections/meta/start` | user | OAuth URL |
-| GET | `/api/connections/meta/callback` | public | OAuth callback, redirects to frontend |
+| GET | `/api/connections/meta/callback` | public | validate OAuth state, redirect to frontend with code in fragment |
+| POST | `/api/connections/meta/complete` | user | finish OAuth exchange and upsert Pages |
 | PATCH | `/api/connections/:id` | owner | time, timezone, targets, active |
-| DELETE | `/api/connections/:id` | owner | revoke/delete connection |
+| DELETE | `/api/connections/:id` | owner | delete connection and its posts |
 | POST | `/api/media/upload` | user | multipart image → Cloudinary |
 | POST | `/api/ai/caption` | user, rate-limited | Gemini caption drafts |
 | POST | `/api/ai/image` | user, rate-limited | Imagen → Cloudinary |
 | POST | `/api/posts` | user | create draft/queued/immediate post |
 | GET | `/api/posts` | user | filter by status/connection |
-| PATCH | `/api/posts/:id` | owner | edit caption/connection |
+| PATCH | `/api/posts/:id` | owner | edit caption or requeue |
 | DELETE | `/api/posts/:id` | owner | delete non-published |
 | POST | `/api/posts/:id/publish-now` | owner | immediate publish |
-| POST | `/api/posts/:id/retry` | owner | requeue failed post |
+| POST | `/api/posts/:id/retry` | owner | retry failed/partial targets |
 | PATCH | `/api/auth/profile` | user | brand profile + timezone |
 | GET | `/api/admin/overview` | admin | counts + recent posts |
 | GET | `/api/admin/connections` | admin | all connections (no tokens) |
@@ -167,10 +170,10 @@ Auth guard extends to all private routes. Login/register redirect behavior uncha
 ## 9. Security & operations
 
 - Meta tokens encrypted with AES-256-GCM (`TOKEN_ENCRYPTION_KEY`, 32-byte hex); never exposed to clients.
-- All user resources scoped by `req.user.id`; admins read-only.
+- All user resources scoped by `req.user.id`; admins can manage user access but cannot edit social data.
 - Zod validation on request bodies; limits on caption length, image type/size (10 MB).
 - CORS restricted to configured client origins; Helmet headers.
-- Rate limits: auth endpoints and AI endpoints (per user).
+- Rate limits: auth endpoints, AI endpoints, and media uploads (per user/IP).
 - Cloudinary API secret and Gemini key server-side only.
 - Required Meta production assets: privacy policy, terms, data-deletion callback URL.
 - AI image output is uploaded to Cloudinary before it is usable.
@@ -179,10 +182,8 @@ Auth guard extends to all private routes. Login/register redirect behavior uncha
 
 ## 10. Testing
 
-- Unit: timezone next-slot calculation incl. DST; token encryption/decryption; IG JPEG URL derivation; caption validation.
-- Unit with mocked Graph API: FB photo payload, IG container → publish, partial failure, token error → `needs_reauth`, rate-limit handling.
-- Scheduler: due/not-due, empty queue, atomic lock, grace-window skip.
-- API integration: ownership isolation (user A cannot read/publish user B's post); admin access.
+- Implemented unit coverage: timezone next-slot calculation incl. DST; token encryption/decryption.
+- Recommended next coverage: mocked Graph API for FB payload, IG container → publish, partial failure, token error → `needs_reauth`; scheduler due/empty/lock/grace cases; API ownership isolation and admin access.
 - Manual live test using a Meta test Page and linked IG account.
 - CI never posts to live Meta APIs.
 

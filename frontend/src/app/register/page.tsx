@@ -31,7 +31,10 @@ export default function RegisterPage() {
                         id: data._id,
                         name: data.name,
                         email: data.email,
-                        role: data.role
+                        role: data.role,
+                        isActive: data.isActive,
+                        timezone: data.timezone,
+                        brandProfile: data.brandProfile
                     });
                 } else {
                     setSuccess('Account created successfully! Your account is pending admin approval.');

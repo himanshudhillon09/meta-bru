@@ -3,22 +3,32 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { authApi } from '@/lib/apiClient';
-
-interface User {
-    id: string;
-    name: string;
-    email: string;
-    role: string;
-}
+import type { User } from '@/lib/types';
 
 interface AuthContextType {
     user: User | null;
     loading: boolean;
     login: (token: string, userData: User) => void;
     logout: () => Promise<void>;
+    updateUser: (userData: User) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+const PRIVATE_PATHS = [
+    '/dashboard',
+    '/connections',
+    '/composer',
+    '/queue',
+    '/activity',
+    '/settings',
+];
+
+function isPrivatePath(pathname: string): boolean {
+    return PRIVATE_PATHS.some(
+        (path) => pathname === path || pathname.startsWith(`${path}/`)
+    );
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
@@ -45,7 +55,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                         throw new Error('User verification failed');
                     }
                 } catch (error) {
-                    console.error('Session verification failed:', error);
+                    console.warn('Session verification failed:', error);
                     localStorage.removeItem('token');
                     localStorage.removeItem('user');
                     setUser(null);
@@ -64,7 +74,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
             if (user && isPublicPath) {
                 router.push('/dashboard');
-            } else if (!user && pathname === '/dashboard') {
+            } else if (!user && isPrivatePath(pathname)) {
                 router.push('/login');
             }
         }
@@ -81,7 +91,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         try {
             await authApi.logout();
         } catch (error) {
-            console.error('Logout API call failed', error);
+            console.warn('Logout API call failed', error);
         } finally {
             localStorage.removeItem('token');
             localStorage.removeItem('user');
@@ -90,8 +100,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
     };
 
+    const updateUser = (userData: User) => {
+        setUser(userData);
+        localStorage.setItem('user', JSON.stringify(userData));
+    };
+
     return (
-        <AuthContext.Provider value={{ user, loading, login, logout }}>
+        <AuthContext.Provider value={{ user, loading, login, logout, updateUser }}>
             {children}
         </AuthContext.Provider>
     );

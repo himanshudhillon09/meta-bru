@@ -1,4 +1,6 @@
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api';
+const BASE_URL = (
+    process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api'
+).replace(/\/+$/, '');
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
@@ -65,9 +67,40 @@ async function apiRequest<T>(endpoint: string, options: RequestOptions = {}): Pr
 
         return data as T;
     } catch (error: any) {
-        // Normalize error for UI consumption
+        // Normalize error for UI consumption. Expected HTTP errors are rendered
+        // by the page; only log actual network failures (a TypeError from fetch).
         const message = error.message || 'An unexpected network error occurred';
-        console.error(`API Request Error [${method} ${endpoint}]:`, message);
+        if (error instanceof TypeError) {
+            console.error(`Network error [${method} ${endpoint}]:`, message);
+        }
+        throw message;
+    }
+}
+
+async function uploadRequest<T>(endpoint: string, formData: FormData): Promise<T> {
+    const headers: Record<string, string> = {};
+    if (typeof window !== 'undefined') {
+        const token = localStorage.getItem('token');
+        if (token) headers.Authorization = `Bearer ${token}`;
+    }
+
+    try {
+        const response = await fetch(`${BASE_URL}${endpoint}`, {
+            method: 'POST',
+            headers,
+            body: formData,
+        });
+
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(data?.message || 'Upload failed');
+        }
+        return data as T;
+    } catch (error: any) {
+        const message = error.message || 'Upload failed';
+        if (error instanceof TypeError) {
+            console.error(`Network error [POST ${endpoint}]:`, message);
+        }
         throw message;
     }
 }
@@ -93,7 +126,7 @@ export const api = {
 };
 
 /**
- * Domain-specific API wrappers (e.g., Auth)
+ * Domain-specific API wrappers
  */
 export const authApi = {
     login: (credentials: any) => api.post('/auth/login', credentials),
@@ -101,7 +134,48 @@ export const authApi = {
     getMe: () => api.get('/auth/me'),
     logout: () => api.get('/auth/logout'),
     getUsers: () => api.get('/auth/users'),
-    toggleUserStatus: (userId: string, isActive?: boolean) => api.patch(`/auth/users/${userId}/status`, { isActive }),
+    toggleUserStatus: (userId: string, isActive?: boolean) =>
+        api.patch(`/auth/users/${userId}/status`, { isActive }),
+    updateProfile: (data: any) => api.patch('/auth/profile', data),
+};
+
+export const connectionsApi = {
+    list: () => api.get('/connections'),
+    start: (timezone?: string) =>
+        api.get(`/connections/meta/start${timezone ? `?timezone=${encodeURIComponent(timezone)}` : ''}`),
+    complete: (data: { code: string; state: string }) =>
+        api.post('/connections/meta/complete', data),
+    update: (connectionId: string, data: any) =>
+        api.patch(`/connections/${connectionId}`, data),
+    remove: (connectionId: string) => api.delete(`/connections/${connectionId}`),
+};
+
+export const postsApi = {
+    list: (params?: Record<string, string>) => api.get('/posts', params),
+    create: (data: any) => api.post('/posts', data),
+    update: (postId: string, data: any) => api.patch(`/posts/${postId}`, data),
+    remove: (postId: string) => api.delete(`/posts/${postId}`),
+    publishNow: (postId: string) => api.post(`/posts/${postId}/publish-now`),
+    retry: (postId: string) => api.post(`/posts/${postId}/retry`),
+};
+
+export const mediaApi = {
+    upload: (file: File) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        return uploadRequest('/media/upload', formData);
+    },
+};
+
+export const aiApi = {
+    caption: (data: { topic?: string; platform?: string }) => api.post('/ai/caption', data),
+    image: (data: { prompt: string }) => api.post('/ai/image', data),
+};
+
+export const adminApi = {
+    overview: () => api.get('/admin/overview'),
+    connections: () => api.get('/admin/connections'),
+    posts: () => api.get('/admin/posts'),
 };
 
 export default api;

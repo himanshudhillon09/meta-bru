@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import { env } from '../config/env.js';
 import { User } from '../models/userModel.js';
 
 interface AuthRequest extends Request {
@@ -20,7 +21,11 @@ export const protect = async (req: AuthRequest, res: Response, next: NextFunctio
             }
 
             // Verify token
-            const decoded: any = jwt.verify(token, process.env.JWT_SECRET || 'secret');
+            const decoded: any = jwt.verify(token, env.jwtSecret);
+            if (!decoded?.id || decoded.purpose) {
+                res.status(401).json({ success: false, message: 'Not authorized, token failed' });
+                return;
+            }
 
             // Add user to request (fetch from DB without password)
             req.user = await User.findById(decoded.id);
