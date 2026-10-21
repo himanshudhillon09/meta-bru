@@ -1,253 +1,740 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { useAuth } from '@/context/AuthContext';
-import { authApi } from '@/lib/apiClient';
+import Link from 'next/link';
+import { AppShell } from '@/components/AppShell';
 import { Modal } from '@/components/Modal';
+import { useAuth } from '@/context/AuthContext';
+import { adminApi, authApi, connectionsApi, postsApi } from '@/lib/apiClient';
+import {
+    connectionName,
+    formatDate,
+    type AdminOverview,
+    type Post,
+    type PostStatus,
+    type SocialConnection,
+} from '@/lib/types';
 
-export function UserDashboard() {
-    const { user, logout } = useAuth();
+const STATUS_STYLES: Record<PostStatus, string> = {
+    draft: 'bg-slate-500/10 text-slate-300 border-slate-500/20',
+    queued: 'bg-indigo-500/10 text-indigo-300 border-indigo-500/20',
+    publishing: 'bg-sky-500/10 text-sky-300 border-sky-500/20',
+    published: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20',
+    partial: 'bg-amber-500/10 text-amber-300 border-amber-500/20',
+    failed: 'bg-rose-500/10 text-rose-300 border-rose-500/20',
+};
 
-    if (!user) return null;
-
+export function StatusBadge({ status }: { status: PostStatus }) {
     return (
-        <div className="min-h-screen p-8 max-w-7xl mx-auto">
-            <header className="flex justify-between items-center mb-12 bg-slate-900/50 backdrop-blur-md p-6 rounded-3xl border border-white/5 shadow-xl">
-                <div>
-                    <h1 className="text-3xl font-extrabold bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">
-                        User Dashboard
-                    </h1>
-                    <p className="text-slate-400 mt-1">Welcome back, {user.name}</p>
-                </div>
+        <span
+            className={`inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest border ${STATUS_STYLES[status]}`}
+        >
+            {status}
+        </span>
+    );
+}
 
-                <button
-                    onClick={logout}
-                    className="bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 px-6 py-2.5 rounded-xl font-semibold transition-all hover:scale-105 active:scale-95"
-                >
-                    Log Out
-                </button>
-            </header>
-
-            <main className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                <div className="bg-slate-900/40 p-8 rounded-[32px] border border-white/5 shadow-2xl transition-all hover:border-indigo-500/30 group">
-                    <h3 className="text-slate-400 text-sm font-medium mb-2">Role</h3>
-                    <p className="text-3xl font-bold text-white capitalize">{user.role}</p>
-                    <div className="mt-4 h-1 w-12 bg-indigo-500 rounded-full group-hover:w-full transition-all duration-500"></div>
-                </div>
-
-                <div className="bg-slate-900/40 p-8 rounded-[32px] border border-white/5 shadow-2xl transition-all hover:border-indigo-500/30 group">
-                    <h3 className="text-slate-400 text-sm font-medium mb-2">Email</h3>
-                    <p className="text-xl font-semibold text-white break-all">{user.email}</p>
-                    <div className="mt-4 h-1 w-12 bg-emerald-500 rounded-full group-hover:w-full transition-all duration-500"></div>
-                </div>
-
-                <div className="bg-slate-900/40 p-8 rounded-[32px] border border-white/5 shadow-2xl transition-all hover:border-indigo-500/30 group">
-                    <h3 className="text-slate-400 text-sm font-medium mb-2">Status</h3>
-                    <p className="text-3xl font-bold text-emerald-400">Active</p>
-                    <div className="mt-4 h-1 w-12 bg-indigo-500 rounded-full group-hover:w-full transition-all duration-500"></div>
-                </div>
-            </main>
-
-            <section className="mt-12 bg-slate-900/40 p-12 rounded-[40px] border border-white/5 shadow-2xl">
-                <div className="max-w-2xl">
-                    <h2 className="text-2xl font-bold mb-4 text-white">Getting Started</h2>
-                    <p className="text-slate-400 leading-relaxed mb-8">
-                        Explore all the features of Meta-Bru and start amplifying your social impact today.
-                    </p>
-                    <button className="bg-indigo-600 hover:bg-indigo-500 text-white px-8 py-3.5 rounded-2xl font-bold transition-all hover:-translate-y-1 shadow-lg shadow-indigo-500/25">
-                        Start Exploring
-                    </button>
-                </div>
-            </section>
+function StatCard({
+    label,
+    value,
+    accent,
+    hint,
+}: {
+    label: string;
+    value: string | number;
+    accent: string;
+    hint?: string;
+}) {
+    return (
+        <div className={`rounded-3xl border p-6 shadow-xl ${accent}`}>
+            <div className="text-xs font-bold uppercase tracking-widest opacity-70">
+                {label}
+            </div>
+            <div className="text-3xl font-black text-white mt-2">{value}</div>
+            {hint ? <div className="text-xs mt-2 opacity-60">{hint}</div> : null}
         </div>
     );
 }
 
-export function AdminDashboard() {
-    const { user, logout } = useAuth();
-    const [users, setUsers] = useState<any[]>([]);
+function RecentPostRow({ post }: { post: Post }) {
+    return (
+        <div className="flex items-center gap-4 py-4 border-b border-white/5 last:border-0">
+            <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-800 shrink-0 border border-white/5">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                    src={post.mediaUrl}
+                    alt=""
+                    className="w-full h-full object-cover"
+                />
+            </div>
+            <div className="min-w-0 flex-1">
+                <div className="text-sm font-semibold text-white truncate">
+                    {post.caption || 'Untitled post'}
+                </div>
+                <div className="text-xs text-slate-500 mt-0.5">
+                    {connectionName(post)} · {formatDate(post.createdAt)}
+                </div>
+            </div>
+            <StatusBadge status={post.status} />
+        </div>
+    );
+}
+
+function NextSlotCard({ connections }: { connections: SocialConnection[] }) {
+    const upcoming = connections
+        .filter(
+            (connection) =>
+                connection.isActive &&
+                connection.tokenStatus === 'active' &&
+                connection.nextRunAt
+        )
+        .sort(
+            (a, b) =>
+                new Date(a.nextRunAt as string).getTime() -
+                new Date(b.nextRunAt as string).getTime()
+        )[0];
+
+    return (
+        <div className="rounded-3xl border border-white/5 bg-slate-900/40 p-8 shadow-xl">
+            <div className="text-xs font-bold uppercase tracking-widest text-indigo-400">
+                Next scheduled slot
+            </div>
+            {upcoming ? (
+                <>
+                    <div className="text-2xl font-black text-white mt-3">
+                        {formatDate(upcoming.nextRunAt)}
+                    </div>
+                    <div className="text-sm text-slate-400 mt-1">
+                        {upcoming.pageName} · {upcoming.dailyTime}{' '}
+                        {upcoming.timezone}
+                    </div>
+                    <div className="text-xs text-slate-500 mt-4">
+                        The next approved post in this queue will publish
+                        automatically.
+                    </div>
+                </>
+            ) : (
+                <>
+                    <div className="text-2xl font-black text-white mt-3">
+                        Nothing scheduled
+                    </div>
+                    <div className="text-sm text-slate-400 mt-1">
+                        Connect a Page and add a post to the queue to start the
+                        daily schedule.
+                    </div>
+                    <Link
+                        href="/connections"
+                        className="inline-flex mt-5 bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all"
+                    >
+                        Manage connections
+                    </Link>
+                </>
+            )}
+        </div>
+    );
+}
+
+export function UserDashboard() {
+    const { user } = useAuth();
+    const [connections, setConnections] = useState<SocialConnection[]>([]);
+    const [posts, setPosts] = useState<Post[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
 
-    // Modal State
-    const [modalConfig, setModalConfig] = useState<{
+    useEffect(() => {
+        const load = async () => {
+            try {
+                const [connectionData, postData]: any[] = await Promise.all([
+                    connectionsApi.list(),
+                    postsApi.list({ limit: '200' }),
+                ]);
+                setConnections(connectionData.connections || []);
+                setPosts(postData.posts || []);
+            } catch (err: any) {
+                setError(typeof err === 'string' ? err : 'Could not load overview');
+            } finally {
+                setLoading(false);
+            }
+        };
+        void load();
+    }, []);
+
+    const queued = posts.filter((post) => post.status === 'queued').length;
+    const published = posts.filter(
+        (post) => post.status === 'published' || post.status === 'partial'
+    ).length;
+    const needsReauth = connections.filter(
+        (connection) => connection.tokenStatus === 'needs_reauth'
+    ).length;
+
+    if (!user) return null;
+
+    return (
+        <AppShell
+            title="Overview"
+            subtitle={`Welcome back, ${user.name}`}
+            actions={
+                <>
+                    <Link
+                        href="/composer"
+                        className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all"
+                    >
+                        New post
+                    </Link>
+                    <Link
+                        href="/connections"
+                        className="bg-white/5 hover:bg-white/10 text-white border border-white/10 px-5 py-2.5 rounded-xl text-sm font-bold transition-all"
+                    >
+                        Connections
+                    </Link>
+                </>
+            }
+        >
+            {error ? (
+                <div className="mb-6 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
+                    {error}
+                </div>
+            ) : null}
+
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+                <StatCard
+                    label="Connections"
+                    value={connections.length}
+                    accent="border-indigo-500/20 bg-indigo-500/10 text-indigo-300"
+                />
+                <StatCard
+                    label="Queued"
+                    value={queued}
+                    accent="border-sky-500/20 bg-sky-500/10 text-sky-300"
+                />
+                <StatCard
+                    label="Published"
+                    value={published}
+                    accent="border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
+                />
+                <StatCard
+                    label="Needs reconnect"
+                    value={needsReauth}
+                    accent="border-amber-500/20 bg-amber-500/10 text-amber-300"
+                />
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                <NextSlotCard connections={connections} />
+                <div className="rounded-3xl border border-white/5 bg-slate-900/40 p-8 shadow-xl">
+                    <div className="text-xs font-bold uppercase tracking-widest text-purple-400">
+                        Composer
+                    </div>
+                    <div className="text-2xl font-black text-white mt-3">
+                        Build your next post
+                    </div>
+                    <div className="text-sm text-slate-400 mt-1">
+                        Write a caption, upload an image, or ask Gemini for a
+                        draft. Then add it to a connection&apos;s daily queue.
+                    </div>
+                    <Link
+                        href="/composer"
+                        className="inline-flex mt-5 bg-purple-600 hover:bg-purple-500 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all"
+                    >
+                        Open composer
+                    </Link>
+                </div>
+            </div>
+
+            <section className="rounded-3xl border border-white/5 bg-slate-900/40 p-6 sm:p-8 shadow-xl">
+                <div className="flex items-center justify-between mb-2">
+                    <h2 className="text-lg font-bold text-white">Recent posts</h2>
+                    <Link
+                        href="/queue"
+                        className="text-sm font-semibold text-indigo-400 hover:text-indigo-300"
+                    >
+                        View queue
+                    </Link>
+                </div>
+                {loading ? (
+                    <div className="flex justify-center py-12">
+                        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-indigo-500" />
+                    </div>
+                ) : posts.length === 0 ? (
+                    <div className="py-10 text-center text-sm text-slate-500">
+                        No posts yet. Create your first one in the composer.
+                    </div>
+                ) : (
+                    <div>
+                        {posts.slice(0, 5).map((post) => (
+                            <RecentPostRow key={post._id} post={post} />
+                        ))}
+                    </div>
+                )}
+            </section>
+        </AppShell>
+    );
+}
+
+interface AdminUser {
+    _id: string;
+    name: string;
+    email: string;
+    role: string;
+    isActive: boolean;
+}
+
+interface AdminConnection extends SocialConnection {
+    userId?: {
+        name?: string;
+        email?: string;
+    } | null;
+}
+
+function ConnectionStatus({
+    isActive,
+    tokenStatus,
+}: Pick<SocialConnection, 'isActive' | 'tokenStatus'>) {
+    return (
+        <span
+            className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest border ${
+                !isActive
+                    ? 'bg-slate-500/10 text-slate-400 border-slate-500/20'
+                    : tokenStatus === 'needs_reauth'
+                      ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                      : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+            }`}
+        >
+            {!isActive
+                ? 'Paused'
+                : tokenStatus === 'needs_reauth'
+                  ? 'Reconnect'
+                  : 'Active'}
+        </span>
+    );
+}
+
+export function AdminDashboard() {
+    const { user } = useAuth();
+    const [users, setUsers] = useState<AdminUser[]>([]);
+    const [overview, setOverview] = useState<AdminOverview | null>(null);
+    const [adminConnections, setAdminConnections] = useState<AdminConnection[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState('');
+    const [modal, setModal] = useState<{
         isOpen: boolean;
         title: string;
         message: string;
         confirmText: string;
-        onConfirm: () => void;
         type: 'danger' | 'info' | 'success';
+        onConfirm: () => void;
     }>({
         isOpen: false,
         title: '',
         message: '',
         confirmText: 'Confirm',
-        onConfirm: () => { },
-        type: 'info'
+        type: 'info',
+        onConfirm: () => undefined,
     });
 
-    useEffect(() => {
-        fetchUsers();
-    }, []);
-
-    const fetchUsers = async () => {
+    const load = async () => {
+        setError('');
         try {
-            const data: any = await authApi.getUsers();
-            if (data.success) {
-                setUsers(data.users);
-            }
+            const [overviewData, usersData, connectionData]: any[] = await Promise.all([
+                adminApi.overview(),
+                authApi.getUsers(),
+                adminApi.connections(),
+            ]);
+            setOverview(overviewData);
+            setUsers(usersData.users || []);
+            setAdminConnections(connectionData.connections || []);
         } catch (err: any) {
-            setError(err || 'Failed to fetch users');
+            setError(typeof err === 'string' ? err : 'Could not load admin data');
         } finally {
             setLoading(false);
         }
     };
 
-    const handleToggleStatusRequest = (targetUser: any) => {
-        const action = targetUser.isActive ? 'inactive' : 'approve';
-        setModalConfig({
-            isOpen: true,
-            title: action === 'approve' ? 'Approve Account?' : 'Mark as Inactive?',
-            message: action === 'approve'
-                ? `This will grant ${targetUser.name} full access to the platform.`
-                : `This will immediately restrict ${targetUser.name} from accessing platform features.`,
-            confirmText: action === 'approve' ? 'Approve' : 'Mark Inactive',
-            type: action === 'approve' ? 'success' : 'danger',
-            onConfirm: () => performToggleStatus(targetUser._id, targetUser.isActive)
-        });
-    };
+    useEffect(() => {
+        void load();
+    }, []);
 
-    const performToggleStatus = async (userId: string, currentStatus: boolean) => {
-        try {
-            const data: any = await authApi.toggleUserStatus(userId, !currentStatus);
-            if (data.success) {
-                setUsers(users.map(u => u._id === userId ? { ...u, isActive: !currentStatus } : u));
-            }
-        } catch (err: any) {
-            alert(err || 'Failed to update user status');
-        }
+    const requestStatusChange = (target: AdminUser) => {
+        const approving = !target.isActive;
+        setModal({
+            isOpen: true,
+            title: approving ? 'Approve Account?' : 'Mark as Inactive?',
+            message: approving
+                ? `This will grant ${target.name} full access to the platform.`
+                : `This will immediately restrict ${target.name} from accessing platform features.`,
+            confirmText: approving ? 'Approve' : 'Mark Inactive',
+            type: approving ? 'success' : 'danger',
+            onConfirm: async () => {
+                try {
+                    const data: any = await authApi.toggleUserStatus(
+                        target._id,
+                        !target.isActive
+                    );
+                    if (data.success) {
+                        // Refresh so paused connections and stats stay in sync.
+                        await load();
+                    }
+                } catch (err: any) {
+                    setError(typeof err === 'string' ? err : 'Could not update user');
+                }
+            },
+        });
     };
 
     if (!user) return null;
 
-    const pendingUsers = users.filter(u => !u.isActive);
+    const stats = overview?.stats;
 
     return (
-        <div className="min-h-screen p-8 max-w-7xl mx-auto">
+        <AppShell
+            title="Admin Command Center"
+            subtitle={`Administrator: ${user.name}`}
+            actions={
+                <button
+                    onClick={() => void load()}
+                    className="bg-white/5 hover:bg-white/10 text-white border border-white/10 px-5 py-2.5 rounded-xl text-sm font-bold transition-all"
+                >
+                    Refresh
+                </button>
+            }
+        >
             <Modal
-                {...modalConfig}
-                onClose={() => setModalConfig(prev => ({ ...prev, isOpen: false }))}
+                {...modal}
+                onClose={() => setModal((current) => ({ ...current, isOpen: false }))}
             />
 
-            <header className="flex justify-between items-center mb-12 bg-slate-900/50 backdrop-blur-md p-6 rounded-3xl border border-white/5 shadow-xl">
-                <div>
-                    <h1 className="text-3xl font-extrabold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
-                        Admin Command Center
-                    </h1>
-                    <p className="text-slate-400 mt-1">Administrator: {user.name}</p>
+            {error ? (
+                <div className="mb-6 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
+                    {error}
                 </div>
+            ) : null}
 
-                <button
-                    onClick={logout}
-                    className="bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 px-6 py-2.5 rounded-xl font-semibold transition-all hover:scale-105 active:scale-95"
-                >
-                    Log Out
-                </button>
-            </header>
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+                <StatCard
+                    label="Users"
+                    value={stats?.users ?? users.length}
+                    accent="border-indigo-500/20 bg-indigo-500/10 text-indigo-300"
+                />
+                <StatCard
+                    label="Connections"
+                    value={stats?.connections ?? 0}
+                    accent="border-purple-500/20 bg-purple-500/10 text-purple-300"
+                />
+                <StatCard
+                    label="Queued"
+                    value={stats?.queued ?? 0}
+                    accent="border-sky-500/20 bg-sky-500/10 text-sky-300"
+                />
+                <StatCard
+                    label="Published 7d"
+                    value={stats?.publishedThisWeek ?? 0}
+                    accent="border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
+                />
+                <StatCard
+                    label="Reconnects"
+                    value={stats?.needsReauth ?? 0}
+                    accent="border-amber-500/20 bg-amber-500/10 text-amber-300"
+                />
+            </div>
 
-            <main className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-12">
-                <div className="bg-indigo-500/10 p-8 rounded-[32px] border border-indigo-500/20 shadow-2xl transition-all hover:bg-indigo-500/15 group">
-                    <h3 className="text-indigo-400 text-sm font-medium mb-2">Total Users</h3>
-                    <p className="text-4xl font-black text-white">{users.length}</p>
-                </div>
+            <section className="rounded-3xl border border-white/5 bg-slate-900/40 p-6 sm:p-8 shadow-xl mb-8">
+                <h2 className="text-lg font-bold text-white mb-2">
+                    Recent platform activity
+                </h2>
+                {loading ? (
+                    <div className="flex justify-center py-10">
+                        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-indigo-500" />
+                    </div>
+                ) : (overview?.recentPosts.length ?? 0) === 0 ? (
+                    <div className="py-8 text-center text-sm text-slate-500">
+                        No posts have been created yet.
+                    </div>
+                ) : (
+                    overview?.recentPosts.map((post) => (
+                        <RecentPostRow key={post._id} post={post} />
+                    ))
+                )}
+            </section>
 
-                <div className="bg-amber-500/10 p-8 rounded-[32px] border border-amber-500/20 shadow-2xl transition-all hover:bg-amber-500/15 group">
-                    <h3 className="text-amber-400 text-sm font-medium mb-2">Pending Approval</h3>
-                    <p className="text-4xl font-black text-white">{pendingUsers.length}</p>
-                </div>
+            <section className="rounded-3xl border border-white/5 bg-slate-900/40 p-6 sm:p-8 shadow-xl mb-8">
+                <h2 className="text-lg font-bold text-white mb-6">
+                    Connected Pages
+                </h2>
 
-                <div className="bg-emerald-500/10 p-8 rounded-[32px] border border-emerald-500/20 shadow-2xl transition-all hover:bg-emerald-500/15 group">
-                    <h3 className="text-emerald-400 text-sm font-medium mb-2">Active Users</h3>
-                    <p className="text-4xl font-black text-white">{users.filter(u => u.isActive).length}</p>
-                </div>
-
-                <div className="bg-rose-500/10 p-8 rounded-[32px] border border-rose-500/20 shadow-2xl transition-all hover:bg-rose-500/15 group">
-                    <h3 className="text-rose-400 text-sm font-medium mb-2">System Health</h3>
-                    <p className="text-4xl font-black text-white">100%</p>
-                </div>
-            </main>
-
-            <section className="grid grid-cols-1 gap-12">
-                <div className="bg-slate-900/40 p-10 rounded-[40px] border border-white/5 shadow-2xl">
-                    <h2 className="text-2xl font-bold mb-8 text-white flex items-center gap-3">
-                        <span className="w-2 h-8 bg-indigo-500 rounded-full"></span>
-                        User Management
-                    </h2>
-
-                    {loading ? (
-                        <div className="flex justify-center py-12">
-                            <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-indigo-500"></div>
-                        </div>
-                    ) : error ? (
-                        <div className="text-rose-400 text-center py-8">{error}</div>
-                    ) : (
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-left">
-                                <thead>
-                                    <tr className="text-slate-500 text-xs font-bold uppercase tracking-wider border-b border-white/5">
-                                        <th className="pb-4 pl-4">User</th>
-                                        <th className="pb-4">Role</th>
-                                        <th className="pb-4">Status</th>
-                                        <th className="pb-4 text-right pr-4">Actions</th>
+                {loading ? (
+                    <div className="flex justify-center py-10">
+                        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-indigo-500" />
+                    </div>
+                ) : adminConnections.length === 0 ? (
+                    <div className="py-8 text-center text-sm text-slate-500">
+                        No Pages have been connected yet.
+                    </div>
+                ) : (
+                    <>
+                    <div className="hidden md:block overflow-x-auto">
+                        <table className="w-full min-w-[840px] text-left">
+                            <thead>
+                                <tr className="text-slate-500 text-xs font-bold uppercase tracking-wider border-b border-white/5">
+                                    <th className="pb-4 pl-4">User</th>
+                                    <th className="pb-4">Page</th>
+                                    <th className="pb-4">Instagram</th>
+                                    <th className="pb-4">Schedule</th>
+                                    <th className="pb-4">Status</th>
+                                    <th className="pb-4 text-right pr-4">
+                                        Next slot
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-white/5">
+                                {adminConnections.map((connection) => (
+                                    <tr
+                                        key={connection._id}
+                                        className="hover:bg-white/5 transition-colors"
+                                    >
+                                        <td className="py-4 pl-4">
+                                            <div className="text-sm font-semibold text-white">
+                                                {connection.userId?.name ||
+                                                    'Unknown user'}
+                                            </div>
+                                            <div className="text-xs text-slate-500">
+                                                {connection.userId?.email || ''}
+                                            </div>
+                                        </td>
+                                        <td className="py-4">
+                                            <div className="text-sm text-white">
+                                                {connection.pageName}
+                                            </div>
+                                            <div className="text-[11px] text-slate-500">
+                                                {connection.pageId}
+                                            </div>
+                                        </td>
+                                        <td className="py-4 text-sm text-slate-400">
+                                            {connection.instagram?.username
+                                                ? `@${connection.instagram.username}`
+                                                : 'Not linked'}
+                                        </td>
+                                        <td className="py-4 text-sm text-slate-400">
+                                            {connection.dailyTime}
+                                            <div className="text-[11px] text-slate-500">
+                                                {connection.timezone}
+                                            </div>
+                                        </td>
+                                        <td className="py-4">
+                                            <ConnectionStatus
+                                                isActive={connection.isActive}
+                                                tokenStatus={
+                                                    connection.tokenStatus
+                                                }
+                                            />
+                                        </td>
+                                        <td className="py-4 text-right pr-4 text-sm text-slate-400">
+                                            {formatDate(connection.nextRunAt)}
+                                        </td>
                                     </tr>
-                                </thead>
-                                <tbody className="divide-y divide-white/5">
-                                    {users.map((u) => (
-                                        <tr key={u._id} className="group hover:bg-white/5 transition-colors">
-                                            <td className="py-5 pl-4">
-                                                <div className="flex items-center gap-4">
-                                                    <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center font-bold text-indigo-400 border border-white/5">
-                                                        {u.name[0].toUpperCase()}
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div className="md:hidden space-y-3">
+                        {adminConnections.map((connection) => (
+                            <article
+                                key={connection._id}
+                                className="rounded-2xl border border-white/5 bg-slate-950/50 p-4"
+                            >
+                                <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                        <div className="text-sm font-semibold text-white truncate">
+                                            {connection.pageName}
+                                        </div>
+                                        <div className="text-xs text-slate-500 truncate">
+                                            {connection.userId?.name ||
+                                                'Unknown user'}{' '}
+                                            {connection.userId?.email
+                                                ? `· ${connection.userId.email}`
+                                                : ''}
+                                        </div>
+                                    </div>
+                                    <ConnectionStatus
+                                        isActive={connection.isActive}
+                                        tokenStatus={connection.tokenStatus}
+                                    />
+                                </div>
+                                <dl className="grid grid-cols-2 gap-3 mt-4 text-xs">
+                                    <div>
+                                        <dt className="text-slate-500">
+                                            Instagram
+                                        </dt>
+                                        <dd className="text-slate-300 mt-0.5">
+                                            {connection.instagram?.username
+                                                ? `@${connection.instagram.username}`
+                                                : 'Not linked'}
+                                        </dd>
+                                    </div>
+                                    <div>
+                                        <dt className="text-slate-500">
+                                            Daily schedule
+                                        </dt>
+                                        <dd className="text-slate-300 mt-0.5">
+                                            {connection.dailyTime} ·{' '}
+                                            {connection.timezone}
+                                        </dd>
+                                    </div>
+                                    <div className="col-span-2">
+                                        <dt className="text-slate-500">
+                                            Next slot
+                                        </dt>
+                                        <dd className="text-slate-300 mt-0.5">
+                                            {formatDate(connection.nextRunAt)}
+                                        </dd>
+                                    </div>
+                                </dl>
+                            </article>
+                        ))}
+                    </div>
+                    </>
+                )}
+            </section>
+
+            <section className="rounded-3xl border border-white/5 bg-slate-900/40 p-6 sm:p-8 shadow-xl">
+                <h2 className="text-lg font-bold text-white mb-6">
+                    User Management
+                </h2>
+
+                {loading ? (
+                    <div className="flex justify-center py-10">
+                        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-indigo-500" />
+                    </div>
+                ) : (
+                    <>
+                    <div className="hidden md:block overflow-x-auto">
+                        <table className="w-full min-w-[620px] text-left">
+                            <thead>
+                                <tr className="text-slate-500 text-xs font-bold uppercase tracking-wider border-b border-white/5">
+                                    <th className="pb-4 pl-4">User</th>
+                                    <th className="pb-4">Role</th>
+                                    <th className="pb-4">Status</th>
+                                    <th className="pb-4 text-right pr-4">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-white/5">
+                                {users.map((item) => (
+                                    <tr
+                                        key={item._id}
+                                        className="group hover:bg-white/5 transition-colors"
+                                    >
+                                        <td className="py-5 pl-4">
+                                            <div className="flex items-center gap-4">
+                                                <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center font-bold text-indigo-400 border border-white/5">
+                                                    {item.name[0]?.toUpperCase() || 'U'}
+                                                </div>
+                                                <div>
+                                                    <div className="text-white font-semibold">
+                                                        {item.name}
                                                     </div>
-                                                    <div>
-                                                        <div className="text-white font-semibold">{u.name}</div>
-                                                        <div className="text-slate-500 text-xs">{u.email}</div>
+                                                    <div className="text-slate-500 text-xs">
+                                                        {item.email}
                                                     </div>
                                                 </div>
-                                            </td>
-                                            <td className="py-5 capitalize text-slate-400 text-sm">
-                                                {u.role}
-                                            </td>
-                                            <td className="py-5">
-                                                <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${u.isActive
-                                                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                                                    : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-                                                    }`}>
-                                                    {u.isActive ? 'Active' : 'Pending'}
-                                                </span>
-                                            </td>
-                                            <td className="py-5 text-right pr-4">
-                                                <button
-                                                    onClick={() => handleToggleStatusRequest(u)}
-                                                    disabled={u._id === user.id}
-                                                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${u._id === user.id
+                                            </div>
+                                        </td>
+                                        <td className="py-5 capitalize text-slate-400 text-sm">
+                                            {item.role}
+                                        </td>
+                                        <td className="py-5">
+                                            <span
+                                                className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest border ${
+                                                    item.isActive
+                                                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                                        : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                                                }`}
+                                            >
+                                                {item.isActive ? 'Active' : 'Pending'}
+                                            </span>
+                                        </td>
+                                        <td className="py-5 text-right pr-4">
+                                            <button
+                                                onClick={() => requestStatusChange(item)}
+                                                disabled={item._id === user.id}
+                                                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                                                    item._id === user.id
                                                         ? 'opacity-30 cursor-not-allowed bg-slate-800 text-slate-500 border border-white/5'
-                                                        : u.isActive
-                                                            ? 'bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/10'
-                                                            : 'bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg shadow-indigo-500/20'
-                                                        }`}
-                                                >
-                                                    {u._id === user.id ? 'You' : (u.isActive ? 'Mark Inactive' : 'Approve Access')}
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    )}
-                </div>
+                                                        : item.isActive
+                                                          ? 'bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/10'
+                                                          : 'bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg shadow-indigo-500/20'
+                                                }`}
+                                            >
+                                                {item._id === user.id
+                                                    ? 'You'
+                                                    : item.isActive
+                                                      ? 'Mark Inactive'
+                                                      : 'Approve Access'}
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div className="md:hidden space-y-3">
+                        {users.map((item) => (
+                            <article
+                                key={item._id}
+                                className="rounded-2xl border border-white/5 bg-slate-950/50 p-4"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center font-bold text-indigo-400 border border-white/5 shrink-0">
+                                        {item.name[0]?.toUpperCase() || 'U'}
+                                    </div>
+                                    <div className="min-w-0">
+                                        <div className="text-sm font-semibold text-white truncate">
+                                            {item.name}
+                                        </div>
+                                        <div className="text-xs text-slate-500 truncate">
+                                            {item.email}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="flex items-center justify-between gap-3 mt-4">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs capitalize text-slate-400">
+                                            {item.role}
+                                        </span>
+                                        <span
+                                            className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest border ${
+                                                item.isActive
+                                                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                                    : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                                            }`}
+                                        >
+                                            {item.isActive ? 'Active' : 'Pending'}
+                                        </span>
+                                    </div>
+                                    <button
+                                        onClick={() => requestStatusChange(item)}
+                                        disabled={item._id === user.id}
+                                        className={`px-3 py-2 rounded-xl text-xs font-bold transition-all ${
+                                            item._id === user.id
+                                                ? 'opacity-30 cursor-not-allowed bg-slate-800 text-slate-500 border border-white/5'
+                                                : item.isActive
+                                                  ? 'bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/10'
+                                                  : 'bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg shadow-indigo-500/20'
+                                        }`}
+                                    >
+                                        {item._id === user.id
+                                            ? 'You'
+                                            : item.isActive
+                                              ? 'Mark Inactive'
+                                              : 'Approve'}
+                                    </button>
+                                </div>
+                            </article>
+                        ))}
+                    </div>
+                    </>
+                )}
             </section>
-        </div>
+        </AppShell>
     );
 }

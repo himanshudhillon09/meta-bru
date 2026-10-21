@@ -1,0 +1,39 @@
+services:
+  - type: web
+    name: meta-bru-api
+    runtime: node
+    plan: starter
+    rootDir: backend
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: DB_NAME
+        value: meta-bru
+      - key: META_GRAPH_VERSION
+        value: v26.0
+      - key: APP_DEFAULT_TIMEZONE
+        value: Asia/Kolkata
+      - key: SCHEDULER_ENABLED
+        value: "true"
+      - key: SCHEDULER_GRACE_MINUTES
+        value: "180"
+      - key: GEMINI_TEXT_MODEL
+        value: gemini-2.5-flash
+      - key: GEMINI_IMAGE_MODEL
+        value: imagen-4.0-generate-001
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: TOKEN_ENCRYPTION_KEY
+        sync: false
+      - key: CLIENT_URL
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: META_REDIRECT_URI
+        sync: false

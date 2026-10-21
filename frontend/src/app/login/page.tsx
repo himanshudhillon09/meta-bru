@@ -29,7 +29,10 @@ export default function LoginPage() {
                     id: data._id,
                     name: data.name,
                     email: data.email,
-                    role: data.role
+                    role: data.role,
+                    isActive: data.isActive,
+                    timezone: data.timezone,
+                    brandProfile: data.brandProfile
                 });
             }
         } catch (err: any) {
@@ -118,7 +121,7 @@ export default function LoginPage() {
                     </button>
 
                     <p className="text-center text-slate-400 text-sm mt-4">
-                        Don't have an account?{' '}
+                        Don&apos;t have an account?{' '}
                         <Link href="/register" className="text-indigo-400 hover:text-indigo-300 font-semibold">
                             Create Account
                         </Link>

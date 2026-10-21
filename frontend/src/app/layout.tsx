@@ -14,7 +14,8 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Meta-Bru",
-  description: "Meta-Bru",
+  description:
+    "Schedule and auto-publish image posts to Facebook Pages and Instagram Business accounts.",
 };
 
 import { AuthProvider } from "@/context/AuthContext";
