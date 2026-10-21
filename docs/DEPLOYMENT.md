@@ -43,8 +43,14 @@ these steps:
    - `pages_show_list`
    - `pages_read_engagement`
    - `pages_manage_posts`
+   - `business_management`
    - `instagram_basic`
    - `instagram_content_publish`
+
+   `business_management` is required for Pages owned by a Meta Business
+   Portfolio. Without it, `GET /me/accounts` can return an empty list even when
+   `pages_show_list` is granted. When Meta asks which business to share, select
+   the portfolio that owns the Page.
 5. Complete App Review / business verification for those permissions on their
    app, then switch it to **Live** mode.
 6. Configure a Privacy Policy URL, Terms of Service URL, and Data Deletion

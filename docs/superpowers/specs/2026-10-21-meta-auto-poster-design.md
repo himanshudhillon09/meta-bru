@@ -104,7 +104,7 @@ are omitted from API responses.
 ### OAuth
 - Start: authenticated `GET /api/connections/meta/start` loads the owning user's Meta app credentials, resolves the deployment callback URL, and returns the Facebook OAuth URL. If the user has not saved Meta credentials, it returns `503 META_NOT_CONFIGURED`.
 - `state` is a short-lived signed JWT containing the user ID, a purpose marker, the requested timezone, the user's `appId`, and the resolved `redirectUri`; no DB row.
-- Scopes: `pages_show_list`, `pages_read_engagement`, `pages_manage_posts`, `instagram_basic`, `instagram_content_publish`. Override with `META_SCOPES`.
+- Scopes: `pages_show_list`, `pages_read_engagement`, `pages_manage_posts`, `business_management`, `instagram_basic`, `instagram_content_publish`. Override with `META_SCOPES`. `business_management` is required for Pages owned by a Meta Business Portfolio; without it `/me/accounts` can return `data: []`.
 - Callback: validate the signed state, then redirect to the frontend with the one-time `code` and `state` in the URL fragment (so they are not sent to the frontend server, logs, or third-party assets).
 - Completion: the authenticated frontend calls `POST /api/connections/meta/complete`. The backend verifies the state belongs to the authenticated user and that the user's current `appId` still matches the one in the state. It exchanges the code → long-lived token → `GET /me/accounts?fields=id,name,access_token,instagram_business_account{...}` using that user's app credentials, then upserts connections.
 - Binding completion to the authenticated user prevents a crafted OAuth start from linking a victim's Pages to a different account.

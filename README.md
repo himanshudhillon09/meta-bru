@@ -112,7 +112,10 @@ curl http://localhost:5001/api/health
 
 1. Sign in and open **Profile → Integration credentials**.
 2. Save the Meta App ID and App Secret from the user's own Meta app. Add the
-   displayed OAuth callback URL to that app's Facebook Login settings.
+   displayed OAuth callback URL to that app's Facebook Login settings. Add the
+   listed permissions to the app, including `business_management` for Pages
+   owned by a Meta Business Portfolio; without it Meta returns an empty Page
+   list even when `pages_show_list` is granted.
 3. Save the Cloudinary cloud name, API key, and API secret. Uploads go under
    `meta-bru/<userId>` in that Cloudinary account.
 4. Save a Gemini API key for caption and image generation.

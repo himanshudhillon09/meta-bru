@@ -13,6 +13,16 @@ export interface MetaOAuthCredentials extends MetaAppCredentials {
     redirectUri: string;
 }
 
+export interface MetaPermissionStatus {
+    granted: string[];
+    declined: string[];
+}
+
+export interface MetaAuthenticatedUser {
+    id: string;
+    name?: string;
+}
+
 /**
  * The OAuth callback is deployment-level: every user's own Meta app must
  * whitelist the same backend URL. If META_REDIRECT_URI is not set, derive it
@@ -164,6 +174,9 @@ export function getOAuthUrl(
         state,
         response_type: 'code',
         scope: env.meta.scopes.join(','),
+        // Re-show the consent screen instead of silently reusing an earlier
+        // grant that may have omitted Page/Instagram permissions.
+        auth_type: 'rerequest',
     });
 
     return `https://www.facebook.com/${env.meta.graphVersion}/dialog/oauth?${params.toString()}`;
@@ -218,6 +231,44 @@ export async function fetchPageAccounts(userToken: string): Promise<MetaPageAcco
     });
 
     return data.data || [];
+}
+
+/**
+ * Used only to explain an empty Page list. Meta can return `data: []` when the
+ * user declined (or was never granted) `pages_show_list`, so the permission
+ * status is much more actionable than the empty response alone.
+ */
+export async function fetchPermissionStatus(
+    userToken: string
+): Promise<MetaPermissionStatus> {
+    const data = await graphRequest<{
+        data?: Array<{ permission?: string; status?: string }>;
+    }>('me/permissions', { accessToken: userToken });
+
+    const granted: string[] = [];
+    const declined: string[] = [];
+    for (const entry of data.data || []) {
+        if (!entry.permission) continue;
+        if (entry.status === 'granted') granted.push(entry.permission);
+        else if (entry.status === 'declined') declined.push(entry.permission);
+    }
+
+    return { granted, declined };
+}
+
+export async function fetchAuthenticatedUser(
+    userToken: string
+): Promise<MetaAuthenticatedUser | null> {
+    try {
+        const data = await graphRequest<{ id?: string; name?: string }>('me', {
+            accessToken: userToken,
+            params: { fields: 'id,name' },
+        });
+        if (!data.id) return null;
+        return data.name ? { id: data.id, name: data.name } : { id: data.id };
+    } catch {
+        return null;
+    }
 }
 
 export async function publishFacebookPhoto(params: {

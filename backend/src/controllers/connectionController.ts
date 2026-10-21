@@ -10,10 +10,13 @@ import { encryptSecret } from '../services/cryptoService.js';
 import {
     exchangeCodeForToken,
     exchangeForLongLivedToken,
+    fetchAuthenticatedUser,
     fetchPageAccounts,
+    fetchPermissionStatus,
     getOAuthUrl,
     resolveMetaRedirectUri,
     type MetaPageAccount,
+    type MetaPermissionStatus,
 } from '../services/metaService.js';
 import { computeNextRunAt, isValidTimezone } from '../services/timeService.js';
 import { AppError } from '../utils/errors.js';
@@ -248,12 +251,65 @@ export async function completeMetaOAuth(req: Request, res: Response): Promise<vo
             shortLivedToken,
             credentials
         );
-        const pages = await fetchPageAccounts(longLivedToken);
+        const [pages, permissions, me] = await Promise.all([
+            fetchPageAccounts(longLivedToken),
+            fetchPermissionStatus(longLivedToken).catch(
+                (error: unknown): MetaPermissionStatus | null => {
+                    console.warn(
+                        '[meta-oauth] Could not read permission status:',
+                        error instanceof Error ? error.message : error
+                    );
+                    return null;
+                }
+            ),
+            fetchAuthenticatedUser(longLivedToken),
+        ]);
 
         if (pages.length === 0) {
+            const accountLabel = me
+                ? `${me.name || 'Facebook account'} (${me.id})`
+                : 'the authenticated Facebook account';
+            const granted =
+                permissions && permissions.granted.length > 0
+                    ? permissions.granted.join(', ')
+                    : 'none';
+            const declined =
+                permissions && permissions.declined.length > 0
+                    ? permissions.declined.join(', ')
+                    : 'none';
+            const notGranted = permissions
+                ? env.meta.scopes.filter(
+                      (scope) => !permissions.granted.includes(scope)
+                  )
+                : [];
+
+            let permissionDetail = ' Meta did not report permission status.';
+            if (permissions) {
+                permissionDetail = ` Granted permissions: ${granted}. Declined: ${declined}.`;
+                if (notGranted.length > 0) {
+                    permissionDetail += ` Not granted: ${notGranted.join(', ')}.`;
+                }
+            }
+
+            const needsBusinessManagement =
+                notGranted.includes('business_management');
+            const businessHint = needsBusinessManagement
+                ? ' This Page appears to be managed by a Meta Business Portfolio: grant business_management and select the business that owns the Page in the consent dialog.'
+                : '';
+            const hint =
+                permissions && notGranted.length === 0
+                    ? ' Meta granted every requested permission, so this is a Page-role, business-selection, or wrong-account issue. Make sure you are logged into the Facebook account that directly manages the Page, select the correct Business Portfolio for business_management, or assign that account a Page role in Business Manager, then reconnect.'
+                    : ` Make sure you are logged into the Facebook account that manages the Page, select the Page in the consent dialog, and grant every requested permission. If a permission is not granted, enable it for your Meta app under App Review → Permissions and Features, then reconnect.${businessHint}`;
+
+            console.warn(
+                `[meta-oauth] No Pages returned for ${accountLabel}. granted=${granted}; declined=${declined}; notGranted=${
+                    notGranted.join(', ') || 'none'
+                }`
+            );
+
             throw new AppError(
                 400,
-                'No Facebook Pages were returned. Make sure you manage a Page and granted the requested permissions.',
+                `No Facebook Pages were returned for ${accountLabel}.${permissionDetail}${hint}`,
                 'NO_PAGES_FOUND'
             );
         }
