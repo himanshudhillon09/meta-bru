@@ -16,7 +16,7 @@ const imageSchema = z.object({
 export async function draftCaption(req: Request, res: Response): Promise<void> {
     const parsed = parseBody(captionSchema, req);
 
-    const caption = await generateCaption({
+    const caption = await generateCaption(req.user.id, {
         ...(parsed.topic ? { topic: parsed.topic } : {}),
         platform: parsed.platform,
         brandProfile: req.user.brandProfile || {},
@@ -27,7 +27,7 @@ export async function draftCaption(req: Request, res: Response): Promise<void> {
 
 export async function createAiImage(req: Request, res: Response): Promise<void> {
     const parsed = parseBody(imageSchema, req);
-    const media = await generateImage(parsed.prompt);
+    const media = await generateImage(req.user.id, parsed.prompt);
 
     res.status(201).json({ success: true, media });
 }

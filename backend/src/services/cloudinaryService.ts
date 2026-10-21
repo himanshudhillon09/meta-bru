@@ -1,18 +1,10 @@
 import { v2 as cloudinary } from 'cloudinary';
-import { env, isCloudinaryConfigured } from '../config/env.js';
+import { getCloudinaryCredentials } from './credentialService.js';
 import { AppError } from '../utils/errors.js';
-
-if (isCloudinaryConfigured) {
-    cloudinary.config({
-        cloud_name: env.cloudinary.cloudName,
-        api_key: env.cloudinary.apiKey,
-        api_secret: env.cloudinary.apiSecret,
-        secure: true,
-    });
-}
 
 export interface UploadedMedia {
     url: string;
+    jpegUrl: string;
     publicId: string;
     width: number;
     height: number;
@@ -20,31 +12,44 @@ export interface UploadedMedia {
     bytes: number;
 }
 
-function assertConfigured(): void {
-    if (!isCloudinaryConfigured) {
-        throw new AppError(
-            503,
-            'Media storage is not configured. Add Cloudinary credentials to the backend environment.',
-            'MEDIA_NOT_CONFIGURED'
-        );
-    }
+function jpegUrlFor(cloudName: string, publicId: string): string {
+    return cloudinary.url(publicId, {
+        cloud_name: cloudName,
+        secure: true,
+        format: 'jpg',
+        transformation: [{ quality: 'auto:good' }],
+    });
 }
 
-export async function uploadImage(buffer: Buffer): Promise<UploadedMedia> {
-    assertConfigured();
+/**
+ * Uploads to the owning user's Cloudinary account. Credentials are passed per
+ * call rather than configured globally, so concurrent users cannot cross-use
+ * each other's Cloudinary accounts.
+ */
+export async function uploadImage(
+    userId: string,
+    buffer: Buffer
+): Promise<UploadedMedia> {
+    const credentials = await getCloudinaryCredentials(userId);
 
     return new Promise<UploadedMedia>((resolve, reject) => {
         const upload = cloudinary.uploader.upload_stream(
             {
-                folder: 'meta-bru',
+                cloud_name: credentials.cloudName,
+                api_key: credentials.apiKey,
+                api_secret: credentials.apiSecret,
+                folder: `meta-bru/${userId}`,
                 resource_type: 'image',
             },
             (error, result) => {
                 if (error || !result) {
+                    const status = (error as { http_code?: number } | undefined)?.http_code;
                     reject(
                         new AppError(
                             502,
-                            error?.message || 'Cloudinary upload failed',
+                            status === 401 || status === 403
+                                ? 'Cloudinary rejected your credentials. Check your Cloudinary API key and secret under Profile.'
+                                : error?.message || 'Cloudinary upload failed',
                             'MEDIA_UPLOAD_FAILED'
                         )
                     );
@@ -53,6 +58,7 @@ export async function uploadImage(buffer: Buffer): Promise<UploadedMedia> {
 
                 resolve({
                     url: result.secure_url,
+                    jpegUrl: jpegUrlFor(credentials.cloudName, result.public_id),
                     publicId: result.public_id,
                     width: result.width ?? 0,
                     height: result.height ?? 0,
@@ -66,16 +72,4 @@ export async function uploadImage(buffer: Buffer): Promise<UploadedMedia> {
     });
 }
 
-/**
- * Instagram only accepts JPEG images fetched from a public URL.
- * Cloudinary can transcode on delivery, so we derive a JPEG URL from the
- * stored asset without keeping a second copy.
- */
-export function getJpegUrl(publicId: string): string {
-    assertConfigured();
-    return cloudinary.url(publicId, {
-        secure: true,
-        format: 'jpg',
-        transformation: [{ quality: 'auto:good' }],
-    });
-}
+export { jpegUrlFor };

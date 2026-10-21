@@ -1,7 +1,8 @@
 import type { IPost, IPostTarget, Platform, PostStatus } from '../models/postModel.js';
 import type { ISocialConnection } from '../models/socialConnectionModel.js';
+import { AppError } from '../utils/errors.js';
+import { getMetaCredentials } from './credentialService.js';
 import { decryptSecret } from './cryptoService.js';
-import { getJpegUrl } from './cloudinaryService.js';
 import {
     MetaApiError,
     createInstagramContainer,
@@ -80,11 +81,9 @@ async function publishToFacebook(
         throw new MetaApiError('Facebook publishing requires an image', 400);
     }
 
-    // Cloudinary uploads may be WebP or PNG. Derive a JPEG delivery URL so
-    // Facebook gets a format it reliably accepts; external URLs are used as-is.
-    const imageUrl = post.mediaPublicId
-        ? getJpegUrl(post.mediaPublicId)
-        : post.mediaUrl;
+    // New uploads store a Cloudinary JPEG delivery URL. Legacy/external posts
+    // fall back to the original public URL.
+    const imageUrl = post.mediaJpegUrl || post.mediaUrl;
 
     const result = await publishFacebookPhoto({
         pageId: connection.pageId,
@@ -112,11 +111,9 @@ async function publishToInstagram(
         );
     }
 
-    if (!post.mediaPublicId) {
-        throw new MetaApiError(
-            'Instagram requires an image uploaded through Meta-Bru (Cloudinary)',
-            400
-        );
+    const imageUrl = post.mediaJpegUrl || post.mediaUrl;
+    if (!imageUrl) {
+        throw new MetaApiError('Instagram requires a public image URL', 400);
     }
 
     const usage = await getInstagramPublishingUsage(igUserId, accessToken);
@@ -126,8 +123,6 @@ async function publishToInstagram(
             429
         );
     }
-
-    const imageUrl = getJpegUrl(post.mediaPublicId);
 
     if (!target.creationId) {
         target.creationId = await createInstagramContainer({
@@ -214,6 +209,32 @@ export async function publishPost(
     if (platforms.length === 0) {
         post.status = 'failed';
         post.lastError = 'No publishing platforms selected';
+        await post.save();
+        return post;
+    }
+
+    try {
+        // Publishing always uses the owning user's Meta app. If they have not
+        // configured one, do not fall back to a legacy/shared app or a stale
+        // Page token.
+        await getMetaCredentials(String(post.userId));
+    } catch (error) {
+        if (
+            !(error instanceof AppError) ||
+            (error.code !== 'META_NOT_CONFIGURED' &&
+                error.code !== 'CREDENTIALS_UNREADABLE')
+        ) {
+            throw error;
+        }
+
+        post.status = 'failed';
+        post.lastError =
+            error.code === 'META_NOT_CONFIGURED'
+                ? 'Add your Meta app credentials under Profile and reconnect this Page.'
+                : 'Stored credentials could not be decrypted. Re-enter them under Profile and reconnect this Page.';
+        connection.tokenStatus = 'needs_reauth';
+        connection.lastError = post.lastError;
+        await connection.save();
         await post.save();
         return post;
     }

@@ -1,13 +1,59 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { AppShell } from '@/components/AppShell';
+import { Modal } from '@/components/Modal';
 import { useAuth } from '@/context/AuthContext';
 import { authApi } from '@/lib/apiClient';
 import {
     getInitialTimezoneOptions,
     getTimezoneOptions,
 } from '@/lib/timezones';
+import type { CredentialStatus } from '@/lib/types';
+
+type CredentialKey = 'meta' | 'cloudinary' | 'gemini';
+
+const REMOVE_MESSAGES: Record<CredentialKey, string> = {
+    meta: 'Remove your Meta app credentials? Your Page connections will be marked for reconnect because their tokens were issued by the previous app.',
+    cloudinary:
+        'Remove your Cloudinary credentials? New image uploads and AI image generation will stop working until you add them again. Existing media URLs keep working.',
+    gemini:
+        'Remove your Gemini API key? Caption drafting and AI image generation will stop working until you add a key again.',
+};
+
+function StatusPill({ configured }: { configured: boolean }) {
+    return (
+        <span
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-wider border ${
+                configured
+                    ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
+                    : 'bg-amber-500/10 text-amber-300 border-amber-500/20'
+            }`}
+        >
+            <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                    configured ? 'bg-emerald-400' : 'bg-amber-400'
+                }`}
+            />
+            {configured ? 'Configured' : 'Not configured'}
+        </span>
+    );
+}
+
+function FieldLabel({ children }: { children: React.ReactNode }) {
+    return (
+        <label className="text-xs font-bold uppercase tracking-widest text-slate-500">
+            {children}
+        </label>
+    );
+}
+
+const inputClass =
+    'mt-2 w-full bg-slate-950/80 border border-white/10 rounded-xl px-4 py-3.5 text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50';
+
+const secondaryButtonClass =
+    'bg-white/5 hover:bg-white/10 disabled:opacity-60 text-white border border-white/10 px-4 py-2.5 rounded-xl text-xs font-bold transition-all';
 
 export default function SettingsPage() {
     const { user, updateUser } = useAuth();
@@ -24,6 +70,21 @@ export default function SettingsPage() {
         getInitialTimezoneOptions('Asia/Kolkata')
     );
 
+    const [credentialStatus, setCredentialStatus] =
+        useState<CredentialStatus | null>(null);
+    const [credentialsLoading, setCredentialsLoading] = useState(true);
+    const [savingCredential, setSavingCredential] = useState<CredentialKey | ''>(
+        ''
+    );
+    const [removeTarget, setRemoveTarget] = useState<CredentialKey | null>(null);
+
+    const [metaAppId, setMetaAppId] = useState('');
+    const [metaAppSecret, setMetaAppSecret] = useState('');
+    const [cloudName, setCloudName] = useState('');
+    const [cloudApiKey, setCloudApiKey] = useState('');
+    const [cloudApiSecret, setCloudApiSecret] = useState('');
+    const [geminiKey, setGeminiKey] = useState('');
+
     useEffect(() => {
         if (!user) return;
         setName(user.name || '');
@@ -37,6 +98,33 @@ export default function SettingsPage() {
     useEffect(() => {
         setTimezones(getTimezoneOptions(timezone));
     }, [timezone]);
+
+    const loadCredentials = async () => {
+        setCredentialsLoading(true);
+        try {
+            const data: any = await authApi.getCredentials();
+            if (data.success) {
+                setCredentialStatus(data.credentials);
+                setMetaAppId(data.credentials.meta?.appId || '');
+                setCloudName(data.credentials.cloudinary?.cloudName || '');
+                if (data.credentials.storageError) {
+                    setError(data.credentials.storageError);
+                }
+            }
+        } catch (err: any) {
+            setError(
+                typeof err === 'string'
+                    ? err
+                    : 'Could not load your integration credentials'
+            );
+        } finally {
+            setCredentialsLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        void loadCredentials();
+    }, []);
 
     const save = async (event: React.FormEvent) => {
         event.preventDefault();
@@ -52,21 +140,220 @@ export default function SettingsPage() {
             });
             if (data.success) {
                 updateUser(data.user);
-                setNotice('Settings saved.');
+                setNotice('Profile saved.');
             }
         } catch (err: any) {
-            setError(typeof err === 'string' ? err : 'Could not save settings');
+            setError(typeof err === 'string' ? err : 'Could not save profile');
         } finally {
             setSaving(false);
         }
+    };
+
+    const saveMeta = async (event: React.FormEvent) => {
+        event.preventDefault();
+        setError('');
+        setNotice('');
+
+        if (!metaAppId.trim()) {
+            setError('Enter your Meta App ID.');
+            return;
+        }
+        if (!credentialStatus?.meta.configured && !metaAppSecret.trim()) {
+            setError('Enter your Meta App Secret.');
+            return;
+        }
+        if (
+            credentialStatus?.meta.configured &&
+            credentialStatus.meta.appId !== metaAppId.trim() &&
+            !metaAppSecret.trim()
+        ) {
+            setError(
+                'Enter the App Secret for the new Meta app. A secret from a different app cannot be reused.'
+            );
+            return;
+        }
+
+        setSavingCredential('meta');
+        try {
+            const data: any = await authApi.saveMetaCredentials({
+                appId: metaAppId.trim(),
+                ...(metaAppSecret.trim()
+                    ? { appSecret: metaAppSecret.trim() }
+                    : {}),
+            });
+            if (data.success) {
+                setCredentialStatus(data.credentials);
+                setMetaAppId(data.credentials.meta?.appId || metaAppId.trim());
+                setMetaAppSecret('');
+                setNotice(
+                    'Meta app credentials saved. If you changed the app, reconnect your Pages under Connections.'
+                );
+            }
+        } catch (err: any) {
+            setError(
+                typeof err === 'string'
+                    ? err
+                    : 'Could not save Meta app credentials'
+            );
+        } finally {
+            setSavingCredential('');
+        }
+    };
+
+    const saveCloudinary = async (event: React.FormEvent) => {
+        event.preventDefault();
+        setError('');
+        setNotice('');
+
+        if (!cloudName.trim()) {
+            setError('Enter your Cloudinary cloud name.');
+            return;
+        }
+        if (
+            !credentialStatus?.cloudinary.configured &&
+            (!cloudApiKey.trim() || !cloudApiSecret.trim())
+        ) {
+            setError('Enter your Cloudinary API key and API secret.');
+            return;
+        }
+        if (
+            credentialStatus?.cloudinary.configured &&
+            credentialStatus.cloudinary.cloudName !== cloudName.trim() &&
+            (!cloudApiKey.trim() || !cloudApiSecret.trim())
+        ) {
+            setError(
+                'Enter the API key and API secret for the new Cloudinary cloud. Credentials from a different cloud cannot be reused.'
+            );
+            return;
+        }
+
+        setSavingCredential('cloudinary');
+        try {
+            const data: any = await authApi.saveCloudinaryCredentials({
+                cloudName: cloudName.trim(),
+                ...(cloudApiKey.trim() ? { apiKey: cloudApiKey.trim() } : {}),
+                ...(cloudApiSecret.trim()
+                    ? { apiSecret: cloudApiSecret.trim() }
+                    : {}),
+            });
+            if (data.success) {
+                setCredentialStatus(data.credentials);
+                setCloudName(
+                    data.credentials.cloudinary?.cloudName || cloudName.trim()
+                );
+                setCloudApiKey('');
+                setCloudApiSecret('');
+                setNotice('Cloudinary credentials saved.');
+            }
+        } catch (err: any) {
+            setError(
+                typeof err === 'string'
+                    ? err
+                    : 'Could not save Cloudinary credentials'
+            );
+        } finally {
+            setSavingCredential('');
+        }
+    };
+
+    const saveGemini = async (event: React.FormEvent) => {
+        event.preventDefault();
+        setError('');
+        setNotice('');
+
+        if (!geminiKey.trim()) {
+            setError('Enter your Gemini API key.');
+            return;
+        }
+
+        setSavingCredential('gemini');
+        try {
+            const data: any = await authApi.saveGeminiCredentials({
+                apiKey: geminiKey.trim(),
+            });
+            if (data.success) {
+                setCredentialStatus(data.credentials);
+                setGeminiKey('');
+                setNotice('Gemini API key saved.');
+            }
+        } catch (err: any) {
+            setError(
+                typeof err === 'string'
+                    ? err
+                    : 'Could not save Gemini API key'
+            );
+        } finally {
+            setSavingCredential('');
+        }
+    };
+
+    const removeCredential = async () => {
+        const target = removeTarget;
+        if (!target) return;
+
+        setSavingCredential(target);
+        setError('');
+        setNotice('');
+
+        try {
+            const data: any =
+                target === 'meta'
+                    ? await authApi.removeMetaCredentials()
+                    : target === 'cloudinary'
+                      ? await authApi.removeCloudinaryCredentials()
+                      : await authApi.removeGeminiCredentials();
+
+            if (data.success) {
+                setCredentialStatus(data.credentials);
+                if (target === 'meta') {
+                    setMetaAppId('');
+                    setMetaAppSecret('');
+                } else if (target === 'cloudinary') {
+                    setCloudName('');
+                    setCloudApiKey('');
+                    setCloudApiSecret('');
+                } else {
+                    setGeminiKey('');
+                }
+                setNotice(
+                    target === 'meta'
+                        ? 'Meta app credentials removed. Reconnect your Pages after adding a new app.'
+                        : target === 'cloudinary'
+                          ? 'Cloudinary credentials removed.'
+                          : 'Gemini API key removed.'
+                );
+            }
+        } catch (err: any) {
+            setError(
+                typeof err === 'string'
+                    ? err
+                    : 'Could not remove credentials'
+            );
+        } finally {
+            setSavingCredential('');
+            setRemoveTarget(null);
+        }
+    };
+
+    const copyCallbackUrl = () => {
+        const value = credentialStatus?.meta.redirectUri;
+        if (!value) return;
+        if (!navigator.clipboard) {
+            setError('Copy is not available in this browser. Select the URL manually.');
+            return;
+        }
+        void navigator.clipboard
+            .writeText(value)
+            .then(() => setNotice('OAuth callback URL copied.'))
+            .catch(() => setError('Could not copy the callback URL.'));
     };
 
     if (!user) return null;
 
     return (
         <AppShell
-            title="Settings"
-            subtitle="Your profile, timezone, and the brand context used by AI assist."
+            title="Profile & credentials"
+            subtitle="Your account, brand context, and the integrations that belong only to you."
         >
             {notice ? (
                 <div className="mb-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
@@ -79,39 +366,36 @@ export default function SettingsPage() {
                 </div>
             ) : null}
 
-            <form onSubmit={save} className="grid grid-cols-1 lg:grid-cols-[0.8fr_1.2fr] gap-6 items-start">
+            <form
+                onSubmit={save}
+                className="grid grid-cols-1 lg:grid-cols-[0.8fr_1.2fr] gap-6 items-start"
+            >
                 <section className="rounded-3xl border border-white/5 bg-slate-900/40 p-6 sm:p-8 shadow-xl">
                     <h2 className="text-lg font-bold text-white mb-6">Account</h2>
 
                     <div className="space-y-5">
                         <div>
-                            <label className="text-xs font-bold uppercase tracking-widest text-slate-500">
-                                Full name
-                            </label>
+                            <FieldLabel>Full name</FieldLabel>
                             <input
                                 value={name}
                                 onChange={(event) => setName(event.target.value)}
-                                className="mt-2 w-full bg-slate-950/80 border border-white/10 rounded-xl px-4 py-3.5 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                                className={inputClass}
                             />
                         </div>
 
                         <div>
-                            <label className="text-xs font-bold uppercase tracking-widest text-slate-500">
-                                Email
-                            </label>
+                            <FieldLabel>Email</FieldLabel>
                             <div className="mt-2 w-full bg-slate-950/40 border border-white/5 rounded-xl px-4 py-3.5 text-sm text-slate-400">
                                 {user.email}
                             </div>
                         </div>
 
                         <div>
-                            <label className="text-xs font-bold uppercase tracking-widest text-slate-500">
-                                Default timezone
-                            </label>
+                            <FieldLabel>Default timezone</FieldLabel>
                             <select
                                 value={timezone}
                                 onChange={(event) => setTimezone(event.target.value)}
-                                className="mt-2 w-full bg-slate-950/80 border border-white/10 rounded-xl px-4 py-3.5 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                                className={inputClass}
                             >
                                 {timezones.map((zone) => (
                                     <option key={zone} value={zone}>
@@ -127,7 +411,8 @@ export default function SettingsPage() {
                     </div>
 
                     <div className="mt-8 pt-6 border-t border-white/5 text-xs text-slate-500">
-                        Role: <span className="capitalize text-slate-300">{user.role}</span>
+                        Role:{' '}
+                        <span className="capitalize text-slate-300">{user.role}</span>
                         <br />
                         Status:{' '}
                         <span
@@ -151,50 +436,42 @@ export default function SettingsPage() {
 
                     <div className="space-y-5">
                         <div>
-                            <label className="text-xs font-bold uppercase tracking-widest text-slate-500">
-                                Niche
-                            </label>
+                            <FieldLabel>Niche</FieldLabel>
                             <input
                                 value={niche}
                                 onChange={(event) => setNiche(event.target.value)}
                                 placeholder="e.g. sustainable fashion, local bakery, fitness coaching"
-                                className="mt-2 w-full bg-slate-950/80 border border-white/10 rounded-xl px-4 py-3.5 text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                                className={inputClass}
                             />
                         </div>
 
                         <div>
-                            <label className="text-xs font-bold uppercase tracking-widest text-slate-500">
-                                Tone
-                            </label>
+                            <FieldLabel>Tone</FieldLabel>
                             <input
                                 value={tone}
                                 onChange={(event) => setTone(event.target.value)}
                                 placeholder="e.g. warm, bold, playful, professional"
-                                className="mt-2 w-full bg-slate-950/80 border border-white/10 rounded-xl px-4 py-3.5 text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                                className={inputClass}
                             />
                         </div>
 
                         <div>
-                            <label className="text-xs font-bold uppercase tracking-widest text-slate-500">
-                                Audience
-                            </label>
+                            <FieldLabel>Audience</FieldLabel>
                             <input
                                 value={audience}
                                 onChange={(event) => setAudience(event.target.value)}
                                 placeholder="Who are you talking to?"
-                                className="mt-2 w-full bg-slate-950/80 border border-white/10 rounded-xl px-4 py-3.5 text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                                className={inputClass}
                             />
                         </div>
 
                         <div>
-                            <label className="text-xs font-bold uppercase tracking-widest text-slate-500">
-                                Keywords
-                            </label>
+                            <FieldLabel>Keywords</FieldLabel>
                             <input
                                 value={keywords}
                                 onChange={(event) => setKeywords(event.target.value)}
                                 placeholder="Words or phrases to include naturally"
-                                className="mt-2 w-full bg-slate-950/80 border border-white/10 rounded-xl px-4 py-3.5 text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                                className={inputClass}
                             />
                         </div>
                     </div>
@@ -204,10 +481,363 @@ export default function SettingsPage() {
                         disabled={saving}
                         className="mt-7 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white px-6 py-3 rounded-xl text-sm font-bold transition-all"
                     >
-                        {saving ? 'Saving...' : 'Save settings'}
+                        {saving ? 'Saving...' : 'Save profile'}
                     </button>
                 </section>
             </form>
+
+            <section className="mt-10">
+                <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+                    <div>
+                        <h2 className="text-xl font-bold text-white">
+                            Integration credentials
+                        </h2>
+                        <p className="text-sm text-slate-400 mt-1 max-w-2xl">
+                            Each user brings their own Meta app, Cloudinary
+                            account, and Gemini API key. Secrets are encrypted
+                            at rest and are never shown again after saving.
+                        </p>
+                    </div>
+                    <Link
+                        href="/connections"
+                        className="text-sm font-bold text-indigo-400 hover:text-indigo-300"
+                    >
+                        Manage Page connections →
+                    </Link>
+                </div>
+
+                {credentialsLoading ? (
+                    <div className="flex justify-center py-16">
+                        <div className="animate-spin rounded-full h-9 w-9 border-t-2 border-indigo-500" />
+                    </div>
+                ) : (
+                    <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+                        <form
+                            onSubmit={saveMeta}
+                            className="lg:col-span-2 rounded-3xl border border-white/5 bg-slate-900/40 p-6 sm:p-8 shadow-xl"
+                        >
+                            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                                <div>
+                                    <h3 className="text-lg font-bold text-white">
+                                        Meta app
+                                    </h3>
+                                    <p className="text-sm text-slate-400 mt-1">
+                                        Used for Facebook Login and Page
+                                        connections. Create an app at{' '}
+                                        <a
+                                            href="https://developers.facebook.com/apps"
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="text-indigo-400 hover:text-indigo-300"
+                                        >
+                                            developers.facebook.com
+                                        </a>
+                                        .
+                                    </p>
+                                </div>
+                                <StatusPill
+                                    configured={Boolean(
+                                        credentialStatus?.meta.configured
+                                    )}
+                                />
+                            </div>
+
+                            <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-5">
+                                <div>
+                                    <FieldLabel>Meta App ID</FieldLabel>
+                                    <input
+                                        value={metaAppId}
+                                        onChange={(event) =>
+                                            setMetaAppId(event.target.value)
+                                        }
+                                        autoComplete="off"
+                                        spellCheck={false}
+                                        placeholder="e.g. 123456789012345"
+                                        className={inputClass}
+                                    />
+                                </div>
+                                <div>
+                                    <FieldLabel>Meta App Secret</FieldLabel>
+                                    <input
+                                        type="password"
+                                        value={metaAppSecret}
+                                        onChange={(event) =>
+                                            setMetaAppSecret(event.target.value)
+                                        }
+                                        autoComplete="new-password"
+                                        placeholder={
+                                            !credentialStatus?.meta.configured
+                                                ? 'Paste your app secret'
+                                                : credentialStatus.meta.appId ===
+                                                    metaAppId.trim()
+                                                  ? 'Saved — leave blank to keep it'
+                                                  : 'Enter the new app secret'
+                                        }
+                                        className={inputClass}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="mt-5">
+                                <FieldLabel>OAuth callback URL</FieldLabel>
+                                <div className="mt-2 flex flex-col sm:flex-row gap-2">
+                                    <div className="flex-1 bg-slate-950/40 border border-white/5 rounded-xl px-4 py-3.5 text-xs text-slate-300 break-all font-mono">
+                                        {credentialStatus?.meta.redirectUri ||
+                                            'Set META_REDIRECT_URI on the backend'}
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={copyCallbackUrl}
+                                        className={secondaryButtonClass}
+                                    >
+                                        Copy
+                                    </button>
+                                </div>
+                                <p className="text-xs text-slate-500 mt-2">
+                                    Add this exact URL under Facebook Login →
+                                    Settings → Valid OAuth Redirect URIs in your
+                                    Meta app.
+                                </p>
+                            </div>
+
+                            <div className="mt-5">
+                                <FieldLabel>Required permissions</FieldLabel>
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                    {(credentialStatus?.meta.scopes || []).map(
+                                        (scope) => (
+                                            <span
+                                                key={scope}
+                                                className="rounded-lg border border-white/5 bg-slate-950/40 px-2.5 py-1.5 text-[11px] font-mono text-slate-400"
+                                            >
+                                                {scope}
+                                            </span>
+                                        )
+                                    )}
+                                </div>
+                            </div>
+
+                            {credentialStatus?.meta.needsReauthCount ? (
+                                <div className="mt-5 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-200">
+                                    {credentialStatus.meta.needsReauthCount} Page
+                                    {credentialStatus.meta.needsReauthCount === 1
+                                        ? ''
+                                        : 's'}{' '}
+                                    need reconnecting because the Meta app
+                                    credentials changed.
+                                </div>
+                            ) : null}
+
+                            <div className="mt-6 flex flex-wrap gap-3">
+                                <button
+                                    type="submit"
+                                    disabled={savingCredential === 'meta'}
+                                    className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white px-5 py-3 rounded-xl text-sm font-bold transition-all"
+                                >
+                                    {savingCredential === 'meta'
+                                        ? 'Saving...'
+                                        : 'Save Meta app'}
+                                </button>
+                                {credentialStatus?.meta.configured ? (
+                                    <button
+                                        type="button"
+                                        onClick={() => setRemoveTarget('meta')}
+                                        disabled={savingCredential === 'meta'}
+                                        className="bg-rose-500/10 hover:bg-rose-500/20 disabled:opacity-60 text-rose-300 border border-rose-500/20 px-5 py-3 rounded-xl text-sm font-bold transition-all"
+                                    >
+                                        Remove
+                                    </button>
+                                ) : null}
+                            </div>
+                        </form>
+
+                        <form
+                            onSubmit={saveCloudinary}
+                            className="rounded-3xl border border-white/5 bg-slate-900/40 p-6 sm:p-8 shadow-xl"
+                        >
+                            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                                <div>
+                                    <h3 className="text-lg font-bold text-white">
+                                        Cloudinary
+                                    </h3>
+                                    <p className="text-sm text-slate-400 mt-1">
+                                        Stores the images you upload and the
+                                        images Gemini creates.
+                                    </p>
+                                </div>
+                                <StatusPill
+                                    configured={Boolean(
+                                        credentialStatus?.cloudinary.configured
+                                    )}
+                                />
+                            </div>
+
+                            <div className="mt-6 space-y-5">
+                                <div>
+                                    <FieldLabel>Cloud name</FieldLabel>
+                                    <input
+                                        value={cloudName}
+                                        onChange={(event) =>
+                                            setCloudName(event.target.value)
+                                        }
+                                        autoComplete="off"
+                                        spellCheck={false}
+                                        placeholder="Your Cloudinary cloud name"
+                                        className={inputClass}
+                                    />
+                                </div>
+                                <div>
+                                    <FieldLabel>API key</FieldLabel>
+                                    <input
+                                        type="password"
+                                        value={cloudApiKey}
+                                        onChange={(event) =>
+                                            setCloudApiKey(event.target.value)
+                                        }
+                                        autoComplete="new-password"
+                                        placeholder={
+                                            !credentialStatus?.cloudinary
+                                                .configured
+                                                ? 'Cloudinary API key'
+                                                : credentialStatus.cloudinary
+                                                        .cloudName ===
+                                                    cloudName.trim()
+                                                  ? 'Saved — leave blank to keep it'
+                                                  : 'Enter the new cloud API key'
+                                        }
+                                        className={inputClass}
+                                    />
+                                </div>
+                                <div>
+                                    <FieldLabel>API secret</FieldLabel>
+                                    <input
+                                        type="password"
+                                        value={cloudApiSecret}
+                                        onChange={(event) =>
+                                            setCloudApiSecret(event.target.value)
+                                        }
+                                        autoComplete="new-password"
+                                        placeholder={
+                                            !credentialStatus?.cloudinary
+                                                .configured
+                                                ? 'Cloudinary API secret'
+                                                : credentialStatus.cloudinary
+                                                        .cloudName ===
+                                                    cloudName.trim()
+                                                  ? 'Saved — leave blank to keep it'
+                                                  : 'Enter the new cloud API secret'
+                                        }
+                                        className={inputClass}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="mt-6 flex flex-wrap gap-3">
+                                <button
+                                    type="submit"
+                                    disabled={savingCredential === 'cloudinary'}
+                                    className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white px-5 py-3 rounded-xl text-sm font-bold transition-all"
+                                >
+                                    {savingCredential === 'cloudinary'
+                                        ? 'Saving...'
+                                        : 'Save Cloudinary'}
+                                </button>
+                                {credentialStatus?.cloudinary.configured ? (
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            setRemoveTarget('cloudinary')
+                                        }
+                                        disabled={savingCredential === 'cloudinary'}
+                                        className="bg-rose-500/10 hover:bg-rose-500/20 disabled:opacity-60 text-rose-300 border border-rose-500/20 px-5 py-3 rounded-xl text-sm font-bold transition-all"
+                                    >
+                                        Remove
+                                    </button>
+                                ) : null}
+                            </div>
+                        </form>
+
+                        <form
+                            onSubmit={saveGemini}
+                            className="rounded-3xl border border-white/5 bg-slate-900/40 p-6 sm:p-8 shadow-xl"
+                        >
+                            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                                <div>
+                                    <h3 className="text-lg font-bold text-white">
+                                        Gemini
+                                    </h3>
+                                    <p className="text-sm text-slate-400 mt-1">
+                                        Writes captions and generates images for
+                                        your posts.
+                                    </p>
+                                </div>
+                                <StatusPill
+                                    configured={Boolean(
+                                        credentialStatus?.gemini.configured
+                                    )}
+                                />
+                            </div>
+
+                            <div className="mt-6">
+                                <FieldLabel>API key</FieldLabel>
+                                <input
+                                    type="password"
+                                    value={geminiKey}
+                                    onChange={(event) =>
+                                        setGeminiKey(event.target.value)
+                                    }
+                                    autoComplete="new-password"
+                                    placeholder={
+                                        credentialStatus?.gemini.configured
+                                            ? 'Saved — enter a new key to replace it'
+                                            : 'Paste your Gemini API key'
+                                    }
+                                    className={inputClass}
+                                />
+                                <p className="text-xs text-slate-500 mt-2">
+                                    Create a key in Google AI Studio. It is used
+                                    only for your account.
+                                </p>
+                            </div>
+
+                            <div className="mt-6 flex flex-wrap gap-3">
+                                <button
+                                    type="submit"
+                                    disabled={savingCredential === 'gemini'}
+                                    className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white px-5 py-3 rounded-xl text-sm font-bold transition-all"
+                                >
+                                    {savingCredential === 'gemini'
+                                        ? 'Saving...'
+                                        : 'Save Gemini key'}
+                                </button>
+                                {credentialStatus?.gemini.configured ? (
+                                    <button
+                                        type="button"
+                                        onClick={() => setRemoveTarget('gemini')}
+                                        disabled={savingCredential === 'gemini'}
+                                        className="bg-rose-500/10 hover:bg-rose-500/20 disabled:opacity-60 text-rose-300 border border-rose-500/20 px-5 py-3 rounded-xl text-sm font-bold transition-all"
+                                    >
+                                        Remove
+                                    </button>
+                                ) : null}
+                            </div>
+                        </form>
+                    </div>
+                )}
+            </section>
+
+            <Modal
+                isOpen={removeTarget !== null}
+                onClose={() => setRemoveTarget(null)}
+                onConfirm={removeCredential}
+                title="Remove credentials?"
+                message={
+                    removeTarget
+                        ? REMOVE_MESSAGES[removeTarget]
+                        : 'Remove these credentials?'
+                }
+                confirmText="Remove"
+                type="danger"
+            />
         </AppShell>
     );
 }

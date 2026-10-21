@@ -27,6 +27,15 @@ const createPostSchema = z.object({
             (value) => /^https?:\/\//i.test(value),
             'mediaUrl must use http or https'
         ),
+    mediaJpegUrl: z
+        .string()
+        .url('mediaJpegUrl must be a public URL')
+        .refine(
+            (value) => /^https?:\/\//i.test(value),
+            'mediaJpegUrl must use http or https'
+        )
+        .optional()
+        .default(''),
     mediaPublicId: z.string().max(300).optional().default(''),
     platforms: platformSchema,
     action: z.enum(['draft', 'queue', 'now']).default('queue'),
@@ -161,6 +170,7 @@ export async function createPost(req: Request, res: Response): Promise<void> {
         connectionId: connection._id,
         caption: parsed.caption,
         mediaUrl: parsed.mediaUrl,
+        mediaJpegUrl: parsed.mediaJpegUrl,
         mediaPublicId: parsed.mediaPublicId,
         platforms: parsed.platforms,
         // A "post now" is created as publishing so the scheduler cannot also

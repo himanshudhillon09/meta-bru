@@ -24,6 +24,7 @@ export interface IPost extends mongoose.Document {
     connectionId: mongoose.Types.ObjectId;
     caption: string;
     mediaUrl: string;
+    mediaJpegUrl: string;
     mediaPublicId: string;
     mediaType: 'image';
     platforms: { facebook: boolean; instagram: boolean };
@@ -68,6 +69,8 @@ const postSchema = new mongoose.Schema<IPost>(
         },
         caption: { type: String, required: true, maxlength: 2200 },
         mediaUrl: { type: String, required: true },
+        /** JPEG delivery URL for Meta. Empty for legacy/external media. */
+        mediaJpegUrl: { type: String, default: '' },
         mediaPublicId: { type: String, default: '' },
         mediaType: { type: String, enum: ['image'], default: 'image' },
         platforms: {

@@ -41,6 +41,16 @@ const userSchema = new mongoose.Schema({
         tone: { type: String, default: 'friendly and engaging' },
         audience: { type: String, default: '' },
         keywords: { type: String, default: '' }
+    },
+    /**
+     * AES-256-GCM encrypted JSON blob containing the user's own Meta app
+     * credentials, Cloudinary credentials, and Gemini API key. Never select
+     * this field unless the credential service explicitly needs it.
+     */
+    credentialsEnc: {
+        type: String,
+        default: '',
+        select: false
     }
 }, {
     timestamps: true

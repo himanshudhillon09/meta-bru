@@ -7,7 +7,7 @@ export async function uploadMedia(req: Request, res: Response): Promise<void> {
         throw new AppError(400, 'No image file was uploaded', 'NO_FILE');
     }
 
-    const media = await uploadToCloudinary(req.file.buffer);
+    const media = await uploadToCloudinary(req.user.id, req.file.buffer);
 
     res.status(201).json({ success: true, media });
 }

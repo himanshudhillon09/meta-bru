@@ -1,10 +1,7 @@
-import {
-    env,
-    isCloudinaryConfigured,
-    isGeminiConfigured,
-} from '../config/env.js';
+import { env } from '../config/env.js';
 import { AppError } from '../utils/errors.js';
 import { uploadImage, type UploadedMedia } from './cloudinaryService.js';
+import { getGeminiCredentials } from './credentialService.js';
 
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
@@ -19,16 +16,6 @@ interface CaptionInput {
     topic?: string;
     platform: 'facebook' | 'instagram' | 'both';
     brandProfile?: BrandProfile;
-}
-
-function assertConfigured(): void {
-    if (!isGeminiConfigured) {
-        throw new AppError(
-            503,
-            'AI assist is not configured. Add GEMINI_API_KEY to the backend environment.',
-            'AI_NOT_CONFIGURED'
-        );
-    }
 }
 
 function buildCaptionPrompt(input: CaptionInput): string {
@@ -53,8 +40,11 @@ function buildCaptionPrompt(input: CaptionInput): string {
     return parts.join('\n');
 }
 
-export async function generateCaption(input: CaptionInput): Promise<string> {
-    assertConfigured();
+export async function generateCaption(
+    userId: string,
+    input: CaptionInput
+): Promise<string> {
+    const credentials = await getGeminiCredentials(userId);
 
     let response: Response;
     try {
@@ -64,7 +54,7 @@ export async function generateCaption(input: CaptionInput): Promise<string> {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'x-goog-api-key': env.gemini.apiKey,
+                    'x-goog-api-key': credentials.apiKey,
                 },
                 body: JSON.stringify({
                     contents: [{ parts: [{ text: buildCaptionPrompt(input) }] }],
@@ -111,16 +101,11 @@ export async function generateCaption(input: CaptionInput): Promise<string> {
     return caption.slice(0, 2200);
 }
 
-export async function generateImage(prompt: string): Promise<UploadedMedia> {
-    assertConfigured();
-
-    if (!isCloudinaryConfigured) {
-        throw new AppError(
-            503,
-            'AI image generation needs media storage. Add Cloudinary credentials to the backend environment.',
-            'MEDIA_NOT_CONFIGURED'
-        );
-    }
+export async function generateImage(
+    userId: string,
+    prompt: string
+): Promise<UploadedMedia> {
+    const credentials = await getGeminiCredentials(userId);
 
     let response: Response;
     try {
@@ -130,7 +115,7 @@ export async function generateImage(prompt: string): Promise<UploadedMedia> {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'x-goog-api-key': env.gemini.apiKey,
+                    'x-goog-api-key': credentials.apiKey,
                 },
                 body: JSON.stringify({
                     instances: [{ prompt }],
@@ -170,5 +155,5 @@ export async function generateImage(prompt: string): Promise<UploadedMedia> {
         throw new AppError(502, 'Gemini returned no image data', 'AI_EMPTY_RESPONSE');
     }
 
-    return uploadImage(Buffer.from(base64, 'base64'));
+    return uploadImage(userId, Buffer.from(base64, 'base64'));
 }

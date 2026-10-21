@@ -73,7 +73,7 @@ export default function Home() {
               <svg className="w-6 h-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
             </div>
             <h3 className="text-2xl font-bold mb-4 text-white group-hover:text-purple-400 transition-colors">AI creative studio</h3>
-            <p className="text-slate-400 leading-relaxed">Draft captions and generate images with Gemini, guided by the brand profile you set once in Settings.</p>
+            <p className="text-slate-400 leading-relaxed">Draft captions and generate images with Gemini, guided by the brand profile you set once in Profile.</p>
           </div>
           <div className="bg-slate-900/40 backdrop-blur-xl border border-white/5 p-10 rounded-[32px] hover:-translate-y-2 transition-all hover:bg-slate-900/60 hover:border-rose-500/30 group">
             <div className="w-12 h-12 bg-rose-500/20 rounded-2xl flex items-center justify-center mb-6 border border-rose-500/20 group-hover:bg-rose-500/30 transition-colors">

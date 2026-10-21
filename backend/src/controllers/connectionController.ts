@@ -1,16 +1,18 @@
 import type { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
-import { env, isMetaConfigured } from '../config/env.js';
+import { env } from '../config/env.js';
 import { Post } from '../models/postModel.js';
 import { SocialConnection } from '../models/socialConnectionModel.js';
 import { User } from '../models/userModel.js';
+import { getMetaCredentials } from '../services/credentialService.js';
 import { encryptSecret } from '../services/cryptoService.js';
 import {
     exchangeCodeForToken,
     exchangeForLongLivedToken,
     fetchPageAccounts,
     getOAuthUrl,
+    resolveMetaRedirectUri,
     type MetaPageAccount,
 } from '../services/metaService.js';
 import { computeNextRunAt, isValidTimezone } from '../services/timeService.js';
@@ -57,13 +59,8 @@ export async function listConnections(req: Request, res: Response): Promise<void
 }
 
 export async function startMetaOAuth(req: Request, res: Response): Promise<void> {
-    if (!isMetaConfigured) {
-        throw new AppError(
-            503,
-            'Meta app is not configured. Add META_APP_ID, META_APP_SECRET and META_REDIRECT_URI.',
-            'META_NOT_CONFIGURED'
-        );
-    }
+    const meta = await getMetaCredentials(req.user.id);
+    const redirectUri = resolveMetaRedirectUri(req);
 
     const requestedTimezone = req.query.timezone;
     const timezone =
@@ -72,12 +69,21 @@ export async function startMetaOAuth(req: Request, res: Response): Promise<void>
             : env.defaultTimezone;
 
     const state = jwt.sign(
-        { id: req.user.id, purpose: 'meta_oauth', timezone },
+        {
+            id: req.user.id,
+            purpose: 'meta_oauth',
+            timezone,
+            appId: meta.appId,
+            redirectUri,
+        },
         META_OAUTH_STATE_SECRET,
         { expiresIn: '10m' }
     );
 
-    res.json({ success: true, url: getOAuthUrl(state) });
+    res.json({
+        success: true,
+        url: getOAuthUrl({ ...meta, redirectUri }, state),
+    });
 }
 
 async function upsertPagesForUser(
@@ -191,7 +197,13 @@ export async function metaOAuthCallback(req: Request, res: Response): Promise<vo
 export async function completeMetaOAuth(req: Request, res: Response): Promise<void> {
     const { code, state } = parseBody(completeOAuthSchema, req);
 
-    let decoded: { id?: string; purpose?: string; timezone?: string };
+    let decoded: {
+        id?: string;
+        purpose?: string;
+        timezone?: string;
+        appId?: string;
+        redirectUri?: string;
+    };
     try {
         decoded = jwt.verify(state, META_OAUTH_STATE_SECRET) as typeof decoded;
     } catch {
@@ -217,17 +229,25 @@ export async function completeMetaOAuth(req: Request, res: Response): Promise<vo
     if (!user?.isActive) {
         throw new AppError(403, 'Your account is inactive', 'ACCOUNT_INACTIVE');
     }
-    if (!isMetaConfigured) {
+
+    const meta = await getMetaCredentials(req.user.id);
+    if (!decoded.appId || decoded.appId !== meta.appId) {
         throw new AppError(
-            503,
-            'Meta app is not configured. Add META_APP_ID, META_APP_SECRET and META_REDIRECT_URI.',
-            'META_NOT_CONFIGURED'
+            400,
+            'Your Meta app credentials changed during login. Start the connection again.',
+            'OAUTH_APP_MISMATCH'
         );
     }
 
+    const redirectUri = decoded.redirectUri || resolveMetaRedirectUri(req);
+    const credentials = { ...meta, redirectUri };
+
     try {
-        const shortLivedToken = await exchangeCodeForToken(code);
-        const longLivedToken = await exchangeForLongLivedToken(shortLivedToken);
+        const shortLivedToken = await exchangeCodeForToken(code, credentials);
+        const longLivedToken = await exchangeForLongLivedToken(
+            shortLivedToken,
+            credentials
+        );
         const pages = await fetchPageAccounts(longLivedToken);
 
         if (pages.length === 0) {

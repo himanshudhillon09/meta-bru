@@ -18,7 +18,7 @@ const NAV_ITEMS: NavItem[] = [
     { href: '/queue', label: 'Queue', icon: 'list' },
     { href: '/activity', label: 'Activity', icon: 'clock' },
     { href: '/connections', label: 'Connections', icon: 'link' },
-    { href: '/settings', label: 'Settings', icon: 'settings' },
+    { href: '/settings', label: 'Profile', icon: 'settings' },
 ];
 
 function NavIcon({ name }: { name: string }) {

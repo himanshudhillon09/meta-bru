@@ -15,6 +15,28 @@ export interface User {
     brandProfile?: BrandProfile;
 }
 
+export interface CredentialStatus {
+    storageError: string;
+    meta: {
+        configured: boolean;
+        appId: string;
+        appSecretConfigured: boolean;
+        redirectUri: string;
+        scopes: string[];
+        connectionsCount: number;
+        needsReauthCount: number;
+    };
+    cloudinary: {
+        configured: boolean;
+        cloudName: string;
+        apiKeyConfigured: boolean;
+        apiSecretConfigured: boolean;
+    };
+    gemini: {
+        configured: boolean;
+    };
+}
+
 export interface InstagramAccount {
     id: string;
     username: string;
@@ -72,6 +94,7 @@ export interface Post {
     connectionId: string | PostConnection;
     caption: string;
     mediaUrl: string;
+    mediaJpegUrl?: string;
     mediaPublicId: string;
     platforms: { facebook: boolean; instagram: boolean };
     status: PostStatus;
@@ -85,6 +108,7 @@ export interface Post {
 
 export interface MediaAsset {
     url: string;
+    jpegUrl: string;
     publicId: string;
     width: number;
     height: number;

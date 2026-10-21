@@ -66,11 +66,14 @@ export const env = {
     frontendUrl,
     defaultTimezone,
     meta: {
-        appId: optional('META_APP_ID'),
-        appSecret: optional('META_APP_SECRET'),
+        /**
+         * Deployment-level OAuth callback. Meta app IDs and secrets are
+         * per-user and stored encrypted under the user's profile. Every user
+         * must add this exact callback URL to their own Meta app.
+         */
         redirectUri: optional('META_REDIRECT_URI'),
         graphVersion: process.env.META_GRAPH_VERSION || 'v26.0',
-        scopes:
+        scopes: (
             process.env.META_SCOPES ||
             [
                 'pages_show_list',
@@ -78,15 +81,14 @@ export const env = {
                 'pages_manage_posts',
                 'instagram_basic',
                 'instagram_content_publish',
-            ].join(','),
-    },
-    cloudinary: {
-        cloudName: optional('CLOUDINARY_CLOUD_NAME'),
-        apiKey: optional('CLOUDINARY_API_KEY'),
-        apiSecret: optional('CLOUDINARY_API_SECRET'),
+            ].join(',')
+        )
+            .split(',')
+            .map((scope) => scope.trim())
+            .filter(Boolean),
     },
     gemini: {
-        apiKey: optional('GEMINI_API_KEY'),
+        // Model selection is deployment-level; the API key is per-user.
         textModel: process.env.GEMINI_TEXT_MODEL || 'gemini-2.5-flash',
         imageModel: process.env.GEMINI_IMAGE_MODEL || 'imagen-4.0-generate-001',
     },
@@ -97,22 +99,8 @@ export const env = {
     },
 };
 
-export const isMetaConfigured = Boolean(
-    env.meta.appId && env.meta.appSecret && env.meta.redirectUri
-);
-
-export const isCloudinaryConfigured = Boolean(
-    env.cloudinary.cloudName && env.cloudinary.apiKey && env.cloudinary.apiSecret
-);
-
-export const isGeminiConfigured = Boolean(env.gemini.apiKey);
-
-if (!isMetaConfigured) {
-    console.warn('[config] Meta app credentials are missing. Connection and publishing endpoints will return 503.');
-}
-if (!isCloudinaryConfigured) {
-    console.warn('[config] Cloudinary credentials are missing. Media upload and AI image endpoints will return 503.');
-}
-if (!isGeminiConfigured) {
-    console.warn('[config] GEMINI_API_KEY is missing. AI assist endpoints will return 503.');
+if (!env.meta.redirectUri) {
+    console.warn(
+        '[config] META_REDIRECT_URI is not set. OAuth will derive the callback URL from the request; set it explicitly in production.'
+    );
 }

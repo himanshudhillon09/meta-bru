@@ -13,8 +13,8 @@ function getKey(): Buffer {
 }
 
 /**
- * Encrypts a secret (Meta page access token) for storage.
- * Format: iv.tag.ciphertext, each base64 encoded.
+ * Encrypts a secret (a Page access token or a per-user credential blob) for
+ * storage. Format: iv.tag.ciphertext, each base64 encoded.
  */
 export function encryptSecret(plainText: string): string {
     const iv = randomBytes(IV_LENGTH);

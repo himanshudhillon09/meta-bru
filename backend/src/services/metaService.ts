@@ -1,7 +1,37 @@
+import type { Request } from 'express';
 import { env } from '../config/env.js';
 import { AppError } from '../utils/errors.js';
 
 const GRAPH_BASE = `https://graph.facebook.com/${env.meta.graphVersion}`;
+
+export interface MetaAppCredentials {
+    appId: string;
+    appSecret: string;
+}
+
+export interface MetaOAuthCredentials extends MetaAppCredentials {
+    redirectUri: string;
+}
+
+/**
+ * The OAuth callback is deployment-level: every user's own Meta app must
+ * whitelist the same backend URL. If META_REDIRECT_URI is not set, derive it
+ * from the incoming request so local development works without extra config.
+ */
+export function resolveMetaRedirectUri(req: Request): string {
+    if (env.meta.redirectUri) return env.meta.redirectUri;
+
+    const host = req.get('host');
+    if (!host) {
+        throw new AppError(
+            500,
+            'Could not determine the Meta OAuth callback URL. Set META_REDIRECT_URI.',
+            'META_REDIRECT_URI_MISSING'
+        );
+    }
+
+    return `${req.protocol}://${host}/api/connections/meta/callback`;
+}
 
 export class MetaApiError extends Error {
     readonly status: number;
@@ -124,28 +154,30 @@ async function graphRequest<T>(
     return data as T;
 }
 
-export function getOAuthUrl(state: string): string {
-    if (!env.meta.appId || !env.meta.redirectUri) {
-        throw new AppError(503, 'Meta app is not configured', 'META_NOT_CONFIGURED');
-    }
-
+export function getOAuthUrl(
+    credentials: MetaOAuthCredentials,
+    state: string
+): string {
     const params = new URLSearchParams({
-        client_id: env.meta.appId,
-        redirect_uri: env.meta.redirectUri,
+        client_id: credentials.appId,
+        redirect_uri: credentials.redirectUri,
         state,
         response_type: 'code',
-        scope: env.meta.scopes,
+        scope: env.meta.scopes.join(','),
     });
 
     return `https://www.facebook.com/${env.meta.graphVersion}/dialog/oauth?${params.toString()}`;
 }
 
-export async function exchangeCodeForToken(code: string): Promise<string> {
+export async function exchangeCodeForToken(
+    code: string,
+    credentials: MetaOAuthCredentials
+): Promise<string> {
     const data = await graphRequest<{ access_token?: string }>('oauth/access_token', {
         params: {
-            client_id: env.meta.appId,
-            client_secret: env.meta.appSecret,
-            redirect_uri: env.meta.redirectUri,
+            client_id: credentials.appId,
+            client_secret: credentials.appSecret,
+            redirect_uri: credentials.redirectUri,
             code,
         },
     });
@@ -156,12 +188,15 @@ export async function exchangeCodeForToken(code: string): Promise<string> {
     return data.access_token;
 }
 
-export async function exchangeForLongLivedToken(shortLivedToken: string): Promise<string> {
+export async function exchangeForLongLivedToken(
+    shortLivedToken: string,
+    credentials: MetaAppCredentials
+): Promise<string> {
     const data = await graphRequest<{ access_token?: string }>('oauth/access_token', {
         params: {
             grant_type: 'fb_exchange_token',
-            client_id: env.meta.appId,
-            client_secret: env.meta.appSecret,
+            client_id: credentials.appId,
+            client_secret: credentials.appSecret,
             fb_exchange_token: shortLivedToken,
         },
     });

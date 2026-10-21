@@ -2,12 +2,7 @@ import express, { type Request, type Response } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import { connectDB } from './config/db.js';
-import {
-    env,
-    isCloudinaryConfigured,
-    isGeminiConfigured,
-    isMetaConfigured,
-} from './config/env.js';
+import { env } from './config/env.js';
 import adminRoutes from './routes/adminRoutes.js';
 import aiRoutes from './routes/aiRoutes.js';
 import authRoutes from './routes/authRoutes.js';
@@ -44,10 +39,8 @@ app.get('/api/health', (_req: Request, res: Response) => {
         status: 'ok',
         timestamp: new Date().toISOString(),
         features: {
-            meta: isMetaConfigured,
-            media: isCloudinaryConfigured,
-            ai: isGeminiConfigured,
             scheduler: env.scheduler.enabled,
+            perUserCredentials: true,
         },
     });
 });

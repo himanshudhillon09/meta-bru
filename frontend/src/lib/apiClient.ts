@@ -137,6 +137,19 @@ export const authApi = {
     toggleUserStatus: (userId: string, isActive?: boolean) =>
         api.patch(`/auth/users/${userId}/status`, { isActive }),
     updateProfile: (data: any) => api.patch('/auth/profile', data),
+    getCredentials: () => api.get('/auth/credentials'),
+    saveMetaCredentials: (data: { appId: string; appSecret?: string }) =>
+        api.put('/auth/credentials/meta', data),
+    removeMetaCredentials: () => api.delete('/auth/credentials/meta'),
+    saveCloudinaryCredentials: (data: {
+        cloudName: string;
+        apiKey?: string;
+        apiSecret?: string;
+    }) => api.put('/auth/credentials/cloudinary', data),
+    removeCloudinaryCredentials: () => api.delete('/auth/credentials/cloudinary'),
+    saveGeminiCredentials: (data: { apiKey: string }) =>
+        api.put('/auth/credentials/gemini', data),
+    removeGeminiCredentials: () => api.delete('/auth/credentials/gemini'),
 };
 
 export const connectionsApi = {

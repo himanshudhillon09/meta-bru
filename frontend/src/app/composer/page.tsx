@@ -144,6 +144,7 @@ export default function ComposerPage() {
                 connectionId,
                 caption: caption.trim(),
                 mediaUrl: media.url,
+                mediaJpegUrl: media.jpegUrl || '',
                 mediaPublicId: media.publicId,
                 platforms: { facebook, instagram },
                 action,
@@ -330,7 +331,7 @@ export default function ComposerPage() {
                             <p className="text-xs text-slate-500 mt-2">
                                 AI uses the brand profile from{' '}
                                 <Link href="/settings" className="text-indigo-400">
-                                    Settings
+                                    Profile
                                 </Link>
                                 .
                             </p>

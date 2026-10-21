@@ -35,17 +35,5 @@ services:
         sync: false
       - key: FRONTEND_URL
         sync: false
-      - key: META_APP_ID
-        sync: false
-      - key: META_APP_SECRET
-        sync: false
       - key: META_REDIRECT_URI
-        sync: false
-      - key: CLOUDINARY_CLOUD_NAME
-        sync: false
-      - key: CLOUDINARY_API_KEY
-        sync: false
-      - key: CLOUDINARY_API_SECRET
-        sync: false
-      - key: GEMINI_API_KEY
         sync: false
