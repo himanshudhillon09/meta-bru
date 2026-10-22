@@ -405,6 +405,7 @@ export const changePassword = async (req: Request, res: Response) => {
     user.tokenVersion = (user.tokenVersion ?? 0) + 1;
     await user.save();
 
+    res.set('Cache-Control', 'no-store');
     res.json({
         success: true,
         token: generateToken(user._id.toString(), user.tokenVersion),
@@ -439,6 +440,7 @@ export const resetUserPassword = async (req: any, res: Response) => {
     user.tokenVersion = (user.tokenVersion ?? 0) + 1;
     await user.save();
 
+    res.set('Cache-Control', 'no-store');
     res.json({
         success: true,
         temporaryPassword,

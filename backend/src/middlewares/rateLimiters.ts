@@ -23,7 +23,8 @@ export const passwordLimiter = rateLimit({
     keyGenerator: userKey,
     message: {
         success: false,
-        message: 'Too many password attempts. Try again in a few minutes.',
+        message:
+            'Too many sensitive account attempts. Try again in a few minutes.',
     },
 });
 
