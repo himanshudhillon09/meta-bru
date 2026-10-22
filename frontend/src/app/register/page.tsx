@@ -34,7 +34,8 @@ export default function RegisterPage() {
                         role: data.role,
                         isActive: data.isActive,
                         timezone: data.timezone,
-                        brandProfile: data.brandProfile
+                        brandProfile: data.brandProfile,
+                        mustChangePassword: Boolean(data.mustChangePassword),
                     });
                 } else {
                     setSuccess('Account created successfully! Your account is pending admin approval.');

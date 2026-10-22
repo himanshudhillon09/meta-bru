@@ -1,15 +1,18 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
+import { User } from '../models/userModel.js';
 import {
     clearCloudinaryCredentials,
     clearGeminiCredentials,
     clearMetaCredentials,
     getCredentialStatus,
+    getRevealedCredentials,
     updateCloudinaryCredentials,
     updateGeminiCredentials,
     updateMetaCredentials,
 } from '../services/credentialService.js';
 import { resolveMetaRedirectUri } from '../services/metaService.js';
+import { AppError } from '../utils/errors.js';
 import { parseBody } from '../utils/validation.js';
 
 const metaSchema = z.object({
@@ -52,8 +55,35 @@ async function statusResponse(req: Request, res: Response): Promise<void> {
     res.json({ success: true, credentials });
 }
 
+const revealSchema = z.object({
+    currentPassword: z.string().min(1).max(128),
+});
+
 export async function getCredentials(req: Request, res: Response): Promise<void> {
     await statusResponse(req, res);
+}
+
+export async function revealCredentials(
+    req: Request,
+    res: Response
+): Promise<void> {
+    const parsed = parseBody(revealSchema, req);
+    const user = await User.findById(req.user.id).select('+password');
+
+    if (
+        !user ||
+        !(await (user as any).matchPassword(parsed.currentPassword))
+    ) {
+        throw new AppError(
+            400,
+            'Current password is incorrect.',
+            'INVALID_CURRENT_PASSWORD'
+        );
+    }
+
+    const credentials = await getRevealedCredentials(req.user.id);
+    res.set('Cache-Control', 'no-store');
+    res.json({ success: true, credentials });
 }
 
 export async function saveMetaCredentials(req: Request, res: Response): Promise<void> {

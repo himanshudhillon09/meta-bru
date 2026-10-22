@@ -11,6 +11,7 @@ interface AuthContextType {
     login: (token: string, userData: User) => void;
     logout: () => Promise<void>;
     updateUser: (userData: User) => void;
+    updateSession: (token: string, userData: User) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -22,6 +23,7 @@ const PRIVATE_PATHS = [
     '/queue',
     '/activity',
     '/settings',
+    '/change-password',
 ];
 
 function isPrivatePath(pathname: string): boolean {
@@ -67,24 +69,65 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         initAuth();
     }, []);
 
+    // A password change on another device, or an admin reset, invalidates the
+    // token used by this tab. Clear the stale session as soon as an API call
+    // reports it instead of leaving the user on a broken screen.
+    useEffect(() => {
+        const handleUnauthorized = () => {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            setUser(null);
+            router.replace('/login');
+        };
+
+        window.addEventListener('meta-bru:unauthorized', handleUnauthorized);
+        return () => {
+            window.removeEventListener(
+                'meta-bru:unauthorized',
+                handleUnauthorized
+            );
+        };
+    }, [router]);
+
     // Protection logic
     useEffect(() => {
-        if (!loading) {
-            const isPublicPath = pathname === '/login' || pathname === '/register';
+        if (loading) return;
 
-            if (user && isPublicPath) {
-                router.push('/dashboard');
-            } else if (!user && isPrivatePath(pathname)) {
-                router.push('/login');
-            }
+        const isPublicPath = pathname === '/login' || pathname === '/register';
+
+        if (user && isPublicPath) {
+            router.replace(
+                user.mustChangePassword ? '/change-password' : '/dashboard'
+            );
+            return;
+        }
+
+        if (!user && isPrivatePath(pathname)) {
+            router.replace('/login');
+            return;
+        }
+
+        if (user?.mustChangePassword && pathname !== '/change-password') {
+            router.replace('/change-password');
+            return;
+        }
+
+        if (user && !user.mustChangePassword && pathname === '/change-password') {
+            router.replace('/dashboard');
         }
     }, [user, loading, pathname, router]);
 
-    const login = (token: string, userData: User) => {
+    const updateSession = (token: string, userData: User) => {
         localStorage.setItem('token', token);
         localStorage.setItem('user', JSON.stringify(userData));
         setUser(userData);
-        router.push('/dashboard');
+    };
+
+    const login = (token: string, userData: User) => {
+        updateSession(token, userData);
+        router.push(
+            userData.mustChangePassword ? '/change-password' : '/dashboard'
+        );
     };
 
     const logout = async () => {
@@ -106,7 +149,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     return (
-        <AuthContext.Provider value={{ user, loading, login, logout, updateUser }}>
+        <AuthContext.Provider
+            value={{
+                user,
+                loading,
+                login,
+                logout,
+                updateUser,
+                updateSession,
+            }}
+        >
             {children}
         </AuthContext.Provider>
     );

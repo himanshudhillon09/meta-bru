@@ -32,7 +32,8 @@ export default function LoginPage() {
                     role: data.role,
                     isActive: data.isActive,
                     timezone: data.timezone,
-                    brandProfile: data.brandProfile
+                    brandProfile: data.brandProfile,
+                    mustChangePassword: Boolean(data.mustChangePassword),
                 });
             }
         } catch (err: any) {
