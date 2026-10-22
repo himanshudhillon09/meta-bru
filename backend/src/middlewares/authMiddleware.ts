@@ -40,6 +40,43 @@ export const protect = async (req: AuthRequest, res: Response, next: NextFunctio
                 return;
             }
 
+            const presentedVersion =
+                typeof decoded.tokenVersion === 'number'
+                    ? decoded.tokenVersion
+                    : 0;
+            const currentVersion =
+                typeof req.user.tokenVersion === 'number'
+                    ? req.user.tokenVersion
+                    : 0;
+
+            if (presentedVersion !== currentVersion) {
+                res.status(401).json({
+                    success: false,
+                    message: 'Session expired. Please sign in again.',
+                });
+                return;
+            }
+
+            if (req.user.mustChangePassword) {
+                const path =
+                    (req.originalUrl || '')
+                        .split('?')[0]
+                        ?.replace(/\/+$/, '') || '';
+                const allowed =
+                    (req.method === 'GET' && path === '/api/auth/me') ||
+                    (req.method === 'PATCH' && path === '/api/auth/password') ||
+                    (req.method === 'GET' && path === '/api/auth/logout');
+
+                if (!allowed) {
+                    res.status(403).json({
+                        success: false,
+                        code: 'PASSWORD_CHANGE_REQUIRED',
+                        message: 'You must change your password before continuing.',
+                    });
+                    return;
+                }
+            }
+
             next();
         } catch (error) {
             console.error(error);

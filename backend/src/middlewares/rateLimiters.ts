@@ -15,6 +15,18 @@ function userKey(req: { user?: { id?: string } }): string {
     return req.user?.id || 'anonymous';
 }
 
+export const passwordLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 10,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    keyGenerator: userKey,
+    message: {
+        success: false,
+        message: 'Too many password attempts. Try again in a few minutes.',
+    },
+});
+
 export const aiLimiter = rateLimit({
     windowMs: 60 * 60 * 1000,
     limit: 20,

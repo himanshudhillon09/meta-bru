@@ -32,6 +32,14 @@ const userSchema = new mongoose.Schema({
         type: Boolean,
         default: false
     },
+    tokenVersion: {
+        type: Number,
+        default: 0
+    },
+    mustChangePassword: {
+        type: Boolean,
+        default: false
+    },
     timezone: {
         type: String,
         default: process.env.APP_DEFAULT_TIMEZONE || 'Asia/Kolkata'

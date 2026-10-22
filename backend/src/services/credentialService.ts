@@ -203,6 +203,29 @@ export async function getGeminiCredentials(userId: string): Promise<GeminiCreden
     return store.gemini;
 }
 
+export interface RevealedCredentials {
+    meta: { appSecret: string } | null;
+    cloudinary: { apiKey: string; apiSecret: string } | null;
+    gemini: { apiKey: string } | null;
+}
+
+export async function getRevealedCredentials(
+    userId: string
+): Promise<RevealedCredentials> {
+    const store = await readStore(userId);
+
+    return {
+        meta: store.meta ? { appSecret: store.meta.appSecret } : null,
+        cloudinary: store.cloudinary
+            ? {
+                  apiKey: store.cloudinary.apiKey,
+                  apiSecret: store.cloudinary.apiSecret,
+              }
+            : null,
+        gemini: store.gemini ? { apiKey: store.gemini.apiKey } : null,
+    };
+}
+
 export async function getCredentialStatus(
     userId: string,
     redirectUri: string
