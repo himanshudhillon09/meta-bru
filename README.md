@@ -15,7 +15,10 @@ Page and linked Instagram Business account.
 - Immediate **Post now** and **Retry failed** actions
 - Gemini caption drafting and Imagen image generation, guided by a brand profile
 - Facebook + Instagram publishing, per-platform status and errors
-- Admin user approval and a read-only activity overview
+- Editable profile email and self-service password changes with other-session
+  sign-out
+- Admin user approval, per-user password resets, and a read-only activity
+  overview
 
 Image posts only in v1. Video, Reels, carousels, Stories, analytics, and billing
 are intentionally out of scope.
@@ -95,10 +98,11 @@ Each user adds the following under **Profile** after signing in:
 - Their own Gemini API key
 
 The Meta App Secret, Cloudinary API secret/key, and Gemini key are encrypted at
-rest with `TOKEN_ENCRYPTION_KEY` and are never returned by the API. The Meta App
-ID and Cloudinary cloud name are non-secret identifiers and are shown back to
-the user. Every user's Meta app must whitelist the deployment's
-`META_REDIRECT_URI` as a Valid OAuth Redirect URI.
+rest with `TOKEN_ENCRYPTION_KEY`. They are never included in normal credential
+status responses. A user can reveal them from **Profile** only after re-entering
+their current password. The Meta App ID and Cloudinary cloud name are non-secret
+identifiers and are shown back to the user. Every user's Meta app must whitelist
+the deployment's `META_REDIRECT_URI` as a Valid OAuth Redirect URI.
 
 Until a user adds a credential set, the related endpoints return `503` with a
 clear message; the rest of the app still works. The health endpoint reports the
@@ -129,6 +133,21 @@ If you are upgrading from a deployment that used shared Meta/Cloudinary/Gemini
 environment credentials, every existing Page connection must be reconnected
 after the user adds their own Meta app credentials. Publishing without a
 per-user Meta app is blocked rather than falling back to a shared app.
+
+## Account security
+
+- Name and email are editable under **Profile**. Changing the sign-in email
+  requires the current password.
+- A user can change their own password under **Profile**. Every other session is
+  signed out, while the current session receives a fresh token and stays active.
+- An admin can reset any other user's password from **User Management**. The
+  temporary password is shown once, all of that user's sessions are signed out,
+  and the user must choose a new password at next login. Admins cannot reset
+  their own password through that action; they use **Profile**.
+- Existing passwords are stored only as bcrypt hashes and cannot be viewed.
+- Use the eye icons under **Profile → Integration credentials** to reveal saved
+  secrets. The first reveal requires the current password; use **Lock revealed
+  secrets** to hide them again for the rest of the page session.
 
 ## Deployment
 

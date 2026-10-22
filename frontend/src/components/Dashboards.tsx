@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AppShell } from '@/components/AppShell';
 import { Modal } from '@/components/Modal';
+import { PasswordResetModal } from '@/components/PasswordResetModal';
 import { useAuth } from '@/context/AuthContext';
 import { adminApi, authApi, connectionsApi, postsApi } from '@/lib/apiClient';
 import {
@@ -277,6 +278,7 @@ interface AdminUser {
     email: string;
     role: string;
     isActive: boolean;
+    mustChangePassword?: boolean;
 }
 
 interface AdminConnection extends SocialConnection {
@@ -316,6 +318,7 @@ export function AdminDashboard() {
     const [adminConnections, setAdminConnections] = useState<AdminConnection[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    const [resetTarget, setResetTarget] = useState<AdminUser | null>(null);
     const [modal, setModal] = useState<{
         isOpen: boolean;
         title: string;
@@ -402,6 +405,14 @@ export function AdminDashboard() {
                 {...modal}
                 onClose={() => setModal((current) => ({ ...current, isOpen: false }))}
             />
+
+            {resetTarget ? (
+                <PasswordResetModal
+                    target={resetTarget}
+                    onClose={() => setResetTarget(null)}
+                    onResetComplete={load}
+                />
+            ) : null}
 
             {error ? (
                 <div className="mb-6 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
@@ -638,8 +649,15 @@ export function AdminDashboard() {
                                                 </div>
                                             </div>
                                         </td>
-                                        <td className="py-5 capitalize text-slate-400 text-sm">
-                                            {item.role}
+                                        <td className="py-5 text-sm">
+                                            <div className="capitalize text-slate-400">
+                                                {item.role}
+                                            </div>
+                                            {item.mustChangePassword ? (
+                                                <span className="mt-1.5 inline-flex rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-amber-300">
+                                                    Password reset required
+                                                </span>
+                                            ) : null}
                                         </td>
                                         <td className="py-5">
                                             <span
@@ -653,23 +671,46 @@ export function AdminDashboard() {
                                             </span>
                                         </td>
                                         <td className="py-5 text-right pr-4">
-                                            <button
-                                                onClick={() => requestStatusChange(item)}
-                                                disabled={item._id === user.id}
-                                                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                                                    item._id === user.id
-                                                        ? 'opacity-30 cursor-not-allowed bg-slate-800 text-slate-500 border border-white/5'
+                                            <div className="flex items-center justify-end gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        setResetTarget(item)
+                                                    }
+                                                    disabled={item._id === user.id}
+                                                    title={
+                                                        item._id === user.id
+                                                            ? 'Use your own Profile to change your password.'
+                                                            : `Reset ${item.name}'s password`
+                                                    }
+                                                    className={`px-3 py-2 rounded-xl text-xs font-bold transition-all ${
+                                                        item._id === user.id
+                                                            ? 'opacity-30 cursor-not-allowed bg-slate-800 text-slate-500 border border-white/5'
+                                                            : 'bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 border border-amber-500/10'
+                                                    }`}
+                                                >
+                                                    Reset password
+                                                </button>
+                                                <button
+                                                    onClick={() =>
+                                                        requestStatusChange(item)
+                                                    }
+                                                    disabled={item._id === user.id}
+                                                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                                                        item._id === user.id
+                                                            ? 'opacity-30 cursor-not-allowed bg-slate-800 text-slate-500 border border-white/5'
+                                                            : item.isActive
+                                                              ? 'bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/10'
+                                                              : 'bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg shadow-indigo-500/20'
+                                                    }`}
+                                                >
+                                                    {item._id === user.id
+                                                        ? 'You'
                                                         : item.isActive
-                                                          ? 'bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/10'
-                                                          : 'bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg shadow-indigo-500/20'
-                                                }`}
-                                            >
-                                                {item._id === user.id
-                                                    ? 'You'
-                                                    : item.isActive
-                                                      ? 'Mark Inactive'
-                                                      : 'Approve Access'}
-                                            </button>
+                                                          ? 'Mark Inactive'
+                                                          : 'Approve Access'}
+                                                </button>
+                                            </div>
                                         </td>
                                     </tr>
                                 ))}
@@ -696,38 +737,68 @@ export function AdminDashboard() {
                                         </div>
                                     </div>
                                 </div>
-                                <div className="flex items-center justify-between gap-3 mt-4">
+                                <div className="flex flex-wrap items-center justify-between gap-3 mt-4">
+                                    <div className="flex flex-col gap-2">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-xs capitalize text-slate-400">
+                                                {item.role}
+                                            </span>
+                                            <span
+                                                className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest border ${
+                                                    item.isActive
+                                                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                                        : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                                                }`}
+                                            >
+                                                {item.isActive
+                                                    ? 'Active'
+                                                    : 'Pending'}
+                                            </span>
+                                        </div>
+                                        {item.mustChangePassword ? (
+                                            <span className="inline-flex w-fit rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-amber-300">
+                                                Password reset required
+                                            </span>
+                                        ) : null}
+                                    </div>
                                     <div className="flex items-center gap-2">
-                                        <span className="text-xs capitalize text-slate-400">
-                                            {item.role}
-                                        </span>
-                                        <span
-                                            className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest border ${
-                                                item.isActive
-                                                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                                                    : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                                        <button
+                                            type="button"
+                                            onClick={() => setResetTarget(item)}
+                                            disabled={item._id === user.id}
+                                            title={
+                                                item._id === user.id
+                                                    ? 'Use your own Profile to change your password.'
+                                                    : `Reset ${item.name}'s password`
+                                            }
+                                            className={`px-3 py-2 rounded-xl text-xs font-bold transition-all ${
+                                                item._id === user.id
+                                                    ? 'opacity-30 cursor-not-allowed bg-slate-800 text-slate-500 border border-white/5'
+                                                    : 'bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 border border-amber-500/10'
                                             }`}
                                         >
-                                            {item.isActive ? 'Active' : 'Pending'}
-                                        </span>
-                                    </div>
-                                    <button
-                                        onClick={() => requestStatusChange(item)}
-                                        disabled={item._id === user.id}
-                                        className={`px-3 py-2 rounded-xl text-xs font-bold transition-all ${
-                                            item._id === user.id
-                                                ? 'opacity-30 cursor-not-allowed bg-slate-800 text-slate-500 border border-white/5'
+                                            Reset
+                                        </button>
+                                        <button
+                                            onClick={() =>
+                                                requestStatusChange(item)
+                                            }
+                                            disabled={item._id === user.id}
+                                            className={`px-3 py-2 rounded-xl text-xs font-bold transition-all ${
+                                                item._id === user.id
+                                                    ? 'opacity-30 cursor-not-allowed bg-slate-800 text-slate-500 border border-white/5'
+                                                    : item.isActive
+                                                      ? 'bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/10'
+                                                      : 'bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg shadow-indigo-500/20'
+                                            }`}
+                                        >
+                                            {item._id === user.id
+                                                ? 'You'
                                                 : item.isActive
-                                                  ? 'bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/10'
-                                                  : 'bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg shadow-indigo-500/20'
-                                        }`}
-                                    >
-                                        {item._id === user.id
-                                            ? 'You'
-                                            : item.isActive
-                                              ? 'Mark Inactive'
-                                              : 'Approve'}
-                                    </button>
+                                                  ? 'Mark Inactive'
+                                                  : 'Approve'}
+                                        </button>
+                                    </div>
                                 </div>
                             </article>
                         ))}

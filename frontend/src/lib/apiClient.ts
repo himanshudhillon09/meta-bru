@@ -32,10 +32,11 @@ async function apiRequest<T>(endpoint: string, options: RequestOptions = {}): Pr
     };
 
     // Add Auth token
+    let authToken: string | null = null;
     if (typeof window !== 'undefined') {
-        const token = localStorage.getItem('token');
-        if (token) {
-            headers.Authorization = `Bearer ${token}`;
+        authToken = localStorage.getItem('token');
+        if (authToken) {
+            headers.Authorization = `Bearer ${authToken}`;
         }
     }
 
@@ -60,6 +61,17 @@ async function apiRequest<T>(endpoint: string, options: RequestOptions = {}): Pr
         }
 
         if (!response.ok) {
+            if (
+                response.status === 401 &&
+                typeof window !== 'undefined' &&
+                authToken &&
+                localStorage.getItem('token') === authToken
+            ) {
+                // The token was invalidated by a password change or reset.
+                // Let AuthContext clear the stale session and route to login.
+                window.dispatchEvent(new Event('meta-bru:unauthorized'));
+            }
+
             // Error extraction
             const errorMessage = data?.message || data || response.statusText;
             throw new Error(errorMessage);
@@ -136,7 +148,26 @@ export const authApi = {
     getUsers: () => api.get('/auth/users'),
     toggleUserStatus: (userId: string, isActive?: boolean) =>
         api.patch(`/auth/users/${userId}/status`, { isActive }),
-    updateProfile: (data: any) => api.patch('/auth/profile', data),
+    updateProfile: (data: {
+        name?: string;
+        email?: string;
+        currentPassword?: string;
+        timezone?: string;
+        brandProfile?: {
+            niche?: string;
+            tone?: string;
+            audience?: string;
+            keywords?: string;
+        };
+    }) => api.patch('/auth/profile', data),
+    changePassword: (data: {
+        currentPassword: string;
+        newPassword: string;
+    }) => api.patch('/auth/password', data),
+    resetUserPassword: (userId: string) =>
+        api.patch(`/auth/users/${userId}/password`),
+    revealCredentials: (currentPassword: string) =>
+        api.post('/auth/credentials/reveal', { currentPassword }),
     getCredentials: () => api.get('/auth/credentials'),
     saveMetaCredentials: (data: { appId: string; appSecret?: string }) =>
         api.put('/auth/credentials/meta', data),

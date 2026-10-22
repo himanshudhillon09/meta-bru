@@ -42,6 +42,7 @@ JWTs include `tokenVersion`. `protect` rejects a token whose version does not ma
 - Self-service password change: increment `tokenVersion`, invalidating every other session, then return a fresh token for the current session.
 - Admin password reset: increment the target user's `tokenVersion`, invalidating all of that user's sessions. The user signs in again with the temporary password.
 - Existing tokens without a `tokenVersion` claim are treated as version `0`, so deploying this change does not immediately sign everyone out.
+- The frontend clears the stale session and routes to login when a request returns `401`, so other devices do not remain on a broken screen.
 
 ### Forced password change
 

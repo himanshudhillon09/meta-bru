@@ -13,6 +13,13 @@ export interface User {
     isActive?: boolean;
     timezone?: string;
     brandProfile?: BrandProfile;
+    mustChangePassword?: boolean;
+}
+
+export interface RevealedCredentials {
+    meta: { appSecret: string } | null;
+    cloudinary: { apiKey: string; apiSecret: string } | null;
+    gemini: { apiKey: string } | null;
 }
 
 export interface CredentialStatus {
