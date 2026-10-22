@@ -609,6 +609,14 @@ export default function SettingsPage() {
                         </div>
                     </div>
 
+                    <button
+                        type="submit"
+                        disabled={saving}
+                        className="mt-7 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white px-6 py-3 rounded-xl text-sm font-bold transition-all"
+                    >
+                        {saving ? 'Saving...' : 'Save account'}
+                    </button>
+
                     <div className="mt-8 pt-6 border-t border-white/5 text-xs text-slate-500">
                         Role:{' '}
                         <span className="capitalize text-slate-300">{user.role}</span>
@@ -680,7 +688,7 @@ export default function SettingsPage() {
                         disabled={saving}
                         className="mt-7 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white px-6 py-3 rounded-xl text-sm font-bold transition-all"
                     >
-                        {saving ? 'Saving...' : 'Save profile'}
+                        {saving ? 'Saving...' : 'Save brand profile'}
                     </button>
                 </section>
             </form>
