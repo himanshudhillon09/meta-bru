@@ -61,7 +61,7 @@ export function PasswordPromptModal({
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <div
                 className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm"
-                onClick={onClose}
+                onClick={loading ? undefined : onClose}
             />
             <form
                 onSubmit={submit}
@@ -91,7 +91,8 @@ export function PasswordPromptModal({
                     <button
                         type="button"
                         onClick={onClose}
-                        className="flex-1 rounded-xl border border-white/10 bg-white/5 py-3 text-sm font-bold text-white transition-all hover:bg-white/10"
+                        disabled={loading}
+                        className="flex-1 rounded-xl border border-white/10 bg-white/5 py-3 text-sm font-bold text-white transition-all hover:bg-white/10 disabled:opacity-60"
                     >
                         Cancel
                     </button>
