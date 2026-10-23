@@ -129,11 +129,27 @@ async function processConnection(connectionId: string, now: Date): Promise<void>
             }
         }
     } finally {
-        connection.lockedAt = null;
         try {
-            await connection.save();
+            await SocialConnection.updateOne(
+                {
+                    _id: connection._id,
+                    lockedAt: now,
+                    tokenStatus: { $ne: 'disconnected' },
+                },
+                {
+                    $set: {
+                        lockedAt: null,
+                        nextRunAt: connection.nextRunAt,
+                        lastRunAt: connection.lastRunAt,
+                        lastError: connection.lastError,
+                    },
+                }
+            );
         } catch (error) {
-            console.error(`[scheduler] Could not release lock for ${connection._id}:`, error);
+            console.error(
+                `[scheduler] Could not release lock for ${connection._id}:`,
+                error
+            );
         }
     }
 }

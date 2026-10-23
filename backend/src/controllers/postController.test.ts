@@ -155,6 +155,122 @@ test('publishNow rejects a fresh connection lock', async () => {
     assert.equal(claim.mock.callCount(), 0);
 });
 
+test('publishNow claims the connection lock and releases it when the post claim fails', async () => {
+    mock.method(post, 'findOne', async () => queuedPost());
+
+    let claimFilter: Record<string, unknown> | undefined;
+    let claimUpdate: Record<string, unknown> | undefined;
+    mock.method(
+        socialConnection,
+        'findOneAndUpdate',
+        (filter: unknown, update: unknown) => {
+            claimFilter = filter as Record<string, unknown>;
+            claimUpdate = update as Record<string, unknown>;
+            return { select: async () => connectionDoc() };
+        }
+    );
+
+    mock.method(post, 'findOneAndUpdate', async () => null);
+
+    let releaseFilter: Record<string, unknown> | undefined;
+    let releaseUpdate: Record<string, unknown> | undefined;
+    mock.method(
+        socialConnection,
+        'updateOne',
+        (filter: unknown, update: unknown) => {
+            releaseFilter = filter as Record<string, unknown>;
+            releaseUpdate = update as Record<string, unknown>;
+            return { matchedCount: 1 };
+        }
+    );
+
+    const { res } = response();
+    await assert.rejects(
+        () => publishNow(request(), res),
+        assertAppError(409, 'POST_LOCKED')
+    );
+
+    assert.ok(claimFilter);
+    assert.equal(claimFilter._id, CONNECTION_ID);
+    assert.equal(claimFilter.userId, USER_ID);
+    assert.equal(claimFilter.tokenStatus, 'active');
+
+    const claimOr = claimFilter.$or as Record<string, unknown>[];
+    assert.equal(claimOr.length, 2);
+    assert.deepEqual(claimOr[0], { lockedAt: null });
+    const staleBefore = (claimOr[1]?.lockedAt as Record<string, unknown>)
+        ?.$lt;
+    assert.ok(staleBefore instanceof Date);
+
+    assert.ok(claimUpdate);
+    const lockedAt = (claimUpdate.$set as Record<string, unknown>).lockedAt;
+    assert.ok(lockedAt instanceof Date);
+    assert.deepEqual(claimUpdate, { $set: { lockedAt } });
+
+    assert.deepEqual(releaseFilter, { _id: CONNECTION_ID, lockedAt });
+    assert.deepEqual(releaseUpdate, { $set: { lockedAt: null } });
+});
+
+test('createPost now claims the connection lock and releases it when creation fails', async () => {
+    mock.method(socialConnection, 'findOne', () => ({
+        select: async () => connectionDoc(),
+    }));
+
+    let claimFilter: Record<string, unknown> | undefined;
+    let claimUpdate: Record<string, unknown> | undefined;
+    mock.method(
+        socialConnection,
+        'findOneAndUpdate',
+        (filter: unknown, update: unknown) => {
+            claimFilter = filter as Record<string, unknown>;
+            claimUpdate = update as Record<string, unknown>;
+            return { select: async () => connectionDoc() };
+        }
+    );
+
+    mock.method(post, 'create', async () => {
+        throw new Error('insert failed');
+    });
+
+    let releaseFilter: Record<string, unknown> | undefined;
+    let releaseUpdate: Record<string, unknown> | undefined;
+    mock.method(
+        socialConnection,
+        'updateOne',
+        (filter: unknown, update: unknown) => {
+            releaseFilter = filter as Record<string, unknown>;
+            releaseUpdate = update as Record<string, unknown>;
+            return { matchedCount: 1 };
+        }
+    );
+
+    const { res } = response();
+    await assert.rejects(
+        () => createPost(requestWithBody(createBody({ action: 'now' })), res),
+        /insert failed/
+    );
+
+    assert.ok(claimFilter);
+    assert.equal(claimFilter._id, CONNECTION_ID);
+    assert.equal(claimFilter.userId, USER_ID);
+    assert.equal(claimFilter.tokenStatus, 'active');
+
+    const claimOr = claimFilter.$or as Record<string, unknown>[];
+    assert.equal(claimOr.length, 2);
+    assert.deepEqual(claimOr[0], { lockedAt: null });
+    const staleBefore = (claimOr[1]?.lockedAt as Record<string, unknown>)
+        ?.$lt;
+    assert.ok(staleBefore instanceof Date);
+
+    assert.ok(claimUpdate);
+    const lockedAt = (claimUpdate.$set as Record<string, unknown>).lockedAt;
+    assert.ok(lockedAt instanceof Date);
+    assert.deepEqual(claimUpdate, { $set: { lockedAt } });
+
+    assert.deepEqual(releaseFilter, { _id: CONNECTION_ID, lockedAt });
+    assert.deepEqual(releaseUpdate, { $set: { lockedAt: null } });
+});
+
 test('retryPost rejects a disconnected Page', async () => {
     mock.method(post, 'findOne', async () =>
         queuedPost({
