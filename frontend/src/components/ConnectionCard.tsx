@@ -38,9 +38,12 @@ export function ConnectionCard({
     const isDisconnected = connection.tokenStatus === 'disconnected';
     const needsReauth = connection.tokenStatus === 'needs_reauth';
     const queuedCount = connection.queuedCount ?? 0;
-    const queuedLabel = `${queuedCount} queued ${
-        queuedCount === 1 ? 'post' : 'posts'
-    }`;
+    const queuedLabel =
+        queuedCount > 0
+            ? `${queuedCount} ${
+                  queuedCount === 1 ? 'post' : 'posts'
+              } waiting for this Page`
+            : 'No posts waiting';
 
     useEffect(() => {
         setDailyTime(connection.dailyTime);
@@ -83,6 +86,7 @@ export function ConnectionCard({
     };
 
     const disconnect = async () => {
+        setError('');
         try {
             const data: any = await connectionsApi.disconnect(connection._id);
             if (data.connection) onDisconnected(data.connection);
@@ -101,7 +105,7 @@ export function ConnectionCard({
                 onClose={() => setConfirmOpen(false)}
                 onConfirm={disconnect}
                 title="Disconnect this Page?"
-                message={`Disconnect ${connection.pageName}? Your ${queuedLabel} and published history will be kept. If the schedule is active, it will resume when you reconnect this same Page.`}
+                message={`Disconnect ${connection.pageName}? Your queued posts and published history will be kept. If the schedule is active, it will resume when you reconnect this same Page.`}
                 confirmText="Disconnect"
                 type="danger"
             />
@@ -142,7 +146,7 @@ export function ConnectionCard({
                                 </span>
                             ) : null}
                             <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
-                                {queuedCount} {queuedCount === 1 ? 'post' : 'posts'} waiting
+                                {queuedLabel}
                             </span>
                         </div>
                     </div>
@@ -168,12 +172,8 @@ export function ConnectionCard({
             {isDisconnected ? (
                 <div className="mt-5 rounded-2xl border border-slate-500/20 bg-slate-500/10 px-4 py-3 text-sm text-slate-300 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <span>
-                        This Page is disconnected.{' '}
-                        {queuedCount > 0
-                            ? `${queuedLabel} will wait for this Page.`
-                            : 'There are no queued posts waiting.'}{' '}
-                        Reconnect the Facebook account that manages it to
-                        resume.
+                        This Page is disconnected. Reconnect the Facebook
+                        account that manages it to resume.
                     </span>
                     <button
                         onClick={reconnect}
