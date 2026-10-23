@@ -8,7 +8,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsx watch ./src/index.ts",
-    "test": "node --import tsx --test src/services/*.test.ts",
+    "test": "node --import tsx --test src/services/*.test.ts src/controllers/*.test.ts",
     "seed:admin": "node --import tsx src/scripts/seedAdmin.ts"
   },
   "keywords": [],
