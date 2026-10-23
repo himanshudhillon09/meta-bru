@@ -15,13 +15,13 @@ import {
 interface ConnectionCardProps {
     connection: SocialConnection;
     onUpdated: (connection: SocialConnection) => void;
-    onRemoved: (connectionId: string) => void;
+    onDisconnected: (connection: SocialConnection) => void;
 }
 
 export function ConnectionCard({
     connection,
     onUpdated,
-    onRemoved,
+    onDisconnected,
 }: ConnectionCardProps) {
     const [dailyTime, setDailyTime] = useState(connection.dailyTime);
     const [timezone, setTimezone] = useState(connection.timezone);
@@ -34,6 +34,13 @@ export function ConnectionCard({
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
     const [confirmOpen, setConfirmOpen] = useState(false);
+
+    const isDisconnected = connection.tokenStatus === 'disconnected';
+    const needsReauth = connection.tokenStatus === 'needs_reauth';
+    const queuedCount = connection.queuedCount ?? 0;
+    const queuedLabel = `${queuedCount} queued ${
+        queuedCount === 1 ? 'post' : 'posts'
+    }`;
 
     useEffect(() => {
         setDailyTime(connection.dailyTime);
@@ -77,10 +84,13 @@ export function ConnectionCard({
 
     const disconnect = async () => {
         try {
-            await connectionsApi.disconnect(connection._id);
-            onRemoved(connection._id);
+            const data: any = await connectionsApi.disconnect(connection._id);
+            if (data.connection) onDisconnected(data.connection);
+            setConfirmOpen(false);
         } catch (err: any) {
-            setError(typeof err === 'string' ? err : 'Could not remove connection');
+            setError(
+                typeof err === 'string' ? err : 'Could not disconnect Page'
+            );
         }
     };
 
@@ -91,7 +101,7 @@ export function ConnectionCard({
                 onClose={() => setConfirmOpen(false)}
                 onConfirm={disconnect}
                 title="Disconnect this Page?"
-                message={`This removes ${connection.pageName} and deletes its queued posts from Meta-Bru. Published history will also be removed.`}
+                message={`Disconnect ${connection.pageName}? Your ${queuedLabel} and published history will be kept. If the schedule is active, it will resume when you reconnect this same Page.`}
                 confirmText="Disconnect"
                 type="danger"
             />
@@ -116,29 +126,65 @@ export function ConnectionCard({
                                     No Instagram linked
                                 </span>
                             )}
-                            {connection.tokenStatus === 'needs_reauth' ? (
+                            {isDisconnected ? (
+                                <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full bg-slate-500/10 text-slate-300 border border-slate-500/20">
+                                    Disconnected
+                                </span>
+                            ) : null}
+                            {needsReauth ? (
                                 <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/20">
                                     Reconnect needed
                                 </span>
                             ) : null}
-                            {!connection.isActive ? (
+                            {!connection.isActive && !isDisconnected ? (
                                 <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full bg-slate-500/10 text-slate-400 border border-slate-500/20">
                                     Paused
                                 </span>
                             ) : null}
+                            <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
+                                {queuedCount} {queuedCount === 1 ? 'post' : 'posts'} waiting
+                            </span>
                         </div>
                     </div>
                 </div>
 
-                <button
-                    onClick={() => setConfirmOpen(true)}
-                    className="self-start text-xs font-bold text-rose-400 hover:text-rose-300 px-3 py-2 rounded-lg hover:bg-rose-500/10 transition-all"
-                >
-                    Disconnect
-                </button>
+                {isDisconnected ? (
+                    <button
+                        onClick={reconnect}
+                        className="self-start text-xs font-bold text-indigo-300 hover:text-indigo-200 px-3 py-2 rounded-lg hover:bg-indigo-500/10 transition-all"
+                    >
+                        Reconnect
+                    </button>
+                ) : (
+                    <button
+                        onClick={() => setConfirmOpen(true)}
+                        className="self-start text-xs font-bold text-rose-400 hover:text-rose-300 px-3 py-2 rounded-lg hover:bg-rose-500/10 transition-all"
+                    >
+                        Disconnect
+                    </button>
+                )}
             </div>
 
-            {connection.tokenStatus === 'needs_reauth' ? (
+            {isDisconnected ? (
+                <div className="mt-5 rounded-2xl border border-slate-500/20 bg-slate-500/10 px-4 py-3 text-sm text-slate-300 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <span>
+                        This Page is disconnected.{' '}
+                        {queuedCount > 0
+                            ? `${queuedLabel} will wait for this Page.`
+                            : 'There are no queued posts waiting.'}{' '}
+                        Reconnect the Facebook account that manages it to
+                        resume.
+                    </span>
+                    <button
+                        onClick={reconnect}
+                        className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl text-xs font-black"
+                    >
+                        Reconnect
+                    </button>
+                </div>
+            ) : null}
+
+            {needsReauth ? (
                 <div className="mt-5 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <span>
                         Meta rejected this Page token. Reconnect to resume
@@ -194,9 +240,11 @@ export function ConnectionCard({
                         Next slot
                     </label>
                     <div className="mt-2 w-full bg-slate-950/40 border border-white/5 rounded-xl px-4 py-3 text-sm text-slate-300">
-                        {connection.isActive
-                            ? formatDate(connection.nextRunAt)
-                            : 'Paused'}
+                        {isDisconnected
+                            ? 'Waiting for reconnect'
+                            : connection.isActive
+                              ? formatDate(connection.nextRunAt)
+                              : 'Paused'}
                     </div>
                 </div>
             </div>
