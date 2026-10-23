@@ -2,16 +2,17 @@ import { env } from '../config/env.js';
 import { Post } from '../models/postModel.js';
 import { SocialConnection } from '../models/socialConnectionModel.js';
 import { User } from '../models/userModel.js';
+import { STALE_LOCK_MS } from './connectionLifecycleService.js';
 import { publishPost } from './publishService.js';
 import { computeNextRunAt } from './timeService.js';
 
-const STALE_LOCK_MS = 15 * 60 * 1000;
 let running = false;
 let timer: NodeJS.Timeout | null = null;
 
 async function ensureSchedules(): Promise<void> {
     const missing = await SocialConnection.find({
         isActive: true,
+        tokenStatus: 'active',
         nextRunAt: null,
     });
 

@@ -154,7 +154,7 @@ async function saveStore(userId: string, store: CredentialStore): Promise<void> 
 
 async function markConnectionsForReconnect(userId: string): Promise<void> {
     await SocialConnection.updateMany(
-        { userId },
+        { userId, tokenStatus: { $ne: 'disconnected' } },
         {
             $set: {
                 tokenStatus: 'needs_reauth',
