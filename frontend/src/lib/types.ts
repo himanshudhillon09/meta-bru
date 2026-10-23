@@ -50,7 +50,7 @@ export interface InstagramAccount {
     profilePictureUrl: string;
 }
 
-export type TokenStatus = 'active' | 'needs_reauth';
+export type TokenStatus = 'active' | 'needs_reauth' | 'disconnected';
 
 export interface SocialConnection {
     _id: string;
@@ -66,6 +66,7 @@ export interface SocialConnection {
     nextRunAt: string | null;
     lastRunAt: string | null;
     lastError: string;
+    queuedCount?: number;
     createdAt: string;
     updatedAt: string;
 }
@@ -94,6 +95,7 @@ export interface PostConnection {
     pageName: string;
     pageId: string;
     instagram?: InstagramAccount | null;
+    tokenStatus: TokenStatus;
 }
 
 export interface Post {

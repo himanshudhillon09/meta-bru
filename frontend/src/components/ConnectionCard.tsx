@@ -77,7 +77,7 @@ export function ConnectionCard({
 
     const disconnect = async () => {
         try {
-            await connectionsApi.remove(connection._id);
+            await connectionsApi.disconnect(connection._id);
             onRemoved(connection._id);
         } catch (err: any) {
             setError(typeof err === 'string' ? err : 'Could not remove connection');

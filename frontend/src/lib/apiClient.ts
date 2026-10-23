@@ -191,7 +191,8 @@ export const connectionsApi = {
         api.post('/connections/meta/complete', data),
     update: (connectionId: string, data: any) =>
         api.patch(`/connections/${connectionId}`, data),
-    remove: (connectionId: string) => api.delete(`/connections/${connectionId}`),
+    disconnect: (connectionId: string) =>
+        api.delete(`/connections/${connectionId}`),
 };
 
 export const postsApi = {
