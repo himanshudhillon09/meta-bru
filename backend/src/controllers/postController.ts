@@ -8,6 +8,14 @@ import {
     type PostStatus,
 } from '../models/postModel.js';
 import { SocialConnection } from '../models/socialConnectionModel.js';
+import type {
+    ConnectionTokenStatus,
+    ISocialConnection,
+} from '../models/socialConnectionModel.js';
+import {
+    STALE_LOCK_MS,
+    canPublishWithStatus,
+} from '../services/connectionLifecycleService.js';
 import { publishPost } from '../services/publishService.js';
 import { AppError } from '../utils/errors.js';
 import { parseBody } from '../utils/validation.js';
@@ -92,6 +100,29 @@ async function ownedPost(id: string, userId: string) {
     return post;
 }
 
+function assertConnectionCanPublish(
+    connection: { tokenStatus: ConnectionTokenStatus },
+    action: 'publish' | 'retry' = 'publish'
+): void {
+    if (canPublishWithStatus(connection.tokenStatus)) return;
+
+    if (connection.tokenStatus === 'disconnected') {
+        throw new AppError(
+            409,
+            'This Page is disconnected. Reconnect it before publishing.',
+            'PAGE_DISCONNECTED'
+        );
+    }
+
+    throw new AppError(
+        409,
+        `This Page needs to be reconnected before ${
+            action === 'retry' ? 'retrying' : 'publishing'
+        }.`,
+        'RECONNECT_REQUIRED'
+    );
+}
+
 /**
  * Atomically claims a post for publishing. The status check and update happen
  * in one Mongo operation, so a manual action cannot race the scheduler or a
@@ -123,6 +154,63 @@ async function claimPost(
     return post;
 }
 
+async function claimConnectionForPublish(
+    connectionId: string,
+    userId: string,
+    action: 'publish' | 'retry' = 'publish'
+): Promise<{ connection: ISocialConnection; lockedAt: Date }> {
+    const now = new Date();
+    const staleLock = new Date(now.getTime() - STALE_LOCK_MS);
+
+    const connection = await SocialConnection.findOneAndUpdate(
+        {
+            _id: connectionId,
+            userId,
+            tokenStatus: 'active',
+            $or: [{ lockedAt: null }, { lockedAt: { $lt: staleLock } }],
+        },
+        { $set: { lockedAt: now } },
+        { new: true }
+    ).select('+pageAccessTokenEnc');
+
+    if (connection) {
+        return { connection, lockedAt: now };
+    }
+
+    const existing = await SocialConnection.findOne({
+        _id: connectionId,
+        userId,
+    });
+    if (!existing) {
+        throw new AppError(404, 'Connection not found', 'CONNECTION_NOT_FOUND');
+    }
+
+    assertConnectionCanPublish(existing, action);
+
+    throw new AppError(
+        409,
+        'This Page is busy publishing another post. Try again shortly.',
+        'CONNECTION_BUSY'
+    );
+}
+
+async function releaseConnectionLock(
+    connectionId: string,
+    lockedAt: Date
+): Promise<void> {
+    try {
+        await SocialConnection.updateOne(
+            { _id: connectionId, lockedAt },
+            { $set: { lockedAt: null } }
+        );
+    } catch (error) {
+        console.error(
+            `[posts] Could not release connection lock for ${connectionId}:`,
+            error
+        );
+    }
+}
+
 export async function createPost(req: Request, res: Response): Promise<void> {
     const parsed = parseBody(createPostSchema, req);
 
@@ -138,13 +226,7 @@ export async function createPost(req: Request, res: Response): Promise<void> {
     if (!connection) {
         throw new AppError(404, 'Connection not found', 'CONNECTION_NOT_FOUND');
     }
-    if (connection.tokenStatus === 'needs_reauth') {
-        throw new AppError(
-            409,
-            'This Page needs to be reconnected before publishing',
-            'RECONNECT_REQUIRED'
-        );
-    }
+    assertConnectionCanPublish(connection);
     if (!parsed.platforms.facebook && !parsed.platforms.instagram) {
         throw new AppError(400, 'Select at least one platform', 'NO_PLATFORMS');
     }
@@ -165,6 +247,37 @@ export async function createPost(req: Request, res: Response): Promise<void> {
         }
     }
 
+    if (parsed.action === 'now') {
+        const { connection: claimedConnection, lockedAt } =
+            await claimConnectionForPublish(
+                connection._id.toString(),
+                req.user.id
+            );
+
+        try {
+            const post = await Post.create({
+                userId: req.user.id,
+                connectionId: claimedConnection._id,
+                caption: parsed.caption,
+                mediaUrl: parsed.mediaUrl,
+                mediaJpegUrl: parsed.mediaJpegUrl,
+                mediaPublicId: parsed.mediaPublicId,
+                platforms: parsed.platforms,
+                status: 'publishing',
+                targets: buildTargets(parsed.platforms),
+            });
+
+            await publishPost(post, claimedConnection);
+            res.status(201).json({ success: true, post });
+        } finally {
+            await releaseConnectionLock(
+                claimedConnection._id.toString(),
+                lockedAt
+            );
+        }
+        return;
+    }
+
     const post = await Post.create({
         userId: req.user.id,
         connectionId: connection._id,
@@ -173,20 +286,9 @@ export async function createPost(req: Request, res: Response): Promise<void> {
         mediaJpegUrl: parsed.mediaJpegUrl,
         mediaPublicId: parsed.mediaPublicId,
         platforms: parsed.platforms,
-        // A "post now" is created as publishing so the scheduler cannot also
-        // pick it up between the insert and the manual publish call.
-        status:
-            parsed.action === 'draft'
-                ? 'draft'
-                : parsed.action === 'now'
-                  ? 'publishing'
-                  : 'queued',
+        status: parsed.action === 'draft' ? 'draft' : 'queued',
         targets: buildTargets(parsed.platforms),
     });
-
-    if (parsed.action === 'now') {
-        await publishPost(post, connection);
-    }
 
     res.status(201).json({ success: true, post });
 }
@@ -216,7 +318,7 @@ export async function listPosts(req: Request, res: Response): Promise<void> {
     const posts = await Post.find(filter)
         .sort({ createdAt: -1 })
         .limit(limit)
-        .populate('connectionId', 'pageName pageId instagram');
+        .populate('connectionId', 'pageName pageId instagram tokenStatus');
 
     res.json({ success: true, posts });
 }
@@ -322,37 +424,31 @@ export async function publishNow(req: Request, res: Response): Promise<void> {
         throw new AppError(400, 'Nothing left to publish', 'NOTHING_TO_RETRY');
     }
 
-    const connection = await SocialConnection.findOne({
-        _id: post.connectionId,
-        userId: req.user.id,
-    }).select('+pageAccessTokenEnc');
-    if (!connection) {
-        throw new AppError(404, 'Connection not found', 'CONNECTION_NOT_FOUND');
-    }
-    if (connection.tokenStatus === 'needs_reauth') {
-        throw new AppError(
-            409,
-            'This Page needs to be reconnected before publishing',
-            'RECONNECT_REQUIRED'
+    const { connection, lockedAt } = await claimConnectionForPublish(
+        post.connectionId.toString(),
+        req.user.id
+    );
+
+    try {
+        const allowedStatuses: PostStatus[] =
+            post.status === 'partial'
+                ? ['partial']
+                : ['draft', 'queued', 'failed'];
+        const claimed = await claimPost(
+            post._id.toString(),
+            req.user.id,
+            allowedStatuses
         );
+
+        await publishPost(
+            claimed,
+            connection,
+            retryPlatforms ? { platforms: retryPlatforms } : {}
+        );
+        res.json({ success: true, post: claimed });
+    } finally {
+        await releaseConnectionLock(connection._id.toString(), lockedAt);
     }
-
-    const allowedStatuses: PostStatus[] =
-        post.status === 'partial'
-            ? ['partial']
-            : ['draft', 'queued', 'failed'];
-    const claimed = await claimPost(
-        post._id.toString(),
-        req.user.id,
-        allowedStatuses
-    );
-
-    await publishPost(
-        claimed,
-        connection,
-        retryPlatforms ? { platforms: retryPlatforms } : {}
-    );
-    res.json({ success: true, post: claimed });
 }
 
 export async function retryPost(req: Request, res: Response): Promise<void> {
@@ -376,26 +472,23 @@ export async function retryPost(req: Request, res: Response): Promise<void> {
         throw new AppError(400, 'No failed platforms to retry', 'NOTHING_TO_RETRY');
     }
 
-    const connection = await SocialConnection.findOne({
-        _id: post.connectionId,
-        userId: req.user.id,
-    }).select('+pageAccessTokenEnc');
-    if (!connection) {
-        throw new AppError(404, 'Connection not found', 'CONNECTION_NOT_FOUND');
-    }
-    if (connection.tokenStatus === 'needs_reauth') {
-        throw new AppError(
-            409,
-            'This Page needs to be reconnected before retrying',
-            'RECONNECT_REQUIRED'
-        );
-    }
+    const { connection, lockedAt } = await claimConnectionForPublish(
+        post.connectionId.toString(),
+        req.user.id,
+        'retry'
+    );
 
-    const claimed = await claimPost(post._id.toString(), req.user.id, [
-        'failed',
-        'partial',
-    ]);
+    try {
+        const claimed = await claimPost(post._id.toString(), req.user.id, [
+            'failed',
+            'partial',
+        ]);
 
-    await publishPost(claimed, connection, { platforms: retryPlatforms });
-    res.json({ success: true, post: claimed });
+        await publishPost(claimed, connection, {
+            platforms: retryPlatforms,
+        });
+        res.json({ success: true, post: claimed });
+    } finally {
+        await releaseConnectionLock(connection._id.toString(), lockedAt);
+    }
 }
