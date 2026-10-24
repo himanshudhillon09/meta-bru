@@ -48,3 +48,6 @@ yarn-error.log*
 .idea/
 *.swp
 *.swo
+
+# Git worktrees
+.worktrees/
