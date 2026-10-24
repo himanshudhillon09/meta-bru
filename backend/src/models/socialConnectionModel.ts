@@ -6,7 +6,7 @@ export interface IInstagramAccount {
     profilePictureUrl: string;
 }
 
-export type ConnectionTokenStatus = 'active' | 'needs_reauth';
+export type ConnectionTokenStatus = 'active' | 'needs_reauth' | 'disconnected';
 
 export interface ISocialConnection extends mongoose.Document {
     userId: mongoose.Types.ObjectId;
@@ -47,10 +47,10 @@ const socialConnectionSchema = new mongoose.Schema<ISocialConnection>(
         },
         pageId: { type: String, required: true },
         pageName: { type: String, required: true },
-        pageAccessTokenEnc: { type: String, required: true, select: false },
+        pageAccessTokenEnc: { type: String, default: '', select: false },
         tokenStatus: {
             type: String,
-            enum: ['active', 'needs_reauth'],
+            enum: ['active', 'needs_reauth', 'disconnected'],
             default: 'active',
         },
         instagram: { type: instagramSchema, default: null },

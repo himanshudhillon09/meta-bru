@@ -112,20 +112,31 @@ export default function ConnectionsPage() {
         }
     };
 
-    const updateConnection = (updated: SocialConnection) => {
+    const mergeConnection = (updated: SocialConnection) => {
         setConnections((current) =>
             current.map((connection) =>
-                connection._id === updated._id ? updated : connection
+                connection._id === updated._id
+                    ? {
+                          ...connection,
+                          ...updated,
+                          queuedCount:
+                              updated.queuedCount ?? connection.queuedCount,
+                      }
+                    : connection
             )
         );
+    };
+
+    const updateConnection = (updated: SocialConnection) => {
+        mergeConnection(updated);
         setNotice('Connection settings saved.');
     };
 
-    const removeConnection = (connectionId: string) => {
-        setConnections((current) =>
-            current.filter((connection) => connection._id !== connectionId)
+    const disconnectConnection = (updated: SocialConnection) => {
+        mergeConnection(updated);
+        setNotice(
+            'Page disconnected. Queued posts will resume when you reconnect this Page.'
         );
-        setNotice('Connection removed.');
     };
 
     return (
@@ -182,7 +193,7 @@ export default function ConnectionsPage() {
                             key={connection._id}
                             connection={connection}
                             onUpdated={updateConnection}
-                            onRemoved={removeConnection}
+                            onDisconnected={disconnectConnection}
                         />
                     ))}
                 </div>

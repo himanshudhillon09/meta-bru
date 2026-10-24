@@ -2,16 +2,17 @@ import { env } from '../config/env.js';
 import { Post } from '../models/postModel.js';
 import { SocialConnection } from '../models/socialConnectionModel.js';
 import { User } from '../models/userModel.js';
+import { STALE_LOCK_MS } from './connectionLifecycleService.js';
 import { publishPost } from './publishService.js';
 import { computeNextRunAt } from './timeService.js';
 
-const STALE_LOCK_MS = 15 * 60 * 1000;
 let running = false;
 let timer: NodeJS.Timeout | null = null;
 
 async function ensureSchedules(): Promise<void> {
     const missing = await SocialConnection.find({
         isActive: true,
+        tokenStatus: 'active',
         nextRunAt: null,
     });
 
@@ -128,11 +129,27 @@ async function processConnection(connectionId: string, now: Date): Promise<void>
             }
         }
     } finally {
-        connection.lockedAt = null;
         try {
-            await connection.save();
+            await SocialConnection.updateOne(
+                {
+                    _id: connection._id,
+                    lockedAt: now,
+                    tokenStatus: { $ne: 'disconnected' },
+                },
+                {
+                    $set: {
+                        lockedAt: null,
+                        nextRunAt: connection.nextRunAt,
+                        lastRunAt: connection.lastRunAt,
+                        lastError: connection.lastError,
+                    },
+                }
+            );
         } catch (error) {
-            console.error(`[scheduler] Could not release lock for ${connection._id}:`, error);
+            console.error(
+                `[scheduler] Could not release lock for ${connection._id}:`,
+                error
+            );
         }
     }
 }

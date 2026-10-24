@@ -1,4 +1,5 @@
 import type { IPost, IPostTarget, Platform, PostStatus } from '../models/postModel.js';
+import { SocialConnection } from '../models/socialConnectionModel.js';
 import type { ISocialConnection } from '../models/socialConnectionModel.js';
 import { AppError } from '../utils/errors.js';
 import { getMetaCredentials } from './credentialService.js';
@@ -26,6 +27,21 @@ function selectedPlatforms(post: IPost, options: PublishOptions): Platform[] {
     if (post.platforms.facebook) platforms.push('facebook');
     if (post.platforms.instagram) platforms.push('instagram');
     return platforms;
+}
+
+async function markConnectionNeedsReauth(
+    connection: ISocialConnection,
+    message: string
+): Promise<void> {
+    const result = await SocialConnection.updateOne(
+        { _id: connection._id, tokenStatus: { $ne: 'disconnected' } },
+        { $set: { tokenStatus: 'needs_reauth', lastError: message } }
+    );
+
+    if (result.matchedCount > 0) {
+        connection.tokenStatus = 'needs_reauth';
+        connection.lastError = message;
+    }
 }
 
 function ensureTarget(post: IPost, platform: Platform): IPostTarget {
@@ -232,9 +248,7 @@ export async function publishPost(
             error.code === 'META_NOT_CONFIGURED'
                 ? 'Add your Meta app credentials under Profile and reconnect this Page.'
                 : 'Stored credentials could not be decrypted. Re-enter them under Profile and reconnect this Page.';
-        connection.tokenStatus = 'needs_reauth';
-        connection.lastError = post.lastError;
-        await connection.save();
+        await markConnectionNeedsReauth(connection, post.lastError);
         await post.save();
         return post;
     }
@@ -246,10 +260,10 @@ export async function publishPost(
         post.status = deriveStatus(post.targets);
         post.lastError =
             'Stored Page token could not be decrypted. Reconnect this Page.';
-        connection.tokenStatus = 'needs_reauth';
-        connection.lastError =
-            'Stored Page token could not be decrypted. Reconnect this Page.';
-        await connection.save();
+        await markConnectionNeedsReauth(
+            connection,
+            'Stored Page token could not be decrypted. Reconnect this Page.'
+        );
         await post.save();
         return post;
     }
@@ -286,10 +300,10 @@ export async function publishPost(
                 : message;
 
             if (error instanceof MetaApiError && error.isTokenError) {
-                connection.tokenStatus = 'needs_reauth';
-                connection.lastError =
-                    'Meta access token is invalid or was revoked. Reconnect this Page.';
-                await connection.save();
+                await markConnectionNeedsReauth(
+                    connection,
+                    'Meta access token is invalid or was revoked. Reconnect this Page.'
+                );
             }
         }
 

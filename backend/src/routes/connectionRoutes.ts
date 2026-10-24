@@ -1,7 +1,7 @@
 import express from 'express';
 import {
     completeMetaOAuth,
-    deleteConnection,
+    disconnectConnection,
     listConnections,
     metaOAuthCallback,
     startMetaOAuth,
@@ -16,6 +16,6 @@ router.post('/meta/complete', protect, completeMetaOAuth);
 router.get('/meta/start', protect, startMetaOAuth);
 router.get('/', protect, listConnections);
 router.patch('/:id', protect, updateConnection);
-router.delete('/:id', protect, deleteConnection);
+router.delete('/:id', protect, disconnectConnection);
 
 export default router;

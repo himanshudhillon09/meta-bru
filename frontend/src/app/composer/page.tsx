@@ -55,6 +55,14 @@ export default function ComposerPage() {
         [connections, connectionId]
     );
 
+    const activeConnections = useMemo(
+        () =>
+            connections.filter(
+                (connection) => connection.tokenStatus === 'active'
+            ),
+        [connections]
+    );
+
     function selectConnection(connection: SocialConnection) {
         setConnectionId(connection._id);
         setFacebook(connection.publishToFacebook);
@@ -117,8 +125,12 @@ export default function ComposerPage() {
             setError('Choose a connection first.');
             return;
         }
-        if (selectedConnection?.tokenStatus === 'needs_reauth') {
-            setError('Reconnect this Page before publishing.');
+        if (selectedConnection?.tokenStatus !== 'active') {
+            setError(
+                selectedConnection?.tokenStatus === 'disconnected'
+                    ? 'This Page is disconnected. Reconnect it under Connections.'
+                    : 'Reconnect this Page before publishing.'
+            );
             return;
         }
         if (!facebook && !instagram) {
@@ -213,13 +225,14 @@ export default function ComposerPage() {
                 <div className="flex justify-center py-24">
                     <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-indigo-500" />
                 </div>
-            ) : connections.length === 0 ? (
+            ) : activeConnections.length === 0 ? (
                 <div className="rounded-3xl border border-dashed border-white/10 bg-slate-900/30 p-12 text-center">
                     <div className="text-xl font-bold text-white">
-                        Connect a Page to start composing
+                        No active Pages
                     </div>
                     <p className="text-sm text-slate-400 mt-2">
-                        The composer needs at least one Facebook Page connection.
+                        Reconnect a Page under Connections to create and publish
+                        a new post.
                     </p>
                     <Link
                         href="/connections"
@@ -246,7 +259,7 @@ export default function ComposerPage() {
                                 className="mt-2 w-full bg-slate-950/80 border border-white/10 rounded-xl px-4 py-3.5 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
                             >
                                 <option value="">Select a Page</option>
-                                {connections.map((connection) => (
+                                {activeConnections.map((connection) => (
                                     <option key={connection._id} value={connection._id}>
                                         {connection.pageName}
                                         {connection.instagram

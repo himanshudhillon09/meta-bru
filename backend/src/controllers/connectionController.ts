@@ -4,7 +4,13 @@ import { z } from 'zod';
 import { env } from '../config/env.js';
 import { Post } from '../models/postModel.js';
 import { SocialConnection } from '../models/socialConnectionModel.js';
+import type { ISocialConnection } from '../models/socialConnectionModel.js';
 import { User } from '../models/userModel.js';
+import {
+    isConnectionBusy,
+    shouldRecomputeScheduleOnReconnect,
+    STALE_LOCK_MS,
+} from '../services/connectionLifecycleService.js';
 import { getMetaCredentials } from '../services/credentialService.js';
 import { encryptSecret } from '../services/cryptoService.js';
 import {
@@ -53,12 +59,36 @@ async function findOwnedConnection(id: string, userId: string) {
     return connection;
 }
 
+async function queuedCountFor(connectionId: string): Promise<number> {
+    return Post.countDocuments({ connectionId, status: 'queued' });
+}
+
+function connectionResponse(
+    connection: ISocialConnection,
+    queuedCount: number
+): Record<string, unknown> {
+    const safe = connection.toObject() as Record<string, unknown>;
+    delete safe.pageAccessTokenEnc;
+    return { ...safe, queuedCount };
+}
+
 export async function listConnections(req: Request, res: Response): Promise<void> {
     const connections = await SocialConnection.find({ userId: req.user.id })
         .select('-pageAccessTokenEnc')
         .sort({ createdAt: -1 });
 
-    res.json({ success: true, connections });
+    const counts = await Promise.all(
+        connections.map((connection) =>
+            queuedCountFor(connection._id.toString())
+        )
+    );
+
+    res.json({
+        success: true,
+        connections: connections.map((connection, index) =>
+            connectionResponse(connection, counts[index] ?? 0)
+        ),
+    });
 }
 
 export async function startMetaOAuth(req: Request, res: Response): Promise<void> {
@@ -111,23 +141,40 @@ async function upsertPagesForUser(
 
         if (existing) {
             const hadInstagram = Boolean(existing.instagram?.id);
+            const previousStatus = existing.tokenStatus;
+
             existing.pageName = page.name;
             existing.pageAccessTokenEnc = encryptSecret(page.access_token);
             existing.tokenStatus = 'active';
             existing.instagram = instagram;
             existing.lastError = '';
+
             if (instagram && !hadInstagram) {
                 existing.publishToInstagram = true;
             }
             if (!instagram) {
                 existing.publishToInstagram = false;
             }
-            if (!existing.nextRunAt) {
+
+            if (!existing.isActive) {
+                existing.nextRunAt = null;
+            } else if (
+                shouldRecomputeScheduleOnReconnect(
+                    previousStatus,
+                    existing.isActive
+                )
+            ) {
+                existing.nextRunAt = computeNextRunAt(
+                    existing.dailyTime,
+                    existing.timezone
+                );
+            } else if (!existing.nextRunAt) {
                 existing.nextRunAt = computeNextRunAt(
                     existing.dailyTime,
                     existing.timezone
                 );
             }
+
             await existing.save();
         } else {
             await SocialConnection.create({
@@ -365,7 +412,9 @@ export async function updateConnection(req: Request, res: Response): Promise<voi
         );
     }
 
-    if (
+    if (!connection.isActive || connection.tokenStatus !== 'active') {
+        connection.nextRunAt = null;
+    } else if (
         parsed.dailyTime !== undefined ||
         parsed.timezone !== undefined ||
         parsed.isActive === true ||
@@ -379,14 +428,103 @@ export async function updateConnection(req: Request, res: Response): Promise<voi
 
     await connection.save();
 
-    res.json({ success: true, connection: connection.toObject() });
+    const queuedCount = await queuedCountFor(connection._id.toString());
+    res.json({
+        success: true,
+        connection: connectionResponse(connection, queuedCount),
+    });
 }
 
-export async function deleteConnection(req: Request, res: Response): Promise<void> {
+export async function disconnectConnection(req: Request, res: Response): Promise<void> {
     const connection = await findOwnedConnection(String(req.params.id), req.user.id);
 
-    await Post.deleteMany({ connectionId: connection._id });
-    await connection.deleteOne();
+    if (connection.tokenStatus === 'disconnected') {
+        const queuedCount = await queuedCountFor(connection._id.toString());
+        res.json({
+            success: true,
+            message: 'Page already disconnected. Queued posts are kept.',
+            connection: connectionResponse(connection, queuedCount),
+            queuedCount,
+        });
+        return;
+    }
 
-    res.json({ success: true, message: 'Connection removed' });
+    const publishing = await Post.findOne({
+        connectionId: connection._id,
+        status: 'publishing',
+    })
+        .sort({ updatedAt: -1 })
+        .select('updatedAt');
+
+    const now = new Date();
+    const staleLock = new Date(now.getTime() - STALE_LOCK_MS);
+
+    if (
+        isConnectionBusy(
+            connection.lockedAt,
+            publishing?.updatedAt ?? null,
+            now
+        )
+    ) {
+        throw new AppError(
+            409,
+            'Wait for the current post to finish before disconnecting this Page.',
+            'POST_IN_PROGRESS'
+        );
+    }
+
+    const updated = await SocialConnection.findOneAndUpdate(
+        {
+            _id: connection._id,
+            userId: req.user.id,
+            tokenStatus: { $ne: 'disconnected' },
+            $or: [{ lockedAt: null }, { lockedAt: { $lt: staleLock } }],
+        },
+        {
+            $set: {
+                pageAccessTokenEnc: '',
+                tokenStatus: 'disconnected',
+                nextRunAt: null,
+                lockedAt: null,
+                lastError: '',
+            },
+        },
+        { new: true, runValidators: true }
+    ).select('-pageAccessTokenEnc');
+
+    if (!updated) {
+        const latest = await SocialConnection.findOne({
+            _id: connection._id,
+            userId: req.user.id,
+        });
+
+        if (!latest) {
+            throw new AppError(404, 'Connection not found', 'CONNECTION_NOT_FOUND');
+        }
+
+        if (latest.tokenStatus === 'disconnected') {
+            const queuedCount = await queuedCountFor(latest._id.toString());
+            res.json({
+                success: true,
+                message: 'Page already disconnected. Queued posts are kept.',
+                connection: connectionResponse(latest, queuedCount),
+                queuedCount,
+            });
+            return;
+        }
+
+        throw new AppError(
+            409,
+            'Wait for the current post to finish before disconnecting this Page.',
+            'POST_IN_PROGRESS'
+        );
+    }
+
+    const queuedCount = await queuedCountFor(updated._id.toString());
+    res.json({
+        success: true,
+        message: 'Page disconnected. Queued posts are kept.',
+        connection: connectionResponse(updated, queuedCount),
+        queuedCount,
+    });
 }
