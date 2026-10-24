@@ -90,6 +90,7 @@ export default function ComposerPage() {
             const data: any = await aiApi.caption({
                 ...(topic ? { topic } : {}),
                 platform: facebook && instagram ? 'both' : instagram ? 'instagram' : 'facebook',
+                ...(media?.publicId ? { mediaPublicId: media.publicId } : {}),
             });
             setCaption(data.caption || '');
         } catch (err: any) {
@@ -100,9 +101,9 @@ export default function ComposerPage() {
     };
 
     const generateImage = async () => {
-        const prompt = imagePrompt || topic;
+        const prompt = (imagePrompt || topic || caption).trim().slice(0, 1000);
         if (!prompt) {
-            setError('Describe the image you want, or enter a post topic first.');
+            setError('Describe the image you want, or write a caption/topic first.');
             return;
         }
         setGeneratingImage(true);
@@ -342,7 +343,8 @@ export default function ComposerPage() {
                                 </button>
                             </div>
                             <p className="text-xs text-slate-500 mt-2">
-                                AI uses the brand profile from{' '}
+                                AI uses the uploaded image when present, plus your
+                                brand profile from{' '}
                                 <Link href="/settings" className="text-indigo-400">
                                     Profile
                                 </Link>
@@ -377,6 +379,7 @@ export default function ComposerPage() {
                                     <input
                                         value={imagePrompt}
                                         onChange={(event) => setImagePrompt(event.target.value)}
+                                        maxLength={1000}
                                         placeholder="Describe an image..."
                                         className="w-full bg-transparent text-sm text-white placeholder:text-slate-600 focus:outline-none"
                                     />

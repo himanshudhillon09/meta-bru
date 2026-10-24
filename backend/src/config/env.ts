@@ -94,7 +94,7 @@ export const env = {
     gemini: {
         // Model selection is deployment-level; the API key is per-user.
         textModel: process.env.GEMINI_TEXT_MODEL || 'gemini-2.5-flash',
-        imageModel: process.env.GEMINI_IMAGE_MODEL || 'imagen-4.0-generate-001',
+        imageModel: process.env.GEMINI_IMAGE_MODEL || 'gemini-2.5-flash-image',
     },
     scheduler: {
         enabled: process.env.SCHEDULER_ENABLED !== 'false',

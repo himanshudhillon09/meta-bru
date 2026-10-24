@@ -1,9 +1,18 @@
 import { env } from '../config/env.js';
 import { AppError } from '../utils/errors.js';
-import { uploadImage, type UploadedMedia } from './cloudinaryService.js';
-import { getGeminiCredentials } from './credentialService.js';
+import {
+    jpegUrlFor,
+    uploadImage,
+    type UploadedMedia,
+} from './cloudinaryService.js';
+import {
+    getCloudinaryCredentials,
+    getGeminiCredentials,
+} from './credentialService.js';
 
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
+const FALLBACK_IMAGE_MODEL = 'gemini-2.5-flash-image';
+const MAX_CAPTION_IMAGE_BYTES = 10 * 1024 * 1024;
 
 interface BrandProfile {
     niche?: string;
@@ -12,13 +21,79 @@ interface BrandProfile {
     keywords?: string;
 }
 
-interface CaptionInput {
+export interface CaptionInput {
     topic?: string;
     platform: 'facebook' | 'instagram' | 'both';
     brandProfile?: BrandProfile;
+    mediaPublicId?: string;
 }
 
-function buildCaptionPrompt(input: CaptionInput): string {
+interface InlineImage {
+    mimeType: string;
+    data: string;
+}
+
+interface GeminiPart {
+    text?: string;
+    inlineData?: {
+        mimeType?: string;
+        data?: string;
+    };
+}
+
+interface GeminiResponse {
+    candidates?: Array<{ content?: { parts?: GeminiPart[] } }>;
+    error?: { message?: string };
+}
+
+let warnedAboutRetiredImageModel = false;
+
+export function resolveImageModel(configuredModel: string): string {
+    const configured = configuredModel.trim();
+
+    if (!configured) return FALLBACK_IMAGE_MODEL;
+
+    if (configured.startsWith('imagen')) {
+        if (!warnedAboutRetiredImageModel) {
+            warnedAboutRetiredImageModel = true;
+            console.warn(
+                `[ai] GEMINI_IMAGE_MODEL=${configured} is retired. Using ${FALLBACK_IMAGE_MODEL}. Update GEMINI_IMAGE_MODEL.`
+            );
+        }
+        return FALLBACK_IMAGE_MODEL;
+    }
+
+    return configured;
+}
+
+export function buildImageGenerationBody(prompt: string): Record<string, unknown> {
+    return {
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+            responseModalities: ['TEXT', 'IMAGE'],
+            imageConfig: {
+                aspectRatio: '1:1',
+            },
+        },
+    };
+}
+
+export function extractInlineImage(
+    data: unknown
+): { mimeType: string; data: string } | null {
+    const response = data as GeminiResponse;
+    const parts = response.candidates?.[0]?.content?.parts || [];
+    const imagePart = parts.find((part) => part.inlineData?.data);
+
+    if (!imagePart?.inlineData?.data) return null;
+
+    return {
+        mimeType: imagePart.inlineData.mimeType || 'image/png',
+        data: imagePart.inlineData.data,
+    };
+}
+
+export function buildCaptionPrompt(input: CaptionInput): string {
     const profile = input.brandProfile || {};
     const parts = [
         'You are a senior social media copywriter.',
@@ -32,6 +107,14 @@ function buildCaptionPrompt(input: CaptionInput): string {
     if (profile.keywords) parts.push(`Keywords to naturally include: ${profile.keywords}.`);
     if (input.topic) parts.push(`Post topic: ${input.topic}.`);
 
+    if (input.mediaPublicId) {
+        parts.push(
+            'The attached image is the exact image that will be published with this caption.',
+            'Use the image as the primary source: reference its subject, setting, and mood naturally.',
+            'Do not say "in this image" or refer to the image itself. Do not invent details that are not visible.'
+        );
+    }
+
     parts.push(
         'Keep it engaging and specific. Use short paragraphs. Add 3-5 relevant hashtags at the end.',
         'Stay under 2,000 characters. Never invent prices, dates, or claims that were not provided.'
@@ -40,11 +123,98 @@ function buildCaptionPrompt(input: CaptionInput): string {
     return parts.join('\n');
 }
 
+async function loadCaptionImage(
+    userId: string,
+    publicId: string
+): Promise<InlineImage> {
+    const credentials = await getCloudinaryCredentials(userId);
+    const url = jpegUrlFor(credentials.cloudName, publicId);
+
+    let response: Response;
+    try {
+        response = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+    } catch (error) {
+        throw new AppError(
+            502,
+            error instanceof Error
+                ? `Could not load the uploaded image: ${error.message}`
+                : 'Could not load the uploaded image',
+            'AI_IMAGE_FETCH_FAILED'
+        );
+    }
+
+    if (!response.ok) {
+        throw new AppError(
+            502,
+            `Could not load the uploaded image (${response.status}). Try uploading it again.`,
+            'AI_IMAGE_FETCH_FAILED'
+        );
+    }
+
+    const contentType =
+        (response.headers.get('content-type') || 'image/jpeg')
+            .split(';')[0]
+            ?.trim()
+            .toLowerCase() || 'image/jpeg';
+
+    if (!contentType.startsWith('image/')) {
+        throw new AppError(
+            502,
+            'The uploaded file is not an image',
+            'AI_IMAGE_FETCH_FAILED'
+        );
+    }
+
+    let buffer: Buffer;
+    try {
+        buffer = Buffer.from(await response.arrayBuffer());
+    } catch (error) {
+        throw new AppError(
+            502,
+            error instanceof Error
+                ? `Could not read the uploaded image: ${error.message}`
+                : 'Could not read the uploaded image',
+            'AI_IMAGE_FETCH_FAILED'
+        );
+    }
+
+    if (buffer.length === 0) {
+        throw new AppError(
+            502,
+            'The uploaded image is empty',
+            'AI_IMAGE_FETCH_FAILED'
+        );
+    }
+
+    if (buffer.length > MAX_CAPTION_IMAGE_BYTES) {
+        throw new AppError(
+            502,
+            'The uploaded image is too large for captioning (max 10 MB)',
+            'AI_IMAGE_FETCH_FAILED'
+        );
+    }
+
+    return {
+        mimeType: contentType,
+        data: buffer.toString('base64'),
+    };
+}
+
 export async function generateCaption(
     userId: string,
     input: CaptionInput
 ): Promise<string> {
     const credentials = await getGeminiCredentials(userId);
+
+    const parts: Array<{ text?: string; inlineData?: InlineImage }> = [
+        { text: buildCaptionPrompt(input) },
+    ];
+
+    if (input.mediaPublicId) {
+        parts.push({
+            inlineData: await loadCaptionImage(userId, input.mediaPublicId),
+        });
+    }
 
     let response: Response;
     try {
@@ -57,7 +227,7 @@ export async function generateCaption(
                     'x-goog-api-key': credentials.apiKey,
                 },
                 body: JSON.stringify({
-                    contents: [{ parts: [{ text: buildCaptionPrompt(input) }] }],
+                    contents: [{ parts }],
                     generationConfig: {
                         temperature: 0.8,
                         maxOutputTokens: 800,
@@ -76,10 +246,7 @@ export async function generateCaption(
         );
     }
 
-    const data = (await response.json().catch(() => ({}))) as {
-        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-        error?: { message?: string };
-    };
+    const data = (await response.json().catch(() => ({}))) as GeminiResponse;
 
     if (!response.ok || data.error) {
         throw new AppError(
@@ -106,24 +273,19 @@ export async function generateImage(
     prompt: string
 ): Promise<UploadedMedia> {
     const credentials = await getGeminiCredentials(userId);
+    const model = resolveImageModel(env.gemini.imageModel);
 
     let response: Response;
     try {
         response = await fetch(
-            `${GEMINI_BASE}/models/${encodeURIComponent(env.gemini.imageModel)}:predict`,
+            `${GEMINI_BASE}/models/${encodeURIComponent(model)}:generateContent`,
             {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'x-goog-api-key': credentials.apiKey,
                 },
-                body: JSON.stringify({
-                    instances: [{ prompt }],
-                    parameters: {
-                        sampleCount: 1,
-                        aspectRatio: '1:1',
-                    },
-                }),
+                body: JSON.stringify(buildImageGenerationBody(prompt)),
                 signal: AbortSignal.timeout(60_000),
             }
         );
@@ -137,10 +299,7 @@ export async function generateImage(
         );
     }
 
-    const data = (await response.json().catch(() => ({}))) as {
-        predictions?: Array<{ bytesBase64Encoded?: string }>;
-        error?: { message?: string };
-    };
+    const data = (await response.json().catch(() => ({}))) as GeminiResponse;
 
     if (!response.ok || data.error) {
         throw new AppError(
@@ -150,10 +309,21 @@ export async function generateImage(
         );
     }
 
-    const base64 = data.predictions?.[0]?.bytesBase64Encoded;
-    if (!base64) {
-        throw new AppError(502, 'Gemini returned no image data', 'AI_EMPTY_RESPONSE');
+    const image = extractInlineImage(data);
+
+    if (!image) {
+        const parts = data.candidates?.[0]?.content?.parts || [];
+        const text = parts
+            .map((part) => part.text || '')
+            .join(' ')
+            .trim();
+
+        throw new AppError(
+            502,
+            text || 'Gemini returned no image data',
+            'AI_EMPTY_RESPONSE'
+        );
     }
 
-    return uploadImage(userId, Buffer.from(base64, 'base64'));
+    return uploadImage(userId, Buffer.from(image.data, 'base64'));
 }

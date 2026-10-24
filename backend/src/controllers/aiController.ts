@@ -7,6 +7,7 @@ const captionSchema = z.object({
     topic: z.string().trim().max(500).optional(),
     platform: z.enum(['facebook', 'instagram', 'both']).default('both'),
     connectionId: z.string().optional(),
+    mediaPublicId: z.string().trim().min(1).max(500).optional(),
 });
 
 const imageSchema = z.object({
@@ -20,6 +21,7 @@ export async function draftCaption(req: Request, res: Response): Promise<void> {
         ...(parsed.topic ? { topic: parsed.topic } : {}),
         platform: parsed.platform,
         brandProfile: req.user.brandProfile || {},
+        ...(parsed.mediaPublicId ? { mediaPublicId: parsed.mediaPublicId } : {}),
     });
 
     res.json({ success: true, caption });

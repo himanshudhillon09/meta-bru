@@ -213,7 +213,8 @@ export const mediaApi = {
 };
 
 export const aiApi = {
-    caption: (data: { topic?: string; platform?: string }) => api.post('/ai/caption', data),
+    caption: (data: { topic?: string; platform?: string; mediaPublicId?: string }) =>
+        api.post('/ai/caption', data),
     image: (data: { prompt: string }) => api.post('/ai/image', data),
 };
 
