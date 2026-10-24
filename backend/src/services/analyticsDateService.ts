@@ -4,6 +4,8 @@ import { AppError } from '../utils/errors.js';
 export const ANALYTICS_TIMEZONE = 'Asia/Kolkata';
 export const MAX_RANGE_DAYS = 730;
 
+const DAY_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
 export interface AnalyticsRange {
     from: Date;
     to: Date;
@@ -26,10 +28,21 @@ function ist(value: Date | string): DateTime {
 }
 
 export function parseAnalyticsRange(from: string, to: string): AnalyticsRange {
+    if (!DAY_KEY_PATTERN.test(from) || !DAY_KEY_PATTERN.test(to)) {
+        throw new AppError(400, 'from and to must be valid YYYY-MM-DD dates', 'INVALID_RANGE');
+    }
+
     const start = ist(from).startOf('day');
     const end = ist(to).endOf('day');
 
-    if (!start.isValid || !end.isValid) {
+    // Round-trip both parsed values to reject dates that Luxon would normalize
+    // (for example '2026-02-30' becoming a March date).
+    if (
+        !start.isValid ||
+        !end.isValid ||
+        start.toFormat('yyyy-MM-dd') !== from ||
+        end.toFormat('yyyy-MM-dd') !== to
+    ) {
         throw new AppError(400, 'from and to must be valid YYYY-MM-DD dates', 'INVALID_RANGE');
     }
     if (start > end) {
@@ -91,6 +104,9 @@ export function bucketKeyForDate(value: Date, granularity: 'day' | 'week'): stri
 }
 
 export function buildAnalyticsBuckets(range: AnalyticsRange): AnalyticsBucket[] {
+    // Weekly buckets are Monday-anchored in IST and may extend outside the
+    // requested range by design; callers filter posts by the requested range
+    // before bucketing.
     const buckets: AnalyticsBucket[] = [];
     let cursor =
         range.granularity === 'day'
