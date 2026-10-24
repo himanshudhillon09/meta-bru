@@ -111,12 +111,22 @@ export function buildCaptionPrompt(input: CaptionInput): string {
         parts.push(
             'The attached image is the exact image that will be published with this caption.',
             'Use the image as the primary source: reference its subject, setting, and mood naturally.',
+            'Before writing, identify the main subject, setting, mood, and any visible product or brand details in the image.',
             'Do not say "in this image" or refer to the image itself. Do not invent details that are not visible.'
         );
     }
 
+    const hashtagCount =
+        input.platform === 'instagram'
+            ? '8-12'
+            : input.platform === 'facebook'
+              ? '3-5'
+              : '6-8';
+
     parts.push(
-        'Keep it engaging and specific. Use short paragraphs. Add 3-5 relevant hashtags at the end.',
+        `Keep it engaging and specific. Use short paragraphs. Add ${hashtagCount} currently popular or trending hashtags at the end.`,
+        'Choose hashtags from the image subject, setting, mood, post topic, and brand niche. Mix broad and specific tags.',
+        'Do not use unrelated generic hashtags. Every hashtag must genuinely fit the image or topic.',
         'Stay under 2,000 characters. Never invent prices, dates, or claims that were not provided.'
     );
 

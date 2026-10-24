@@ -75,6 +75,21 @@ test('adds image instructions to the caption prompt', () => {
     assert.doesNotMatch(withoutImage, /attached image/);
 });
 
+test('asks for platform-appropriate, trending, image-relevant hashtags', () => {
+    const instagram = buildCaptionPrompt({
+        platform: 'instagram',
+        mediaPublicId: 'meta-bru/user/image',
+    });
+    const facebook = buildCaptionPrompt({ platform: 'facebook' });
+    const both = buildCaptionPrompt({ platform: 'both' });
+
+    assert.match(instagram, /8-12 currently popular or trending hashtags/);
+    assert.match(facebook, /3-5 currently popular or trending hashtags/);
+    assert.match(both, /6-8 currently popular or trending hashtags/);
+    assert.match(instagram, /image subject/);
+    assert.match(instagram, /Do not use unrelated generic hashtags/);
+});
+
 test('sends the uploaded image to Gemini as inline data for captions', async () => {
     const credentialsEnc = encryptSecret(
         JSON.stringify({
