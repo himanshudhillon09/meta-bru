@@ -1,3 +1,5 @@
+import type { DeleteMediaResult, StorageOverview } from './types';
+
 const BASE_URL = (
     process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api'
 ).replace(/\/+$/, '');
@@ -210,6 +212,12 @@ export const mediaApi = {
         formData.append('file', file);
         return uploadRequest('/media/upload', formData);
     },
+    storage: () =>
+        api.get<{ success: boolean } & StorageOverview>('/media/storage'),
+    deleteAssets: (assetIds: string[]) =>
+        api.post<{ success: boolean } & DeleteMediaResult>('/media/delete', {
+            assetIds,
+        }),
 };
 
 export const aiApi = {

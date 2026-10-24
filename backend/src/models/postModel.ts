@@ -93,5 +93,6 @@ const postSchema = new mongoose.Schema<IPost>(
 
 postSchema.index({ connectionId: 1, status: 1, createdAt: 1 });
 postSchema.index({ userId: 1, createdAt: -1 });
+postSchema.index({ userId: 1, mediaPublicId: 1 });
 
 export const Post = mongoose.model<IPost>('Post', postSchema);

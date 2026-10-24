@@ -51,3 +51,16 @@ export const mediaLimiter = rateLimit({
         message: 'Upload limit reached. Try again in an hour.',
     },
 });
+
+export const storageLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 60,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    keyGenerator: userKey,
+    message: {
+        success: false,
+        message:
+            'Storage request limit reached. Try again in a few minutes.',
+    },
+});

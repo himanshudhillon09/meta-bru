@@ -125,6 +125,91 @@ export interface MediaAsset {
     bytes: number;
 }
 
+export type StorageDuplicateMatch = 'exact' | 'likely' | '';
+
+export interface StoragePostUsage {
+    id: string;
+    status: PostStatus;
+    caption: string;
+    publishedAt: string | null;
+    platforms: { facebook: boolean; instagram: boolean };
+}
+
+export interface StorageAsset {
+    assetId: string;
+    publicId: string;
+    assetFolder: string;
+    url: string;
+    secureUrl: string;
+    thumbnailUrl: string;
+    format: string;
+    width: number;
+    height: number;
+    bytes: number;
+    createdAt: string;
+    etag: string;
+    duplicateGroup: string;
+    duplicateCount: number;
+    duplicateMatch: StorageDuplicateMatch;
+    recommendedKeep: boolean;
+    posts: StoragePostUsage[];
+    canDelete: boolean;
+    deleteBlockedReason: string;
+}
+
+export interface CloudinaryAccountUsage {
+    plan: string;
+    storageUsed: number;
+    storageLimit: number;
+    storagePercent: number;
+    bandwidthUsed: number;
+    bandwidthLimit: number;
+    resources: number;
+    lastUpdated: string;
+    error: string;
+}
+
+export interface StorageSummary {
+    account: CloudinaryAccountUsage;
+    folder: {
+        assetCount: number;
+        bytes: number;
+        truncated: boolean;
+    };
+    duplicates: {
+        groups: number;
+        extraAssets: number;
+        extraBytes: number;
+        exactGroups: number;
+        likelyGroups: number;
+    };
+    unused: {
+        assets: number;
+        bytes: number;
+    };
+    protected: {
+        assets: number;
+        bytes: number;
+    };
+}
+
+export interface StorageOverview {
+    configured: boolean;
+    assets: StorageAsset[];
+    summary: StorageSummary;
+}
+
+export interface DeleteMediaResult {
+    deleted: Array<{ assetId: string; publicId: string; bytes: number }>;
+    blocked: Array<{
+        assetId: string;
+        publicId: string;
+        reason: string;
+    }>;
+    skipped: Array<{ assetId: string; reason: string }>;
+    freedBytes: number;
+}
+
 export interface AdminOverview {
     stats: {
         users: number;
@@ -147,4 +232,21 @@ export function formatDate(value: string | null | undefined): string {
         dateStyle: 'medium',
         timeStyle: 'short',
     });
+}
+
+export function formatBytes(bytes: number): string {
+    if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const exponent = Math.min(
+        Math.floor(Math.log(bytes) / Math.log(1024)),
+        units.length - 1
+    );
+    const value = bytes / 1024 ** exponent;
+    const formatted =
+        exponent === 0 || value >= 10
+            ? Math.round(value).toString()
+            : value.toFixed(1);
+
+    return `${formatted} ${units[exponent]}`;
 }
