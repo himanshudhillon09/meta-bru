@@ -292,21 +292,28 @@ function ConnectionStatus({
     isActive,
     tokenStatus,
 }: Pick<SocialConnection, 'isActive' | 'tokenStatus'>) {
+    const isDisconnected = tokenStatus === 'disconnected';
+    const needsReauth = tokenStatus === 'needs_reauth';
+
     return (
         <span
             className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest border ${
-                !isActive
+                isDisconnected
                     ? 'bg-slate-500/10 text-slate-400 border-slate-500/20'
-                    : tokenStatus === 'needs_reauth'
+                    : needsReauth
                       ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
-                      : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                      : !isActive
+                        ? 'bg-slate-500/10 text-slate-400 border-slate-500/20'
+                        : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
             }`}
         >
-            {!isActive
-                ? 'Paused'
-                : tokenStatus === 'needs_reauth'
+            {isDisconnected
+                ? 'Disconnected'
+                : needsReauth
                   ? 'Reconnect'
-                  : 'Active'}
+                  : !isActive
+                    ? 'Paused'
+                    : 'Active'}
         </span>
     );
 }
