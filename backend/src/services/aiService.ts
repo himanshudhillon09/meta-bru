@@ -42,7 +42,10 @@ interface GeminiPart {
 }
 
 interface GeminiResponse {
-    candidates?: Array<{ content?: { parts?: GeminiPart[] } }>;
+    candidates?: Array<{
+        content?: { parts?: GeminiPart[] };
+        finishReason?: string;
+    }>;
     error?: { message?: string };
 }
 
@@ -195,34 +198,53 @@ export function parseCaptionResponse(
     let hashtagsText = '';
 
     const labeled = caption.match(
-        /CAPTION:\s*([\s\S]*)\s*HASHTAGS:\s*([\s\S]*)$/i
+        /CAPTION\s*:?\s*([\s\S]*)\s*HASHTAGS\s*:?\s*([\s\S]*)$/i
     );
 
-    if (labeled) {
-        caption = labeled[1]?.trim() || '';
-        hashtagsText = labeled[2]?.trim() || '';
-    } else if (caption.startsWith('{')) {
+    const parseJson = () => {
         const parsed = parseJsonCaption(caption);
 
         if (parsed) {
             caption = parsed.caption;
             hashtagsText = parsed.hashtagsText;
-        } else {
-            // Some models return JSON-like text with unescaped line breaks.
-            const jsonCaption =
-                caption.match(
-                    /"caption"\s*:\s*"([\s\S]*?)"\s*,\s*"hashtags"\s*:/
-                ) ||
-                caption.match(/"caption"\s*:\s*"([\s\S]*)"\s*}/);
+            return;
+        }
 
-            if (jsonCaption?.[1]) {
-                caption = unescapeJsonString(jsonCaption[1]);
-                hashtagsText = rawText;
+        // Some models return JSON-like text with unescaped line breaks.
+        const jsonCaption =
+            caption.match(
+                /"caption"\s*:\s*"([\s\S]*?)"\s*,\s*"hashtags"\s*:/
+            ) || caption.match(/"caption"\s*:\s*"([\s\S]*)"\s*}/);
+
+        if (jsonCaption?.[1]) {
+            caption = unescapeJsonString(jsonCaption[1]);
+            hashtagsText = rawText;
+        }
+    };
+
+    if (labeled) {
+        caption = labeled[1]?.trim() || '';
+        hashtagsText = labeled[2]?.trim() || '';
+    } else {
+        caption = caption.replace(/^CAPTION\s*:?\s*/i, '').trim();
+
+        if (caption.startsWith('{')) {
+            parseJson();
+        } else {
+            const hashtagSplit = caption.split(/HASHTAGS\s*:?\s*/i);
+
+            if (hashtagSplit.length > 1) {
+                caption = hashtagSplit[0]?.trim() || '';
+                hashtagsText = hashtagSplit.slice(1).join(' ').trim();
             }
         }
     }
 
-    caption = caption.trim();
+    caption = caption
+        .replace(/^CAPTION\s*:?\s*/i, '')
+        .replace(/^HASHTAGS\s*:?\s*/i, '')
+        .trim();
+
     if (!caption) return '';
 
     const rawHashtags = [
@@ -394,7 +416,10 @@ export async function generateCaption(
                     contents: [{ parts }],
                     generationConfig: {
                         temperature: 0.8,
-                        maxOutputTokens: 1200,
+                        maxOutputTokens: 4096,
+                        ...(env.gemini.textModel.includes('flash')
+                            ? { thinkingConfig: { thinkingBudget: 0 } }
+                            : {}),
                     },
                 }),
                 signal: AbortSignal.timeout(30_000),
@@ -417,6 +442,14 @@ export async function generateCaption(
             502,
             data.error?.message || 'Gemini caption generation failed',
             'AI_CAPTION_FAILED'
+        );
+    }
+
+    if (data.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
+        throw new AppError(
+            502,
+            'Gemini stopped before finishing the caption. Please try again.',
+            'AI_CAPTION_TRUNCATED'
         );
     }
 

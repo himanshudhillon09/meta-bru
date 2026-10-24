@@ -189,6 +189,19 @@ test('parses the CAPTION/HASHTAGS response format', () => {
     assert.equal(caption, 'A clean caption\n\n#one #two #three');
 });
 
+test('removes the CAPTION label even without a HASHTAGS section', () => {
+    const caption = parseCaptionResponse(
+        'CAPTION:\nA clean caption that ends here.',
+        {
+            platform: 'facebook',
+            brandProfile: { niche: 'Science & Tech' },
+        }
+    );
+
+    assert.equal(caption, 'A clean caption that ends here.\n\n#ScienceTech');
+    assert.doesNotMatch(caption, /CAPTION:/);
+});
+
 test('never leaks a JSON wrapper into the caption', () => {
     const malformed = `{"caption": "Ever wondered which smartphone truly lasts the longest?
 
