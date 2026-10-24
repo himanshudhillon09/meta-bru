@@ -36,16 +36,23 @@ export function parseAnalyticsRange(from: string, to: string): AnalyticsRange {
         throw new AppError(400, 'from must be on or before to', 'INVALID_RANGE');
     }
 
-    const days = Math.floor(end.startOf('day').diff(start.startOf('day'), 'days').days) + 1;
+    const today = DateTime.now().setZone(ANALYTICS_TIMEZONE).endOf('day');
+    const clampedEnd = end > today ? today : end;
+    if (start > clampedEnd) {
+        throw new AppError(400, 'from must be on or before today', 'INVALID_RANGE');
+    }
+
+    const days =
+        Math.floor(clampedEnd.startOf('day').diff(start.startOf('day'), 'days').days) + 1;
     if (days > MAX_RANGE_DAYS) {
         throw new AppError(400, `Range cannot exceed ${MAX_RANGE_DAYS} days`, 'INVALID_RANGE');
     }
 
     return {
         from: start.toUTC().toJSDate(),
-        to: end.toUTC().toJSDate(),
+        to: clampedEnd.toUTC().toJSDate(),
         fromKey: start.toFormat('yyyy-MM-dd'),
-        toKey: end.toFormat('yyyy-MM-dd'),
+        toKey: clampedEnd.toFormat('yyyy-MM-dd'),
         granularity: days > 60 ? 'week' : 'day',
     };
 }

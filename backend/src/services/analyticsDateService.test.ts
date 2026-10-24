@@ -27,13 +27,26 @@ test('rejects reversed and oversized ranges', () => {
 });
 
 test('uses daily buckets up to 60 days and weekly buckets after that', () => {
-    const daily = parseAnalyticsRange('2026-10-01', '2026-10-30');
-    const weekly = parseAnalyticsRange('2026-07-01', '2026-10-24');
+    const daily = parseAnalyticsRange('2026-01-01', '2026-01-30');
+    const weekly = parseAnalyticsRange('2026-01-01', '2026-06-01');
 
     assert.equal(daily.granularity, 'day');
     assert.equal(weekly.granularity, 'week');
     assert.equal(buildAnalyticsBuckets(daily).length, 30);
-    assert.ok(buildAnalyticsBuckets(weekly).length < 20);
+    assert.equal(buildAnalyticsBuckets(weekly).length, 23);
+});
+
+test('clamps a future to date to today in IST', () => {
+    const now = new Date();
+    const todayKey = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Kolkata',
+    }).format(now);
+    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const fromKey = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Kolkata',
+    }).format(yesterday);
+    const range = parseAnalyticsRange(fromKey, '2999-01-01');
+    assert.equal(range.toKey, todayKey);
 });
 
 test('groups by IST weekday and three-hour block', () => {
