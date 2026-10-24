@@ -93,11 +93,81 @@ export function extractInlineImage(
     };
 }
 
+function hashtagRange(platform: CaptionInput['platform']): {
+    min: number;
+    max: number;
+} {
+    if (platform === 'instagram') return { min: 8, max: 12 };
+    if (platform === 'facebook') return { min: 3, max: 5 };
+    return { min: 6, max: 8 };
+}
+
+function buildCaptionResponseSchema(
+    platform: CaptionInput['platform']
+): Record<string, unknown> {
+    const { min, max } = hashtagRange(platform);
+
+    return {
+        type: 'OBJECT',
+        properties: {
+            caption: { type: 'STRING' },
+            hashtags: {
+                type: 'ARRAY',
+                items: { type: 'STRING' },
+                minItems: String(min),
+                maxItems: String(max),
+            },
+        },
+        required: ['caption', 'hashtags'],
+    };
+}
+
+function normalizeHashtags(values: unknown[], max: number): string[] {
+    const seen = new Set<string>();
+    const tags: string[] = [];
+
+    for (const value of values) {
+        if (typeof value !== 'string') continue;
+
+        const cleaned = value
+            .trim()
+            .replace(/^#+/, '')
+            .replace(/[^\p{L}\p{N}_]/gu, '');
+
+        if (!cleaned) continue;
+
+        const tag = `#${cleaned}`;
+        const key = tag.toLowerCase();
+        if (seen.has(key)) continue;
+
+        seen.add(key);
+        tags.push(tag);
+        if (tags.length >= max) break;
+    }
+
+    return tags;
+}
+
+function composeCaption(caption: string, hashtags: string[]): string {
+    const body = caption
+        .replace(/#[\p{L}\p{N}_]+/gu, '')
+        .replace(/[ \t]+\n/g, '\n')
+        .replace(/[ \t]{2,}/g, ' ')
+        .trim();
+
+    const finalCaption = body || caption.trim();
+    const withHashtags = hashtags.length
+        ? `${finalCaption}\n\n${hashtags.join(' ')}`
+        : finalCaption;
+
+    return withHashtags.slice(0, 2200);
+}
+
 export function buildCaptionPrompt(input: CaptionInput): string {
     const profile = input.brandProfile || {};
     const parts = [
         'You are a senior social media copywriter.',
-        'Write exactly one ready-to-publish caption. Do not include markdown, quotes, or commentary.',
+        'Write exactly one ready-to-publish caption for the caption field. Do not include markdown or commentary inside the caption.',
         `Platform: ${input.platform === 'both' ? 'Facebook and Instagram' : input.platform}.`,
     ];
 
@@ -116,18 +186,14 @@ export function buildCaptionPrompt(input: CaptionInput): string {
         );
     }
 
-    const hashtagCount =
-        input.platform === 'instagram'
-            ? '8-12'
-            : input.platform === 'facebook'
-              ? '3-5'
-              : '6-8';
+    const { min, max } = hashtagRange(input.platform);
 
     parts.push(
-        `Keep it engaging and specific. Use short paragraphs. Add ${hashtagCount} currently popular or trending hashtags at the end.`,
+        `Keep it engaging and specific. Use short paragraphs. Add ${min}-${max} currently popular or trending hashtags to the hashtags field.`,
         'Choose hashtags from the image subject, setting, mood, post topic, and brand niche. Mix broad and specific tags.',
         'Do not use unrelated generic hashtags. Every hashtag must genuinely fit the image or topic.',
-        'Stay under 2,000 characters. Never invent prices, dates, or claims that were not provided.'
+        'Stay under 2,000 characters. Never invent prices, dates, or claims that were not provided.',
+        'Return the caption and hashtag list in the requested JSON format.'
     );
 
     return parts.join('\n');
@@ -240,7 +306,9 @@ export async function generateCaption(
                     contents: [{ parts }],
                     generationConfig: {
                         temperature: 0.8,
-                        maxOutputTokens: 800,
+                        maxOutputTokens: 1200,
+                        responseMimeType: 'application/json',
+                        responseSchema: buildCaptionResponseSchema(input.platform),
                     },
                 }),
                 signal: AbortSignal.timeout(30_000),
@@ -266,16 +334,62 @@ export async function generateCaption(
         );
     }
 
-    const caption = data.candidates?.[0]?.content?.parts
+    const rawText = data.candidates?.[0]?.content?.parts
         ?.map((part) => part.text || '')
-        .join('\n')
+        .join('')
         .trim();
+
+    if (!rawText) {
+        throw new AppError(502, 'Gemini returned an empty caption', 'AI_EMPTY_RESPONSE');
+    }
+
+    const jsonText = rawText
+        .replace(/^```(?:json)?\s*/i, '')
+        .replace(/\s*```$/i, '')
+        .trim();
+
+    let parsed: { caption?: unknown; hashtags?: unknown } | null = null;
+    try {
+        const candidate = JSON.parse(jsonText) as unknown;
+        if (candidate && typeof candidate === 'object' && !Array.isArray(candidate)) {
+            parsed = candidate as { caption?: unknown; hashtags?: unknown };
+        }
+    } catch {
+        // Fall back to the raw text if the model did not return valid JSON.
+    }
+
+    const caption =
+        typeof parsed?.caption === 'string' ? parsed.caption.trim() : rawText;
 
     if (!caption) {
         throw new AppError(502, 'Gemini returned an empty caption', 'AI_EMPTY_RESPONSE');
     }
 
-    return caption.slice(0, 2200);
+    const { max } = hashtagRange(input.platform);
+    const structuredHashtags = Array.isArray(parsed?.hashtags)
+        ? parsed.hashtags
+        : typeof parsed?.hashtags === 'string'
+          ? parsed.hashtags.split(/\s+/)
+          : [];
+    const rawHashtags = [
+        ...structuredHashtags,
+        ...(caption.match(/#[\p{L}\p{N}_]+/gu) || []),
+    ];
+    let hashtags = normalizeHashtags(rawHashtags, max);
+
+    if (hashtags.length === 0) {
+        const profile = input.brandProfile || {};
+        hashtags = normalizeHashtags(
+            [
+                profile.niche,
+                ...(profile.keywords ? profile.keywords.split(',') : []),
+                ...(input.topic && input.topic.length <= 30 ? [input.topic] : []),
+            ],
+            max
+        );
+    }
+
+    return composeCaption(caption, hashtags);
 }
 
 export async function generateImage(

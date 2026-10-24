@@ -125,7 +125,27 @@ test('sends the uploaded image to Gemini as inline data for captions', async () 
         return new Response(
             JSON.stringify({
                 candidates: [
-                    { content: { parts: [{ text: 'A caption from the image' }] } },
+                    {
+                        content: {
+                            parts: [
+                                {
+                                    text: JSON.stringify({
+                                        caption: 'A caption from the image',
+                                        hashtags: [
+                                            '#cybersecurity',
+                                            '#digitaltrust',
+                                            '#technews',
+                                            '#infosec',
+                                            '#privacy',
+                                            '#security',
+                                            '#technology',
+                                            '#news',
+                                        ],
+                                    }),
+                                },
+                            ],
+                        },
+                    },
                 ],
             }),
             {
@@ -140,7 +160,10 @@ test('sends the uploaded image to Gemini as inline data for captions', async () 
         mediaPublicId: 'meta-bru/user/image',
     });
 
-    assert.equal(caption, 'A caption from the image');
+    assert.equal(
+        caption,
+        'A caption from the image\n\n#cybersecurity #digitaltrust #technews #infosec #privacy #security #technology #news'
+    );
 
     const geminiCall = calls.find((call) => call.url.includes('generativelanguage'));
     assert.ok(geminiCall);
@@ -153,6 +176,13 @@ test('sends the uploaded image to Gemini as inline data for captions', async () 
                 inlineData?: { mimeType?: string; data?: string };
             }>;
         }>;
+        generationConfig: {
+            responseMimeType?: string;
+            responseSchema?: {
+                required?: string[];
+                properties?: { hashtags?: { minItems?: string } };
+            };
+        };
     };
     const parts = payload.contents[0]?.parts || [];
 
@@ -161,4 +191,13 @@ test('sends the uploaded image to Gemini as inline data for captions', async () 
         mimeType: 'image/jpeg',
         data: Buffer.from('image-bytes').toString('base64'),
     });
+    assert.equal(payload.generationConfig.responseMimeType, 'application/json');
+    assert.deepEqual(payload.generationConfig.responseSchema?.required, [
+        'caption',
+        'hashtags',
+    ]);
+    assert.equal(
+        payload.generationConfig.responseSchema?.properties?.hashtags?.minItems,
+        '8'
+    );
 });
