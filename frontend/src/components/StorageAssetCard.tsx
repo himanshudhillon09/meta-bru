@@ -84,6 +84,15 @@ export function StorageAssetCard({
                         src={asset.thumbnailUrl || asset.secureUrl}
                         alt={asset.publicId}
                         loading="lazy"
+                        onError={(event) => {
+                            const image = event.currentTarget;
+                            if (
+                                asset.secureUrl &&
+                                image.src !== asset.secureUrl
+                            ) {
+                                image.src = asset.secureUrl;
+                            }
+                        }}
                         className="w-full h-full object-cover"
                     />
                 </a>

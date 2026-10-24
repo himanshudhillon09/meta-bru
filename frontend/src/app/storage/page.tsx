@@ -205,6 +205,7 @@ export default function StoragePage() {
     };
 
     const toggleAsset = (assetId: string) => {
+        setNotice('');
         setSelected((current) => {
             const next = new Set(current);
             if (next.has(assetId)) next.delete(assetId);
@@ -378,7 +379,10 @@ export default function StoragePage() {
             subtitle="Manage the images Meta-Bru uploaded to your own Cloudinary account."
             actions={
                 <button
-                    onClick={() => void load(false)}
+                    onClick={() => {
+                        setNotice('');
+                        void load(false);
+                    }}
                     disabled={loading || refreshing || deleting}
                     className="px-4 py-2.5 rounded-xl text-xs font-bold border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 disabled:opacity-50 transition-all"
                 >
@@ -474,21 +478,23 @@ export default function StoragePage() {
 
                                 {!summary.account.error ? (
                                     <>
-                                        <div className="mt-4 h-2.5 rounded-full bg-slate-950 overflow-hidden border border-white/5">
-                                            <div
-                                                className={`h-full rounded-full transition-all ${
-                                                    storagePercent >= 90
-                                                        ? 'bg-rose-500'
-                                                        : storagePercent >=
-                                                            70
-                                                          ? 'bg-amber-500'
-                                                          : 'bg-indigo-500'
-                                                }`}
-                                                style={{
-                                                    width: `${storagePercent}%`,
-                                                }}
-                                            />
-                                        </div>
+                                        {summary.account.storageLimit > 0 ? (
+                                            <div className="mt-4 h-2.5 rounded-full bg-slate-950 overflow-hidden border border-white/5">
+                                                <div
+                                                    className={`h-full rounded-full transition-all ${
+                                                        storagePercent >= 90
+                                                            ? 'bg-rose-500'
+                                                            : storagePercent >=
+                                                                70
+                                                              ? 'bg-amber-500'
+                                                              : 'bg-indigo-500'
+                                                    }`}
+                                                    style={{
+                                                        width: `${storagePercent}%`,
+                                                    }}
+                                                />
+                                            </div>
+                                        ) : null}
 
                                         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500 mt-2">
                                             <span>
