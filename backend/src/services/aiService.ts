@@ -102,26 +102,6 @@ function hashtagRange(platform: CaptionInput['platform']): {
     return { min: 6, max: 8 };
 }
 
-function buildCaptionResponseSchema(
-    platform: CaptionInput['platform']
-): Record<string, unknown> {
-    const { min, max } = hashtagRange(platform);
-
-    return {
-        type: 'OBJECT',
-        properties: {
-            caption: { type: 'STRING' },
-            hashtags: {
-                type: 'ARRAY',
-                items: { type: 'STRING' },
-                minItems: String(min),
-                maxItems: String(max),
-            },
-        },
-        required: ['caption', 'hashtags'],
-    };
-}
-
 function normalizeHashtags(values: unknown[], max: number): string[] {
     const seen = new Set<string>();
     const tags: string[] = [];
@@ -163,11 +143,114 @@ function composeCaption(caption: string, hashtags: string[]): string {
     return withHashtags.slice(0, 2200);
 }
 
+function unescapeJsonString(value: string): string {
+    return value
+        .replace(/\\n/g, '\n')
+        .replace(/\\r/g, '\r')
+        .replace(/\\t/g, '\t')
+        .replace(/\\"/g, '"')
+        .replace(/\\\\/g, '\\');
+}
+
+function parseJsonCaption(
+    rawText: string
+): { caption: string; hashtagsText: string } | null {
+    const jsonText = rawText
+        .replace(/^```(?:json)?\s*/i, '')
+        .replace(/\s*```$/i, '')
+        .trim();
+
+    try {
+        const parsed = JSON.parse(jsonText) as {
+            caption?: unknown;
+            hashtags?: unknown;
+        };
+
+        if (typeof parsed.caption !== 'string') return null;
+
+        const hashtagsText = Array.isArray(parsed.hashtags)
+            ? parsed.hashtags
+                  .filter((value): value is string => typeof value === 'string')
+                  .join(' ')
+            : typeof parsed.hashtags === 'string'
+              ? parsed.hashtags
+              : '';
+
+        return { caption: parsed.caption, hashtagsText };
+    } catch {
+        return null;
+    }
+}
+
+export function parseCaptionResponse(
+    rawText: string,
+    input: CaptionInput
+): string {
+    const { max } = hashtagRange(input.platform);
+    let caption = rawText
+        .replace(/^```(?:json)?\s*/i, '')
+        .replace(/\s*```$/i, '')
+        .replace(/\*\*(CAPTION|HASHTAGS)\s*:\*\*/gi, '$1:')
+        .trim();
+    let hashtagsText = '';
+
+    const labeled = caption.match(
+        /CAPTION:\s*([\s\S]*)\s*HASHTAGS:\s*([\s\S]*)$/i
+    );
+
+    if (labeled) {
+        caption = labeled[1]?.trim() || '';
+        hashtagsText = labeled[2]?.trim() || '';
+    } else if (caption.startsWith('{')) {
+        const parsed = parseJsonCaption(caption);
+
+        if (parsed) {
+            caption = parsed.caption;
+            hashtagsText = parsed.hashtagsText;
+        } else {
+            // Some models return JSON-like text with unescaped line breaks.
+            const jsonCaption =
+                caption.match(
+                    /"caption"\s*:\s*"([\s\S]*?)"\s*,\s*"hashtags"\s*:/
+                ) ||
+                caption.match(/"caption"\s*:\s*"([\s\S]*)"\s*}/);
+
+            if (jsonCaption?.[1]) {
+                caption = unescapeJsonString(jsonCaption[1]);
+                hashtagsText = rawText;
+            }
+        }
+    }
+
+    caption = caption.trim();
+    if (!caption) return '';
+
+    const rawHashtags = [
+        ...(hashtagsText.match(/#[\p{L}\p{N}_]+/gu) || []),
+        ...(caption.match(/#[\p{L}\p{N}_]+/gu) || []),
+    ];
+    let hashtags = normalizeHashtags(rawHashtags, max);
+
+    if (hashtags.length === 0) {
+        const profile = input.brandProfile || {};
+        hashtags = normalizeHashtags(
+            [
+                profile.niche,
+                ...(profile.keywords ? profile.keywords.split(',') : []),
+                ...(input.topic && input.topic.length <= 30 ? [input.topic] : []),
+            ],
+            max
+        );
+    }
+
+    return composeCaption(caption, hashtags);
+}
+
 export function buildCaptionPrompt(input: CaptionInput): string {
     const profile = input.brandProfile || {};
     const parts = [
         'You are a senior social media copywriter.',
-        'Write exactly one ready-to-publish caption for the caption field. Do not include markdown or commentary inside the caption.',
+        'Write exactly one ready-to-publish caption. Do not include markdown or commentary inside the caption.',
         `Platform: ${input.platform === 'both' ? 'Facebook and Instagram' : input.platform}.`,
     ];
 
@@ -189,11 +272,16 @@ export function buildCaptionPrompt(input: CaptionInput): string {
     const { min, max } = hashtagRange(input.platform);
 
     parts.push(
-        `Keep it engaging and specific. Use short paragraphs. Add ${min}-${max} currently popular or trending hashtags to the hashtags field.`,
+        `Keep it engaging and specific. Use short paragraphs. Add ${min}-${max} currently popular or trending hashtags under HASHTAGS.`,
         'Choose hashtags from the image subject, setting, mood, post topic, and brand niche. Mix broad and specific tags.',
         'Do not use unrelated generic hashtags. Every hashtag must genuinely fit the image or topic.',
         'Stay under 2,000 characters. Never invent prices, dates, or claims that were not provided.',
-        'Return the caption and hashtag list in the requested JSON format.'
+        'Return the result in exactly this format:',
+        'CAPTION:',
+        '<caption text>',
+        'HASHTAGS:',
+        '<space-separated hashtags>',
+        'Do not use JSON, markdown, or code fences.'
     );
 
     return parts.join('\n');
@@ -307,8 +395,6 @@ export async function generateCaption(
                     generationConfig: {
                         temperature: 0.8,
                         maxOutputTokens: 1200,
-                        responseMimeType: 'application/json',
-                        responseSchema: buildCaptionResponseSchema(input.platform),
                     },
                 }),
                 signal: AbortSignal.timeout(30_000),
@@ -343,53 +429,13 @@ export async function generateCaption(
         throw new AppError(502, 'Gemini returned an empty caption', 'AI_EMPTY_RESPONSE');
     }
 
-    const jsonText = rawText
-        .replace(/^```(?:json)?\s*/i, '')
-        .replace(/\s*```$/i, '')
-        .trim();
-
-    let parsed: { caption?: unknown; hashtags?: unknown } | null = null;
-    try {
-        const candidate = JSON.parse(jsonText) as unknown;
-        if (candidate && typeof candidate === 'object' && !Array.isArray(candidate)) {
-            parsed = candidate as { caption?: unknown; hashtags?: unknown };
-        }
-    } catch {
-        // Fall back to the raw text if the model did not return valid JSON.
-    }
-
-    const caption =
-        typeof parsed?.caption === 'string' ? parsed.caption.trim() : rawText;
+    const caption = parseCaptionResponse(rawText, input);
 
     if (!caption) {
         throw new AppError(502, 'Gemini returned an empty caption', 'AI_EMPTY_RESPONSE');
     }
 
-    const { max } = hashtagRange(input.platform);
-    const structuredHashtags = Array.isArray(parsed?.hashtags)
-        ? parsed.hashtags
-        : typeof parsed?.hashtags === 'string'
-          ? parsed.hashtags.split(/\s+/)
-          : [];
-    const rawHashtags = [
-        ...structuredHashtags,
-        ...(caption.match(/#[\p{L}\p{N}_]+/gu) || []),
-    ];
-    let hashtags = normalizeHashtags(rawHashtags, max);
-
-    if (hashtags.length === 0) {
-        const profile = input.brandProfile || {};
-        hashtags = normalizeHashtags(
-            [
-                profile.niche,
-                ...(profile.keywords ? profile.keywords.split(',') : []),
-                ...(input.topic && input.topic.length <= 30 ? [input.topic] : []),
-            ],
-            max
-        );
-    }
-
-    return composeCaption(caption, hashtags);
+    return caption;
 }
 
 export async function generateImage(

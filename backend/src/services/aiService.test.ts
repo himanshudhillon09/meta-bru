@@ -9,6 +9,7 @@ const {
     buildImageGenerationBody,
     extractInlineImage,
     generateCaption,
+    parseCaptionResponse,
     resolveImageModel,
 } = await import('./aiService.js');
 const { User } = await import('../models/userModel.js');
@@ -129,19 +130,12 @@ test('sends the uploaded image to Gemini as inline data for captions', async () 
                         content: {
                             parts: [
                                 {
-                                    text: JSON.stringify({
-                                        caption: 'A caption from the image',
-                                        hashtags: [
-                                            '#cybersecurity',
-                                            '#digitaltrust',
-                                            '#technews',
-                                            '#infosec',
-                                            '#privacy',
-                                            '#security',
-                                            '#technology',
-                                            '#news',
-                                        ],
-                                    }),
+                                    text: [
+                                        'CAPTION:',
+                                        'A caption from the image',
+                                        'HASHTAGS:',
+                                        '#cybersecurity #digitaltrust #technews #infosec #privacy #security #technology #news',
+                                    ].join('\n'),
                                 },
                             ],
                         },
@@ -176,13 +170,6 @@ test('sends the uploaded image to Gemini as inline data for captions', async () 
                 inlineData?: { mimeType?: string; data?: string };
             }>;
         }>;
-        generationConfig: {
-            responseMimeType?: string;
-            responseSchema?: {
-                required?: string[];
-                properties?: { hashtags?: { minItems?: string } };
-            };
-        };
     };
     const parts = payload.contents[0]?.parts || [];
 
@@ -191,13 +178,45 @@ test('sends the uploaded image to Gemini as inline data for captions', async () 
         mimeType: 'image/jpeg',
         data: Buffer.from('image-bytes').toString('base64'),
     });
-    assert.equal(payload.generationConfig.responseMimeType, 'application/json');
-    assert.deepEqual(payload.generationConfig.responseSchema?.required, [
-        'caption',
-        'hashtags',
-    ]);
+});
+
+test('parses the CAPTION/HASHTAGS response format', () => {
+    const caption = parseCaptionResponse(
+        'CAPTION:\nA clean caption\nHASHTAGS:\n#one #two #three',
+        { platform: 'facebook' }
+    );
+
+    assert.equal(caption, 'A clean caption\n\n#one #two #three');
+});
+
+test('never leaks a JSON wrapper into the caption', () => {
+    const malformed = `{"caption": "Ever wondered which smartphone truly lasts the longest?
+
+#ScienceTech #bytehorizon"}`;
+
+    const caption = parseCaptionResponse(malformed, {
+        platform: 'instagram',
+        brandProfile: { niche: 'Science & Tech' },
+    });
+
     assert.equal(
-        payload.generationConfig.responseSchema?.properties?.hashtags?.minItems,
-        '8'
+        caption,
+        'Ever wondered which smartphone truly lasts the longest?\n\n#ScienceTech #bytehorizon'
+    );
+    assert.doesNotMatch(caption, /"caption"/);
+});
+
+test('adds brand hashtags when the model returns none', () => {
+    const caption = parseCaptionResponse('A clean caption', {
+        platform: 'facebook',
+        brandProfile: {
+            niche: 'Science & Tech',
+            keywords: 'smartphones, battery',
+        },
+    });
+
+    assert.equal(
+        caption,
+        'A clean caption\n\n#ScienceTech #smartphones #battery'
     );
 });
