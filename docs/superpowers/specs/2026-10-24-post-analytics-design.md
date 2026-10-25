@@ -554,6 +554,7 @@ Response:
     "facebook": [],
     "instagram": []
   },
+  "seriesTruncated": false,
   "recentPosts": [],
   "sync": {
     "lastSyncedAt": "2026-10-24T09:21:00.000Z",
@@ -573,6 +574,11 @@ Series rules:
 - If there are fewer than two points, the chart shows a single-point state with a
   note that history builds while the monitor is open.
 - `recentPosts` contains the latest five published targets in scope.
+- The live monitor series covers at most the 100 most recent targets in the
+  selected scope, using up to 50,000 snapshots from the last 90 days. The
+  summary and `recentPosts` still cover the full selected scope.
+- `seriesTruncated` is `true` when older targets are omitted from the series,
+  so the UI can explain why the series is partial.
 
 ### `GET /api/analytics/posts`
 

@@ -717,7 +717,7 @@ export async function loadLatestSnapshots(
 
 const MONITOR_HISTORY_DAYS = 90;
 const MONITOR_SNAPSHOT_LIMIT = 50_000;
-const MONITOR_TARGET_LIMIT = 100;
+export const MONITOR_TARGET_LIMIT = 100;
 
 /**
  * The live monitor is a recent-history view. The overview remains the
@@ -736,10 +736,9 @@ export async function loadMonitorSnapshots(
     for (const target of targets) {
         uniqueTargets.set(targetKey(target.postId, target.platform), target);
     }
-    const monitorTargets = [...uniqueTargets.values()].slice(
-        0,
-        MONITOR_TARGET_LIMIT
-    );
+    const monitorTargets = [...uniqueTargets.values()]
+        .sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime())
+        .slice(0, MONITOR_TARGET_LIMIT);
     if (monitorTargets.length === 0) return [];
     const cutoff = new Date(Date.now() - MONITOR_HISTORY_DAYS * 86_400_000);
     const capturedAt = { $gte: cutoff > range.from ? cutoff : range.from };
@@ -761,6 +760,13 @@ export async function loadMonitorSnapshots(
         )
     );
     return results.flat();
+}
+
+export function monitorSeriesTruncated(targets: PublishedTarget[]): boolean {
+    return (
+        new Set(targets.map((target) => targetKey(target.postId, target.platform)))
+            .size > MONITOR_TARGET_LIMIT
+    );
 }
 
 export function uniquePermissionErrors(
@@ -944,6 +950,7 @@ export async function getAnalyticsMonitor(
         },
         summary,
         series,
+        seriesTruncated: monitorSeriesTruncated(targets),
         recentPosts,
         sync: {
             lastSyncedAt: lastSyncedAt(targets, latest),

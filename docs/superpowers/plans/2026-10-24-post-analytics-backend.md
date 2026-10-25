@@ -1280,6 +1280,12 @@ export function buildMonitorSeries(
 
 - [ ] **Step 4: Add data loading and response builders**
 
+> Historical note: this step is the original design. The implemented service
+> uses `loadLatestSnapshots`, `loadMonitorSnapshots`,
+> `loadPublishedTargetsPage`, and DB-level pagination. Treat
+> `backend/src/services/analyticsService.ts` as the source of truth for these
+> functions.
+
 Append to `analyticsService.ts`:
 
 ```ts
@@ -1620,13 +1626,15 @@ export function buildRuleBasedTips(input: {
 
     const daysWithPosts = input.activity.filter((bucket) => bucket.posts > 0);
     if (daysWithPosts.length > 1) {
+        const span = input.granularity === 'week' ? 7 : 1;
         let longestGap = 0;
         for (let index = 1; index < daysWithPosts.length; index += 1) {
             const previous = new Date(`${daysWithPosts[index - 1]?.date}T00:00:00+05:30`);
             const current = new Date(`${daysWithPosts[index]?.date}T00:00:00+05:30`);
             longestGap = Math.max(
                 longestGap,
-                Math.round((current.getTime() - previous.getTime()) / 86_400_000) - 1
+                Math.round((current.getTime() - previous.getTime()) / 86_400_000) -
+                    span
             );
         }
         if (longestGap >= 7) {

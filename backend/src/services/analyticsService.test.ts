@@ -23,6 +23,7 @@ const {
     rangePreset,
     loadPublishedTargets,
     loadMonitorSnapshots,
+    monitorSeriesTruncated,
     getAnalyticsOverview,
     getAnalyticsMonitor,
     getAnalyticsPosts,
@@ -931,6 +932,7 @@ test('scopes monitor series and deduplicates same-Page permission errors', async
     // drops the out-of-scope snapshot that would add 999.
     assert.equal(monitor.series.all.length, 1);
     assert.equal(monitor.series.all[0]?.reach, 200);
+    assert.equal(monitor.seriesTruncated, false);
 });
 
 test('queries monitor snapshots per target with a bounded limit', async (t) => {
@@ -984,6 +986,9 @@ test('caps monitor history to the most recent 100 targets', async (t) => {
         target({
             postId: `post-${index}`,
             platform: index % 2 === 0 ? 'facebook' : 'instagram',
+            publishedAt: new Date(
+                Date.UTC(2026, 9, 1) + index * 86_400_000
+            ),
         })
     );
     const captures: Array<{ query: Record<string, unknown>; limit: number }> = [];
@@ -992,7 +997,10 @@ test('caps monitor history to the most recent 100 targets', async (t) => {
     await loadMonitorSnapshots(USER_ID, targets as never, range);
 
     assert.equal(captures.length, 100);
-    assert.equal(captures.some((capture) => capture.query.postId === 'post-100'), false);
+    assert.equal(captures[0]?.query.postId, 'post-100');
+    assert.equal(captures.some((capture) => capture.query.postId === 'post-0'), false);
+    assert.equal(monitorSeriesTruncated(targets as never), true);
+    assert.equal(monitorSeriesTruncated(targets.slice(0, 100) as never), false);
     for (const capture of captures) {
         // 50_000 rows split across the 100 capped targets.
         assert.equal(capture.limit, 500);
@@ -1323,6 +1331,25 @@ test('keeps unknown AI interactions out of the engagement ranking', () => {
 
     assert.equal(payload.topPosts[0]?.engagementRate, null);
     assert.equal(payload.topEngagementPosts.length, 0);
+});
+
+test('keeps non-finite AI interactions out of the engagement ranking', () => {
+    for (const interactions of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+        const payload = aiPayload({
+            topPosts: [
+                {
+                    postId: POST_1,
+                    caption: 'Non-finite interactions',
+                    reach: 100,
+                    views: null,
+                    interactions,
+                },
+            ],
+        });
+
+        assert.equal(payload.topPosts[0]?.engagementRate, null);
+        assert.equal(payload.topEngagementPosts.length, 0);
+    }
 });
 
 test('uses views as the AI top-post denominator when reach is zero', () => {
