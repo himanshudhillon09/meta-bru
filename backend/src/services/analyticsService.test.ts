@@ -137,6 +137,23 @@ function analyticsRange(fromKey: string, toKey: string): AnalyticsRange {
     };
 }
 
+function aiPayload(
+    overrides: Partial<Parameters<typeof buildAnalyticsAiPayload>[0]> = {}
+) {
+    return buildAnalyticsAiPayload({
+        range: analyticsRange('2026-10-01', '2026-10-30'),
+        scopeName: 'Page One',
+        summary: summary(),
+        byPlatform: { facebook: summary(), instagram: summary() },
+        activity: [],
+        bestTimes: [],
+        permissionErrors: [],
+        topPosts: [],
+        brandProfile: {},
+        ...overrides,
+    });
+}
+
 function mockPostFind(posts: unknown[]) {
     return mock.method(Post, 'find', () => ({
         populate: () => ({ sort: async () => posts }),
@@ -157,10 +174,22 @@ function mockSnapshotAggregate(snapshots: unknown[]) {
     );
 }
 
-function mockSnapshotFind(snapshots: unknown[]) {
-    return mock.method(PostMetricSnapshot, 'find', () => ({
-        sort: () => ({ limit: async () => snapshots }),
-    }));
+function mockSnapshotFind(
+    snapshots: unknown[],
+    captures: Array<{ query: Record<string, unknown>; limit: number }> = []
+) {
+    return mock.method(
+        PostMetricSnapshot,
+        'find',
+        (query: Record<string, unknown>) => ({
+            sort: () => ({
+                limit: async (value: number) => {
+                    captures.push({ query, limit: value });
+                    return snapshots;
+                },
+            }),
+        })
+    );
 }
 
 test('keeps the latest snapshot per post and platform', () => {
@@ -413,6 +442,12 @@ test('builds a paginated published-targets pipeline scoped by user', () => {
     assert.equal(match.userId.toHexString(), USER_ID);
     assert.equal(match.connectionId.toHexString(), CONNECTION_ID);
 
+    const addFields = pipeline[1]?.$addFields as {
+        latestPublishedAt: Record<string, unknown>;
+    };
+    assert.ok(addFields.latestPublishedAt);
+    assert.deepEqual(pipeline[2], { $match: { latestPublishedAt: { $ne: null } } });
+
     const facet = pipeline[3]?.$facet as {
         metadata: Record<string, unknown>[];
         data: Record<string, unknown>[];
@@ -438,6 +473,12 @@ test('builds a paginated published-targets pipeline scoped by user', () => {
     };
     assert.equal(userCondition.$eq[0], '$userId');
     assert.equal(userCondition.$eq[1].toHexString(), USER_ID);
+    assert.deepEqual(lookup.pipeline[1]?.$project, {
+        pageName: 1,
+        pageId: 1,
+        instagram: 1,
+        userId: 1,
+    });
 });
 
 test('scopes permission errors and last-sync time to the selected targets', () => {
@@ -720,6 +761,53 @@ test('loads targets by target publish time and legacy post publish time', async 
     ]);
 });
 
+test('falls back to the raw connection id when the populated connection is missing', async (t) => {
+    t.after(() => mock.restoreAll());
+    const range = analyticsRange('2026-10-01', '2026-10-31');
+    mockPostFind([
+        post({
+            _id: POST_1,
+            connectionId: null,
+            populated: (path: string) =>
+                path === 'connectionId' ? CONNECTION_ID : undefined,
+            publishedAt: new Date('2026-10-05T09:00:00.000Z'),
+        }),
+    ]);
+
+    const targets = await loadPublishedTargets(USER_ID, range, {});
+
+    assert.equal(targets.length, 1);
+    assert.equal(targets[0]?.pageName, 'Connected page');
+    assert.equal(targets[0]?.connectionId, CONNECTION_ID);
+});
+
+test('ignores a populated connection that belongs to another user', async (t) => {
+    t.after(() => mock.restoreAll());
+    const range = analyticsRange('2026-10-01', '2026-10-31');
+    mockPostFind([
+        post({
+            _id: POST_1,
+            connectionId: {
+                _id: CONNECTION_ID,
+                userId: '64b000000000000000000009',
+                pageName: 'Connected page',
+                pageId: 'page-1',
+                instagram: { username: 'pageone' },
+            },
+            populated: (path: string) =>
+                path === 'connectionId' ? CONNECTION_ID : undefined,
+            publishedAt: new Date('2026-10-05T09:00:00.000Z'),
+        }),
+    ]);
+
+    const targets = await loadPublishedTargets(USER_ID, range, {});
+
+    assert.equal(targets.length, 1);
+    assert.equal(targets[0]?.pageName, 'Connected page');
+    assert.equal(targets[0]?.pageId, '');
+    assert.equal(targets[0]?.instagramUsername, '');
+});
+
 test('builds an overview response with remaining targets from mocked data', async (t) => {
     t.after(() => mock.restoreAll());
     const range = analyticsRange('2026-10-01', '2026-10-30');
@@ -788,18 +876,38 @@ test('scopes monitor series and deduplicates same-Page permission errors', async
             ],
         }),
     ]);
-    mockSnapshotFind([
+    // The summary comes from the latest snapshot per target, which can differ
+    // from the newest point in the bounded monitor series.
+    mockSnapshotAggregate([
         snapshot({
             postId: POST_1,
             platform: 'facebook',
             status: 'permission_error',
             capturedAt: new Date('2026-10-06T09:00:00.000Z'),
+            metrics: metrics({ reach: 250, interactions: 25 }),
         }),
         snapshot({
             postId: POST_1,
             platform: 'instagram',
             status: 'permission_error',
             capturedAt: new Date('2026-10-06T09:00:00.000Z'),
+            metrics: metrics({ reach: 250, interactions: 25 }),
+        }),
+    ]);
+    mockSnapshotFind([
+        snapshot({
+            postId: POST_1,
+            platform: 'facebook',
+            status: 'permission_error',
+            capturedAt: new Date('2026-10-06T09:00:00.000Z'),
+            metrics: metrics({ reach: 100, interactions: 10 }),
+        }),
+        snapshot({
+            postId: POST_1,
+            platform: 'instagram',
+            status: 'permission_error',
+            capturedAt: new Date('2026-10-06T09:00:00.000Z'),
+            metrics: metrics({ reach: 100, interactions: 10 }),
         }),
         snapshot({
             postId: POST_OUTSIDE,
@@ -816,9 +924,56 @@ test('scopes monitor series and deduplicates same-Page permission errors', async
     assert.equal(monitor.scope.pageName, 'Page One');
     assert.equal(monitor.sync.permissionErrors.length, 1);
     assert.equal(monitor.sync.permissionErrors[0]?.platform, 'facebook');
-    // The out-of-scope snapshot would create a second bucket if it leaked in.
+    // Summary uses the latest snapshots (250 + 250)...
+    assert.equal(monitor.summary.reach, 500);
+    // ...while the series is built from the monitor find query (100 + 100) and
+    // drops the out-of-scope snapshot that would add 999.
     assert.equal(monitor.series.all.length, 1);
     assert.equal(monitor.series.all[0]?.reach, 200);
+});
+
+test('queries monitor snapshots per target with a bounded limit', async (t) => {
+    t.after(() => mock.restoreAll());
+    const range = analyticsRange('2026-10-01', '2026-10-31');
+    mockPostFind([
+        post({
+            _id: POST_1,
+            publishedAt: new Date('2026-10-05T09:00:00.000Z'),
+            targets: [
+                {
+                    platform: 'facebook',
+                    status: 'published',
+                    externalId: 'external-1',
+                    publishedAt: new Date('2026-10-05T09:00:00.000Z'),
+                },
+                {
+                    platform: 'instagram',
+                    status: 'published',
+                    externalId: 'external-2',
+                    publishedAt: new Date('2026-10-05T09:00:00.000Z'),
+                },
+            ],
+        }),
+    ]);
+    mockSnapshotAggregate([]);
+    const captures: Array<{ query: Record<string, unknown>; limit: number }> = [];
+    mockSnapshotFind([], captures);
+
+    await getAnalyticsMonitor(USER_ID, range, {});
+
+    assert.equal(captures.length, 2);
+    for (const capture of captures) {
+        assert.equal(capture.query.userId, USER_ID);
+        assert.equal(capture.query.postId, POST_1);
+        assert.ok(
+            capture.query.platform === 'facebook' ||
+                capture.query.platform === 'instagram'
+        );
+        const capturedAt = capture.query.capturedAt as { $gte: Date };
+        assert.ok(capturedAt.$gte instanceof Date);
+        // 50_000 rows split across the two targets.
+        assert.equal(capture.limit, 25_000);
+    }
 });
 
 test('resolves the selected Page name when the monitor scope has no targets', async (t) => {
@@ -877,12 +1032,14 @@ test('groups posts per post, sorts by latest publish, and paginates', async (t) 
         ],
     });
 
-    let call = 0;
-    mockPostAggregate(() => {
-        call += 1;
-        return call === 1
-            ? [{ metadata: [{ total: 2 }], data: [postTwo, postOne] }]
-            : [{ metadata: [{ total: 2 }], data: [postOne] }];
+    mockPostAggregate((pipeline) => {
+        // Mirror the $skip stage so the mock only returns the requested window;
+        // getAnalyticsPosts maps the rows straight through without slicing.
+        const facet = (pipeline[3] as {
+            $facet: { data: Record<string, unknown>[] };
+        }).$facet;
+        const skip = (facet.data[1] as { $skip: number }).$skip;
+        return [{ metadata: [{ total: 2 }], data: skip === 0 ? [postTwo] : [postOne] }];
     });
     mockSnapshotAggregate([]);
 
@@ -905,6 +1062,28 @@ test('groups posts per post, sorts by latest publish, and paginates', async (t) 
     assert.equal(second.hasMore, false);
 });
 
+test('clamps the requested page and limit to safe bounds', async (t) => {
+    t.after(() => mock.restoreAll());
+    const range = analyticsRange('2026-10-01', '2026-10-31');
+    let capturedPipeline: Record<string, unknown>[] = [];
+    mockPostAggregate((pipeline) => {
+        capturedPipeline = pipeline;
+        return [{ metadata: [{ total: 0 }], data: [] }];
+    });
+    mockSnapshotAggregate([]);
+
+    const defaults = await getAnalyticsPosts(USER_ID, range, {}, 0, 0);
+    assert.equal(defaults.page, 1);
+    assert.equal(defaults.limit, 25);
+
+    const huge = await getAnalyticsPosts(USER_ID, range, {}, 999_999, 10);
+    assert.equal(huge.page, 10_000);
+    const facet = capturedPipeline[3]?.$facet as {
+        data: Record<string, unknown>[];
+    };
+    assert.deepEqual(facet.data[1], { $skip: (10_000 - 1) * 10 });
+});
+
 test('returns the no-posts tip when the range has no posts', () => {
     const tips = buildRuleBasedTips({
         summary: summary(),
@@ -913,6 +1092,7 @@ test('returns the no-posts tip when the range has no posts', () => {
         activity: [],
         permissionErrors: [],
         posts: [],
+        granularity: 'day',
     });
 
     assert.equal(tips.length, 1);
@@ -937,6 +1117,7 @@ test('uses singular grammar for one Page with permission errors', () => {
         ],
         permissionErrors: [{ pageName: 'Page One' }],
         posts: [],
+        granularity: 'day',
     });
 
     assert.equal(tips.length, 1);
@@ -969,6 +1150,61 @@ test('treats partial metrics as an unknown rate in the monitor series', () => {
     ] as never[]);
 
     assert.equal(series.all[0]?.reach, 100);
+    assert.equal(series.all[0]?.engagementRate, null);
+});
+
+test('treats non-finite and non-numeric metric values as zero', () => {
+    const malformed = (reach: unknown) =>
+        ({
+            likes: NaN,
+            comments: '5',
+            shares: Infinity,
+            saves: NaN,
+            reach,
+            views: Infinity,
+            clicks: '7',
+            interactions: NaN,
+            engagementRate: '13',
+        }) as never;
+
+    const targets = [
+        target({ postId: 'post-1' }),
+        target({ postId: 'post-2' }),
+        target({ postId: 'post-3' }),
+    ] as never[];
+    const latest = new Map([
+        ['post-1:facebook', { metrics: malformed(NaN) }],
+        ['post-2:facebook', { metrics: malformed(Infinity) }],
+        ['post-3:facebook', { metrics: malformed('100') }],
+    ]) as never;
+
+    const result = summarizeTargets(targets, latest);
+    assert.equal(result.reach, 0);
+    assert.equal(result.views, 0);
+    assert.equal(result.interactions, 0);
+    assert.equal(result.likes, 0);
+    assert.equal(result.comments, 0);
+    assert.equal(result.shares, 0);
+    assert.equal(result.saves, 0);
+    assert.equal(result.clicks, 0);
+    assert.equal(result.engagementRate, null);
+
+    const activity = buildActivity(targets, latest, {
+        fromKey: '2026-10-24',
+        toKey: '2026-10-24',
+        granularity: 'day' as const,
+    });
+    assert.equal(activity[0]?.reach, 0);
+    assert.equal(activity[0]?.interactions, 0);
+
+    const series = buildMonitorSeries([
+        snapshot({ postId: 'post-1', metrics: malformed(NaN) }),
+        snapshot({ postId: 'post-2', metrics: malformed(Infinity) }),
+        snapshot({ postId: 'post-3', metrics: malformed('100') }),
+    ] as never[]);
+    assert.equal(series.all[0]?.reach, 0);
+    assert.equal(series.all[0]?.views, 0);
+    assert.equal(series.all[0]?.interactions, 0);
     assert.equal(series.all[0]?.engagementRate, null);
 });
 
@@ -1006,6 +1242,7 @@ test('deduplicates the permission tip by Page name', () => {
         activity: [],
         permissionErrors: [{ pageName: 'Page One' }, { pageName: 'Page One' }],
         posts: [],
+        granularity: 'day',
     });
 
     const permissions = tips.find((tip) => tip.id === 'permissions');
@@ -1027,15 +1264,15 @@ test('deduplicates cross-posted entries in the AI payload top posts', () => {
                 postId: POST_1,
                 caption: 'Cross post',
                 reach: 100,
+                views: null,
                 interactions: 10,
-                engagementRate: 10,
             },
             {
                 postId: POST_1,
                 caption: 'Cross post',
                 reach: 300,
+                views: null,
                 interactions: 30,
-                engagementRate: 10,
             },
         ],
         brandProfile: {},
@@ -1046,6 +1283,89 @@ test('deduplicates cross-posted entries in the AI payload top posts', () => {
     assert.equal(payload.topPosts[0]?.interactions, 40);
     assert.equal(payload.topPosts[0]?.engagementRate, 10);
     assert.equal(payload.topEngagementPosts.length, 1);
+});
+
+test('uses views as the AI top-post denominator when reach is zero', () => {
+    const payload = aiPayload({
+        topPosts: [
+            {
+                postId: POST_1,
+                caption: 'View-only reel',
+                reach: 0,
+                views: 1000,
+                interactions: 10,
+            },
+        ],
+    });
+
+    assert.equal(payload.topPosts[0]?.engagementRate, 1);
+    assert.equal(payload.topEngagementPosts.length, 1);
+    assert.equal(payload.topEngagementPosts[0]?.engagementRate, 1);
+});
+
+test('combines reach and view denominators across a cross-posted AI post', () => {
+    const payload = aiPayload({
+        topPosts: [
+            {
+                postId: POST_1,
+                caption: 'Cross post',
+                reach: 100,
+                views: null,
+                interactions: 10,
+            },
+            {
+                postId: POST_1,
+                caption: 'Cross post',
+                reach: 0,
+                views: 1000,
+                interactions: 10,
+            },
+        ],
+    });
+
+    assert.equal(payload.topPosts.length, 1);
+    assert.equal(payload.topPosts[0]?.reach, 100);
+    assert.equal(payload.topPosts[0]?.interactions, 20);
+    // 20 interactions over 100 reach + 1000 views = 1.8%.
+    assert.equal(payload.topPosts[0]?.engagementRate, 1.8);
+});
+
+test('keeps AI top posts with identical captions when the post ids differ', () => {
+    const payload = aiPayload({
+        topPosts: [
+            {
+                postId: POST_1,
+                caption: 'Same caption',
+                reach: 100,
+                views: null,
+                interactions: 10,
+            },
+            {
+                postId: POST_2,
+                caption: 'Same caption',
+                reach: 100,
+                views: null,
+                interactions: 20,
+            },
+        ],
+    });
+
+    assert.equal(payload.topPosts.length, 2);
+});
+
+test('deduplicates AI permission errors by Page name', () => {
+    const payload = aiPayload({
+        permissionErrors: [
+            { pageName: 'Page One' },
+            { pageName: 'Page One' },
+            { pageName: 'Page Two' },
+        ],
+    });
+
+    assert.deepEqual(payload.permissionErrors, [
+        { pageName: 'Page One' },
+        { pageName: 'Page Two' },
+    ]);
 });
 
 test('uses the unique post count for publishing frequency', () => {

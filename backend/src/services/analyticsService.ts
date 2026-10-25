@@ -1,4 +1,4 @@
-import { Types, type QueryFilter } from 'mongoose';
+import { Types, type PipelineStage, type QueryFilter } from 'mongoose';
 import { Post } from '../models/postModel.js';
 import type { IPost, Platform, PostStatus } from '../models/postModel.js';
 import {
@@ -76,6 +76,8 @@ export interface MonitorPoint {
     engagementRate: number | null;
 }
 
+const MAX_POST_PAGE = 10_000;
+
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const BLOCK_LABELS = [
     '00:00–03:00 IST',
@@ -106,19 +108,31 @@ export function latestSnapshotsByTarget(
     return latest;
 }
 
+function finiteOrNull(value: unknown): number | null {
+    return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function finiteOrZero(value: unknown): number {
+    return finiteOrNull(value) ?? 0;
+}
+
 /**
  * The denominator for a target's engagement rate. Reach is preferred, but a
  * target that only reports views uses views instead of contributing zero
  * reach to a global total.
  */
 function rateDenominator(metrics: IAnalyticsMetrics): number {
-    if (typeof metrics.reach === 'number' && metrics.reach > 0) return metrics.reach;
-    if (typeof metrics.views === 'number' && metrics.views > 0) return metrics.views;
+    const reach = finiteOrNull(metrics.reach);
+    if (reach !== null && reach > 0) return reach;
+    const views = finiteOrNull(metrics.views);
+    if (views !== null && views > 0) return views;
     return 0;
 }
 
 function rateFrom(interactions: number, denominator: number): number | null {
-    return denominator > 0
+    return Number.isFinite(interactions) &&
+        Number.isFinite(denominator) &&
+        denominator > 0
         ? Math.round((interactions / denominator) * 1000) / 10
         : null;
 }
@@ -130,13 +144,16 @@ function rateFrom(interactions: number, denominator: number): number | null {
  * the rate denominator instead of diluting the overall rate.
  */
 function availableInteractions(metrics: IAnalyticsMetrics): number | null {
-    if (typeof metrics.interactions === 'number') return metrics.interactions;
+    const aggregate = finiteOrNull(metrics.interactions);
+    if (aggregate !== null) return aggregate;
     const values = [
         metrics.likes,
         metrics.comments,
         metrics.shares,
         metrics.saves,
-    ].filter((value): value is number => typeof value === 'number');
+    ]
+        .map((value) => finiteOrNull(value))
+        .filter((value): value is number => value !== null);
     return values.length > 0
         ? values.reduce((sum, value) => sum + value, 0)
         : null;
@@ -168,14 +185,14 @@ export function summarizeTargets(
         const metrics = latest.get(targetKey(target.postId, target.platform))?.metrics;
         if (!metrics) continue;
         const interactionsForTarget = availableInteractions(metrics);
-        reach += metrics.reach ?? 0;
-        views += metrics.views ?? 0;
+        reach += finiteOrZero(metrics.reach);
+        views += finiteOrZero(metrics.views);
         interactions += interactionsForTarget ?? 0;
-        likes += metrics.likes ?? 0;
-        comments += metrics.comments ?? 0;
-        shares += metrics.shares ?? 0;
-        saves += metrics.saves ?? 0;
-        clicks += metrics.clicks ?? 0;
+        likes += finiteOrZero(metrics.likes);
+        comments += finiteOrZero(metrics.comments);
+        shares += finiteOrZero(metrics.shares);
+        saves += finiteOrZero(metrics.saves);
+        clicks += finiteOrZero(metrics.clicks);
 
         const denominator = rateDenominator(metrics);
         if (denominator > 0 && interactionsForTarget !== null) {
@@ -229,7 +246,7 @@ export function buildActivity(
         else bucket.instagram += 1;
         const metrics = latest.get(targetKey(target.postId, target.platform))?.metrics;
         if (metrics) {
-            bucket.reach += metrics.reach ?? 0;
+            bucket.reach += finiteOrZero(metrics.reach);
             bucket.interactions += availableInteractions(metrics) ?? 0;
         }
     }
@@ -353,8 +370,8 @@ export function buildMonitorSeries(
                     const metrics = snapshot.metrics;
                     if (!metrics) continue;
                     const interactionsForTarget = availableInteractions(metrics);
-                    reach += metrics.reach ?? 0;
-                    views += metrics.views ?? 0;
+                    reach += finiteOrZero(metrics.reach);
+                    views += finiteOrZero(metrics.views);
                     interactions += interactionsForTarget ?? 0;
                     const denominator = rateDenominator(metrics);
                     if (denominator > 0 && interactionsForTarget !== null) {
@@ -403,6 +420,7 @@ interface PostLike {
     _id?: { toString(): string };
     connectionId?: unknown;
     connection?: ConnectionLike | null;
+    populated?: (path: string) => unknown;
     caption?: string;
     mediaUrl?: string;
     status?: PostStatus;
@@ -417,9 +435,18 @@ interface PostLike {
 
 interface ConnectionLike {
     _id?: { toString(): string };
+    userId?: unknown;
     pageName?: string;
     pageId?: string;
     instagram?: { username?: string } | null;
+}
+
+function rawConnectionId(post: PostLike): unknown {
+    const populated =
+        typeof post.populated === 'function'
+            ? post.populated('connectionId')
+            : undefined;
+    return populated ?? post.connectionId;
 }
 
 function targetsFromPost(
@@ -429,10 +456,11 @@ function targetsFromPost(
     range: Pick<AnalyticsRange, 'from' | 'to'>
 ): PublishedTarget[] {
     if (!post._id) return [];
+    const rawId = rawConnectionId(post);
     const connectionId = connection?._id
         ? String(connection._id)
-        : post.connectionId
-          ? String(post.connectionId)
+        : rawId
+          ? String(rawId)
           : '';
     if (!connectionId) return [];
     const targets: PublishedTarget[] = [];
@@ -468,14 +496,20 @@ export async function loadPublishedTargets(
     const posts = await Post.find(
         buildPublishedTargetsQuery(userId, range, filters) as QueryFilter<IPost>
     )
-        .populate('connectionId', 'pageName pageId instagram')
+        .populate('connectionId', 'pageName pageId instagram userId')
         .sort({ publishedAt: -1 });
 
     const targets: PublishedTarget[] = [];
     for (const post of posts) {
         const raw = post as unknown as PostLike;
         const connection = (post.connectionId as unknown as ConnectionLike | null) ?? null;
-        targets.push(...targetsFromPost(raw, connection, filters, range));
+        // A populated connection must belong to the requesting user before its
+        // Page details are trusted; otherwise fall back to the raw id only.
+        const ownedConnection =
+            connection && (!connection.userId || String(connection.userId) === userId)
+                ? connection
+                : null;
+        targets.push(...targetsFromPost(raw, ownedConnection, filters, range));
     }
     return targets;
 }
@@ -486,8 +520,8 @@ export function buildPublishedTargetsPagePipeline(
     filters: AnalyticsFilters,
     page: number,
     limit: number
-): Record<string, unknown>[] {
-    const safePage = Math.max(1, Math.floor(page) || 1);
+): PipelineStage[] {
+    const safePage = Math.min(MAX_POST_PAGE, Math.max(1, Math.floor(page) || 1));
     const safeLimit = Math.min(100, Math.max(1, Math.floor(limit) || 25));
     const match: Record<string, unknown> = {
         userId: new Types.ObjectId(userId),
@@ -565,6 +599,7 @@ export function buildPublishedTargetsPagePipeline(
                                         pageName: 1,
                                         pageId: 1,
                                         instagram: 1,
+                                        userId: 1,
                                     },
                                 },
                             ],
@@ -593,12 +628,17 @@ export async function loadPublishedTargetsPage(
     const rows = await Post.aggregate<{
         metadata: Array<{ total: number }>;
         data: PostLike[];
-    }>(buildPublishedTargetsPagePipeline(userId, range, filters, page, limit) as never);
+    }>(buildPublishedTargetsPagePipeline(userId, range, filters, page, limit));
     const result = rows[0];
     const total = result?.metadata[0]?.total ?? 0;
-    const targets = (result?.data ?? []).flatMap((post) =>
-        targetsFromPost(post, post.connection ?? null, filters, range)
-    );
+    const targets = (result?.data ?? []).flatMap((post) => {
+        const connection = post.connection ?? null;
+        const ownedConnection =
+            connection && (!connection.userId || String(connection.userId) === userId)
+                ? connection
+                : null;
+        return targetsFromPost(post, ownedConnection, filters, range);
+    });
     return { targets, total };
 }
 
@@ -640,7 +680,7 @@ export function buildLatestSnapshotsPipeline(
     userId: string,
     targets: PublishedTarget[],
     range?: Pick<AnalyticsRange, 'from' | 'to'>
-): Record<string, unknown>[] {
+): PipelineStage[] {
     const postIds = [...new Set(targets.map((target) => target.postId))].map(
         (postId) => new Types.ObjectId(postId)
     );
@@ -671,7 +711,7 @@ export async function loadLatestSnapshots(
 ): Promise<IPostMetricSnapshot[]> {
     if (targets.length === 0) return [];
     return PostMetricSnapshot.aggregate<IPostMetricSnapshot>(
-        buildLatestSnapshotsPipeline(userId, targets, range) as never
+        buildLatestSnapshotsPipeline(userId, targets, range)
     );
 }
 
@@ -681,19 +721,40 @@ const MONITOR_SNAPSHOT_LIMIT = 50_000;
 /**
  * The live monitor is a recent-history view. The overview remains the
  * full-range historical view, so this bounds the monitor to a rolling window.
+ * Queries are issued per target so each one can use the
+ * (userId, postId, platform, capturedAt) index, and the total row count stays
+ * bounded by MONITOR_SNAPSHOT_LIMIT.
  */
 export async function loadMonitorSnapshots(
     userId: string,
     targets: PublishedTarget[],
     range: AnalyticsRange
 ): Promise<IPostMetricSnapshot[]> {
-    const query = buildSnapshotQuery(userId, targets, range);
-    if (!query) return [];
+    const uniqueTargets = new Map<string, PublishedTarget>();
+    for (const target of targets) {
+        uniqueTargets.set(targetKey(target.postId, target.platform), target);
+    }
+    if (uniqueTargets.size === 0) return [];
     const cutoff = new Date(Date.now() - MONITOR_HISTORY_DAYS * 86_400_000);
-    query.capturedAt = { $gte: cutoff > range.from ? cutoff : range.from };
-    return PostMetricSnapshot.find(query as QueryFilter<IPostMetricSnapshot>)
-        .sort({ capturedAt: -1 })
-        .limit(MONITOR_SNAPSHOT_LIMIT);
+    const capturedAt = { $gte: cutoff > range.from ? cutoff : range.from };
+    const perTargetLimit = Math.max(
+        1,
+        Math.floor(MONITOR_SNAPSHOT_LIMIT / uniqueTargets.size)
+    );
+    const results = await Promise.all(
+        [...uniqueTargets.values()].map((target) =>
+            PostMetricSnapshot.find({
+                userId,
+                postId: target.postId,
+                platform: target.platform,
+                publishedAt: { $gte: range.from, $lte: range.to },
+                capturedAt,
+            } as QueryFilter<IPostMetricSnapshot>)
+                .sort({ capturedAt: -1 })
+                .limit(perTargetLimit)
+        )
+    );
+    return results.flat();
 }
 
 export function uniquePermissionErrors(
@@ -827,14 +888,22 @@ export async function getAnalyticsOverview(
     };
 }
 
+function nextSyncAt(now = Date.now()): string {
+    const interval = 5 * 60_000;
+    return new Date(Math.floor(now / interval) * interval + interval).toISOString();
+}
+
 export async function getAnalyticsMonitor(
     userId: string,
     range: AnalyticsRange,
     filters: AnalyticsFilters
 ) {
     const targets = await loadPublishedTargets(userId, range, filters);
-    const snapshots = await loadMonitorSnapshots(userId, targets, range);
-    const latest = latestSnapshotsByTarget(snapshots);
+    const [latestSnapshots, snapshots] = await Promise.all([
+        loadLatestSnapshots(userId, targets, range),
+        loadMonitorSnapshots(userId, targets, range),
+    ]);
+    const latest = latestSnapshotsByTarget(latestSnapshots);
     const summary = summarizeTargets(targets, latest);
     const targetKeys = new Set(
         targets.map((target) => targetKey(target.postId, target.platform))
@@ -872,7 +941,7 @@ export async function getAnalyticsMonitor(
         recentPosts,
         sync: {
             lastSyncedAt: lastSyncedAt(targets, latest),
-            nextSyncAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+            nextSyncAt: nextSyncAt(),
             staleTargets: staleCount(targets, latest, 5),
             permissionErrors: uniquePermissionErrors(targets, latest),
         },
@@ -886,7 +955,7 @@ export async function getAnalyticsPosts(
     page: number,
     limit: number
 ) {
-    const safePage = Math.max(1, Math.floor(page) || 1);
+    const safePage = Math.min(MAX_POST_PAGE, Math.max(1, Math.floor(page) || 1));
     const safeLimit = Math.min(100, Math.max(1, Math.floor(limit) || 25));
     const { targets, total } = await loadPublishedTargetsPage(
         userId,
@@ -937,7 +1006,7 @@ export async function getAnalyticsPosts(
         .sort((a, b) => b.latestPublishedAt - a.latestPublishedAt);
 
     const start = (safePage - 1) * safeLimit;
-    const pagePosts = posts.slice(0, safeLimit).map(({ latestPublishedAt, ...post }) => post);
+    const pagePosts = posts.map(({ latestPublishedAt, ...post }) => post);
 
     return {
         posts: pagePosts,
@@ -964,7 +1033,7 @@ export function buildRuleBasedTips(input: {
     activity: ActivityBucket[];
     permissionErrors: Array<{ pageName: string }>;
     posts: Array<{ caption: string; engagementRate: number | null }>;
-    granularity?: 'day' | 'week';
+    granularity: 'day' | 'week';
 }): RuleBasedTip[] {
     const tips: RuleBasedTip[] = [];
     const overallRate = input.summary.engagementRate;
@@ -1116,41 +1185,62 @@ export function buildAnalyticsAiPayload(input: {
     bestTimes: BestTimeBucket[];
     permissionErrors: Array<{ pageName: string }>;
     topPosts: Array<{
-        postId?: string;
+        postId: string;
         caption: string;
         reach: number;
+        views: number | null;
         interactions: number;
-        engagementRate: number | null;
     }>;
     brandProfile: Record<string, string | undefined>;
 }) {
     // A cross-posted post appears once per platform. Collapse those entries so
-    // the AI sees one row per post with combined reach and interactions.
+    // the AI sees one row per post with combined reach and interactions. The
+    // rate keeps its own numerator/denominator so a target that reports only
+    // views contributes views rather than a zero reach.
     const dedupedTopPosts = new Map<
         string,
-        { caption: string; reach: number; interactions: number }
+        {
+            caption: string;
+            reach: number;
+            views: number;
+            interactions: number;
+            rateInteractions: number;
+            rateDenominator: number;
+        }
     >();
     for (const post of input.topPosts) {
-        const key = post.postId || post.caption;
-        const current = dedupedTopPosts.get(key);
-        if (current) {
-            current.reach += post.reach;
-            current.interactions += post.interactions;
-        } else {
-            dedupedTopPosts.set(key, {
-                caption: post.caption,
-                reach: post.reach,
-                interactions: post.interactions,
-            });
+        const current = dedupedTopPosts.get(post.postId) ?? {
+            caption: post.caption,
+            reach: 0,
+            views: 0,
+            interactions: 0,
+            rateInteractions: 0,
+            rateDenominator: 0,
+        };
+        const reach = finiteOrZero(post.reach);
+        const views = finiteOrZero(post.views);
+        const interactions = finiteOrZero(post.interactions);
+        current.caption = current.caption || post.caption;
+        current.reach += reach;
+        current.views += views;
+        current.interactions += interactions;
+        const denominator = reach > 0 ? reach : views > 0 ? views : 0;
+        if (denominator > 0) {
+            current.rateInteractions += interactions;
+            current.rateDenominator += denominator;
         }
+        dedupedTopPosts.set(post.postId, current);
     }
     const topPosts = [...dedupedTopPosts.values()].map((post) => ({
-        ...post,
-        engagementRate:
-            post.reach > 0
-                ? Math.round((post.interactions / post.reach) * 1000) / 10
-                : null,
+        caption: post.caption,
+        reach: post.reach,
+        interactions: post.interactions,
+        engagementRate: rateFrom(post.rateInteractions, post.rateDenominator),
     }));
+
+    const permissionPages = new Set(
+        input.permissionErrors.map((error) => error.pageName)
+    );
 
     return {
         range: { from: input.range.fromKey, to: input.range.toKey, timezone: 'Asia/Kolkata' },
@@ -1161,9 +1251,7 @@ export function buildAnalyticsAiPayload(input: {
         publishingFrequency: publishingFrequency(input.activity, input.summary.posts),
         longestGapDays: longestGapDays(input.activity, input.range.granularity),
         bestTimes: input.bestTimes.filter((bucket) => bucket.posts > 0),
-        permissionErrors: input.permissionErrors.map((error) => ({
-            pageName: error.pageName,
-        })),
+        permissionErrors: [...permissionPages].map((pageName) => ({ pageName })),
         topPosts: [...topPosts]
             .sort((a, b) => b.reach - a.reach)
             .slice(0, 5)
