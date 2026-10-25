@@ -22,6 +22,7 @@ const {
     lastSyncedAt,
     rangePreset,
     loadPublishedTargets,
+    loadMonitorSnapshots,
     getAnalyticsOverview,
     getAnalyticsMonitor,
     getAnalyticsPosts,
@@ -976,6 +977,28 @@ test('queries monitor snapshots per target with a bounded limit', async (t) => {
     }
 });
 
+test('caps monitor history to the most recent 100 targets', async (t) => {
+    t.after(() => mock.restoreAll());
+    const range = analyticsRange('2026-10-01', '2026-10-31');
+    const targets = Array.from({ length: 101 }, (_, index) =>
+        target({
+            postId: `post-${index}`,
+            platform: index % 2 === 0 ? 'facebook' : 'instagram',
+        })
+    );
+    const captures: Array<{ query: Record<string, unknown>; limit: number }> = [];
+    mockSnapshotFind([], captures);
+
+    await loadMonitorSnapshots(USER_ID, targets as never, range);
+
+    assert.equal(captures.length, 100);
+    assert.equal(captures.some((capture) => capture.query.postId === 'post-100'), false);
+    for (const capture of captures) {
+        // 50_000 rows split across the 100 capped targets.
+        assert.equal(capture.limit, 500);
+    }
+});
+
 test('resolves the selected Page name when the monitor scope has no targets', async (t) => {
     t.after(() => mock.restoreAll());
     const range = analyticsRange('2026-10-01', '2026-10-31');
@@ -1283,6 +1306,23 @@ test('deduplicates cross-posted entries in the AI payload top posts', () => {
     assert.equal(payload.topPosts[0]?.interactions, 40);
     assert.equal(payload.topPosts[0]?.engagementRate, 10);
     assert.equal(payload.topEngagementPosts.length, 1);
+});
+
+test('keeps unknown AI interactions out of the engagement ranking', () => {
+    const payload = aiPayload({
+        topPosts: [
+            {
+                postId: POST_1,
+                caption: 'Unknown interactions',
+                reach: 100,
+                views: null,
+                interactions: null,
+            },
+        ],
+    });
+
+    assert.equal(payload.topPosts[0]?.engagementRate, null);
+    assert.equal(payload.topEngagementPosts.length, 0);
 });
 
 test('uses views as the AI top-post denominator when reach is zero', () => {

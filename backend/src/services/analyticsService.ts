@@ -717,10 +717,12 @@ export async function loadLatestSnapshots(
 
 const MONITOR_HISTORY_DAYS = 90;
 const MONITOR_SNAPSHOT_LIMIT = 50_000;
+const MONITOR_TARGET_LIMIT = 100;
 
 /**
  * The live monitor is a recent-history view. The overview remains the
- * full-range historical view, so this bounds the monitor to a rolling window.
+ * full-range historical view, so this bounds the monitor to a rolling window
+ * and the most recent MONITOR_TARGET_LIMIT targets in the selected scope.
  * Queries are issued per target so each one can use the
  * (postId, platform, capturedAt) index, and the total row count stays bounded
  * by MONITOR_SNAPSHOT_LIMIT.
@@ -734,15 +736,19 @@ export async function loadMonitorSnapshots(
     for (const target of targets) {
         uniqueTargets.set(targetKey(target.postId, target.platform), target);
     }
-    if (uniqueTargets.size === 0) return [];
+    const monitorTargets = [...uniqueTargets.values()].slice(
+        0,
+        MONITOR_TARGET_LIMIT
+    );
+    if (monitorTargets.length === 0) return [];
     const cutoff = new Date(Date.now() - MONITOR_HISTORY_DAYS * 86_400_000);
     const capturedAt = { $gte: cutoff > range.from ? cutoff : range.from };
     const perTargetLimit = Math.max(
         1,
-        Math.floor(MONITOR_SNAPSHOT_LIMIT / uniqueTargets.size)
+        Math.floor(MONITOR_SNAPSHOT_LIMIT / monitorTargets.length)
     );
     const results = await Promise.all(
-        [...uniqueTargets.values()].map((target) =>
+        monitorTargets.map((target) =>
             PostMetricSnapshot.find({
                 userId,
                 postId: target.postId,
@@ -833,7 +839,7 @@ export function rangePreset(
     return 'custom';
 }
 
-async function resolvePageName(
+export async function resolvePageName(
     userId: string,
     connectionId: string,
     targets: PublishedTarget[]
@@ -1189,7 +1195,7 @@ export function buildAnalyticsAiPayload(input: {
         caption: string;
         reach: number;
         views: number | null;
-        interactions: number;
+        interactions: number | null;
     }>;
     brandProfile: Record<string, string | undefined>;
 }) {
