@@ -5,9 +5,11 @@ process.env.JWT_SECRET = 'test-jwt-secret-that-is-at-least-32-chars';
 process.env.TOKEN_ENCRYPTION_KEY = '0123456789abcdef'.repeat(4);
 
 const {
+    MAX_RANGE_DAYS,
     parseAnalyticsRange,
     buildAnalyticsBuckets,
     bucketKeyForDate,
+    toIstWeekLabel,
     istWeekday,
     istHourBlock,
 } = await import('./analyticsDateService.js');
@@ -17,6 +19,12 @@ const istDayFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolka
 
 function istDayKey(date: Date): string {
     return istDayFormatter.format(date);
+}
+
+// IST has no DST, so offsetting from an IST midnight by whole days is exact.
+function istDayKeyOffset(baseKey: string, days: number): string {
+    const base = new Date(`${baseKey}T00:00:00+05:30`);
+    return istDayKey(new Date(base.getTime() + days * DAY_MS));
 }
 
 test('converts an IST day to inclusive UTC boundaries', () => {
@@ -89,6 +97,9 @@ test('anchors weekly buckets to Monday in IST', () => {
     assert.equal(buckets[0].key, '2024-12-30');
     assert.equal(buckets[0].label, 'Week of 30 Dec');
     assert.equal(buckets[0].start.toISOString(), '2024-12-29T18:30:00.000Z');
+
+    // A non-Monday key still labels the week by its Monday.
+    assert.equal(toIstWeekLabel('2025-01-01'), 'Week of 30 Dec');
 });
 
 test('clamps a future to date to today in IST, including end of day', () => {
@@ -119,6 +130,23 @@ test('rejects ranges longer than 730 days', () => {
     const now = new Date();
     const todayKey = istDayKey(now);
     const fromKey = istDayKey(new Date(now.getTime() - 800 * DAY_MS));
+
+    assert.throws(() => parseAnalyticsRange(fromKey, todayKey), /730/);
+});
+
+test('accepts an inclusive range of exactly 730 days', () => {
+    const todayKey = istDayKey(new Date());
+    const fromKey = istDayKeyOffset(todayKey, -(MAX_RANGE_DAYS - 1));
+    const range = parseAnalyticsRange(fromKey, todayKey);
+
+    assert.equal(range.fromKey, fromKey);
+    assert.equal(range.toKey, todayKey);
+    assert.equal(range.granularity, 'week');
+});
+
+test('rejects an inclusive range of 731 days', () => {
+    const todayKey = istDayKey(new Date());
+    const fromKey = istDayKeyOffset(todayKey, -MAX_RANGE_DAYS);
 
     assert.throws(() => parseAnalyticsRange(fromKey, todayKey), /730/);
 });

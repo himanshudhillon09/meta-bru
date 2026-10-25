@@ -14,10 +14,20 @@ export interface AnalyticsRange {
     granularity: 'day' | 'week';
 }
 
+/**
+ * A time bucket for analytics aggregation.
+ *
+ * Weekly buckets are Monday-anchored full weeks in IST. Their `start` and `end`
+ * may extend up to 6 days outside the requested range by design. Callers must
+ * filter posts by `range.from`/`range.to` before bucketing so out-of-range
+ * posts do not leak into the first or last bucket.
+ */
 export interface AnalyticsBucket {
     key: string;
     label: string;
+    /** Inclusive bucket start in UTC (Monday 00:00 IST for weekly buckets). */
     start: Date;
+    /** Inclusive bucket end in UTC (Sunday 23:59:59.999 IST for weekly buckets). */
     end: Date;
 }
 
@@ -88,13 +98,23 @@ export function toIstWeekKey(value: Date): string {
 }
 
 export function toIstWeekLabel(key: string): string {
-    return `Week of ${ist(key).toFormat('d LLL')}`;
+    // Anchor to the week's Monday so a non-Monday key cannot produce a
+    // misleading "Week of <date>" label.
+    return `Week of ${startOfIstWeek(key).toFormat('d LLL')}`;
 }
 
+/**
+ * Returns the IST weekday as a Luxon weekday number: `1..7` where
+ * `1 = Monday` and `7 = Sunday`.
+ */
 export function istWeekday(value: Date): number {
     return ist(value).weekday;
 }
 
+/**
+ * Returns the 3-hour IST block for a timestamp, as `0..7`:
+ * `0 = 00:00-02:59`, `1 = 03:00-05:59`, ..., `7 = 21:00-23:59`.
+ */
 export function istHourBlock(value: Date): number {
     return Math.floor(ist(value).hour / 3);
 }
@@ -115,20 +135,17 @@ export function buildAnalyticsBuckets(range: AnalyticsRange): AnalyticsBucket[] 
     const last = ist(range.toKey).startOf('day');
 
     while (cursor <= last) {
-        const end =
-            range.granularity === 'day'
-                ? cursor.endOf('day')
-                : cursor.plus({ days: 6 }).endOf('day');
+        const isDay = range.granularity === 'day';
+        const cursorDate = cursor.toJSDate();
+        const key = isDay ? toIstDayKey(cursorDate) : toIstWeekKey(cursorDate);
+        const end = isDay ? cursor.endOf('day') : cursor.plus({ days: 6 }).endOf('day');
         buckets.push({
-            key: cursor.toFormat('yyyy-MM-dd'),
-            label:
-                range.granularity === 'day'
-                    ? cursor.toFormat('d LLL')
-                    : `Week of ${cursor.toFormat('d LLL')}`,
+            key,
+            label: isDay ? toIstDayLabel(key) : toIstWeekLabel(key),
             start: cursor.toUTC().toJSDate(),
             end: end.toUTC().toJSDate(),
         });
-        cursor = cursor.plus(range.granularity === 'day' ? { days: 1 } : { weeks: 1 });
+        cursor = cursor.plus(isDay ? { days: 1 } : { weeks: 1 });
     }
 
     return buckets;
