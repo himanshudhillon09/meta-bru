@@ -202,11 +202,11 @@ export async function fetchFacebookMetrics(
             break;
         } catch (error) {
             if (isTokenError(error)) throw error;
-            if (isInvalidMetricError(error)) continue;
             if (isPermissionError(error)) {
                 permissionError = true;
                 break;
             }
+            if (isInvalidMetricError(error)) continue;
             if (isNetworkError(error)) networkError = true;
             lastError = errorMessage(error);
             break;
@@ -215,10 +215,10 @@ export async function fetchFacebookMetrics(
 
     return finalize(
         metrics,
-        networkError
-            ? 'unavailable'
-            : permissionError
-              ? 'permission_error'
+        permissionError
+            ? 'permission_error'
+            : networkError
+              ? 'unavailable'
               : 'partial',
         lastError,
         ['likes', 'comments', 'shares', 'reach', 'views', 'clicks']
@@ -257,11 +257,11 @@ export async function fetchInstagramMetrics(
             break;
         } catch (error) {
             if (isTokenError(error)) throw error;
-            if (isInvalidMetricError(error)) continue;
             if (isPermissionError(error)) {
                 permissionError = true;
                 break;
             }
+            if (isInvalidMetricError(error)) continue;
             if (isNetworkError(error)) networkError = true;
             lastError = errorMessage(error);
             break;
@@ -312,10 +312,10 @@ export async function fetchInstagramMetrics(
 
     return finalize(
         metrics,
-        networkError
-            ? 'unavailable'
-            : permissionError
-              ? 'permission_error'
+        permissionError
+            ? 'permission_error'
+            : networkError
+              ? 'unavailable'
               : 'partial',
         lastError,
         ['likes', 'comments', 'shares', 'saves', 'reach', 'views']

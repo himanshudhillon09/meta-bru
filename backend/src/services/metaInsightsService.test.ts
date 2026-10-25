@@ -224,6 +224,38 @@ test('marks explicit permission errors as permission_error', async () => {
     }
 });
 
+test('classifies code-100 missing-permission messages as permission errors', async () => {
+    let insightCalls = 0;
+    const request = async (path: string) => {
+        if (path.endsWith('/insights')) {
+            insightCalls += 1;
+            throw new MetaApiError(
+                "Unsupported get request. Object with ID 'p1' does not exist, cannot be loaded due to missing permissions, or does not support this operation.",
+                403,
+                100
+            );
+        }
+        return { reactions: { summary: { total_count: 4 } } };
+    };
+
+    const result = await fetchFacebookMetrics('p1', 'token', request);
+    assert.equal(insightCalls, 1);
+    assert.equal(result.metrics.likes, 4);
+    assert.equal(result.status, 'permission_error');
+});
+
+test('prefers permission_error over unavailable when both occur', async () => {
+    const request = async (path: string) => {
+        if (path.endsWith('/insights')) {
+            throw new MetaApiError('socket hang up', 0, 1);
+        }
+        throw new MetaApiError('permission denied', 403, 200);
+    };
+
+    const result = await fetchFacebookMetrics('post-1', 'token', request);
+    assert.equal(result.status, 'permission_error');
+});
+
 test('rethrows token errors from the legacy Instagram impressions probe', async () => {
     const request = async (
         path: string,
