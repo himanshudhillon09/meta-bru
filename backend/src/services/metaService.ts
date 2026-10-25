@@ -74,7 +74,7 @@ interface MetaErrorPayload {
     error_user_msg?: string;
 }
 
-interface GraphRequestOptions {
+export interface GraphRequestOptions {
     method?: 'GET' | 'POST';
     accessToken?: string;
     params?: Record<string, string | number | undefined>;
@@ -92,7 +92,7 @@ export interface MetaPageAccount {
     };
 }
 
-async function graphRequest<T>(
+export async function graphRequest<T>(
     path: string,
     options: GraphRequestOptions = {}
 ): Promise<T> {
