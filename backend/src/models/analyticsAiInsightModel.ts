@@ -13,6 +13,10 @@ export interface IAnalyticsTip {
 /**
  * `Document` declares a `model()` method, which collides with the cached
  * Gemini model name field. Omitting it keeps the field typed as `string`.
+ *
+ * Note: hydrated documents still type `model` as
+ * `Document['model'] & string` because `model()` remains callable at runtime.
+ * Callers should read `doc.model` as a string and never call `doc.model()`.
  */
 export interface IAnalyticsAiInsight extends Omit<mongoose.Document, 'model'> {
     userId: mongoose.Types.ObjectId;
@@ -41,7 +45,7 @@ const tipSchema = new mongoose.Schema<IAnalyticsTip>(
 
 const insightSchema = new mongoose.Schema<IAnalyticsAiInsight>(
     {
-        userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+        userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
         scopeKey: { type: String, required: true },
         connectionId: {
             type: mongoose.Schema.Types.ObjectId,

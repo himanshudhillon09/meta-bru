@@ -62,20 +62,19 @@ const metricsSchema = new mongoose.Schema<IAnalyticsMetrics>(
 
 const snapshotSchema = new mongoose.Schema<IPostMetricSnapshot>(
     {
-        userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+        userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
         connectionId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'SocialConnection',
             required: true,
-            index: true,
         },
         pageId: { type: String, required: true },
         pageName: { type: String, default: '' },
-        postId: { type: mongoose.Schema.Types.ObjectId, ref: 'Post', required: true, index: true },
+        postId: { type: mongoose.Schema.Types.ObjectId, ref: 'Post', required: true },
         platform: { type: String, enum: ['facebook', 'instagram'], required: true },
         externalId: { type: String, default: '' },
-        publishedAt: { type: Date, required: true, index: true },
-        capturedAt: { type: Date, required: true, index: true },
+        publishedAt: { type: Date, required: true },
+        capturedAt: { type: Date, required: true },
         metrics: { type: metricsSchema, default: emptyAnalyticsMetrics },
         availableMetrics: { type: [String], default: [] },
         status: {
