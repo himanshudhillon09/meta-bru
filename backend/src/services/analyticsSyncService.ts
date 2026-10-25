@@ -227,16 +227,9 @@ export async function syncAnalytics(
     const reauthMarked = new Set<string>();
 
     await mapWithConcurrency(selected, FETCH_CONCURRENCY, async (target) => {
-        if (!target.externalId) {
-            skipped += 1;
-            return;
-        }
-
+        // `selected` is a subset of `eligible`, so both are invariants here.
         const connection = connectionMap.get(target.connectionId);
-        if (!connection) {
-            skipped += 1;
-            return;
-        }
+        if (!connection) return;
 
         if (decryptFailures.has(target.connectionId)) {
             failed += 1;

@@ -750,6 +750,33 @@ test('continues after a snapshot write failure', async (t) => {
     );
 });
 
+test('sanitizes persisted insight errors', async (t) => {
+    t.after(() => mock.restoreAll());
+
+    mockTargets([facebookOnlyPost()]);
+    mockLatestSnapshots([]);
+    mockConnections([connection()]);
+    const writes = mockSnapshotWrites(null);
+
+    const result = await syncAnalytics(
+        USER_ID,
+        analyticsRange('2026-10-01', '2026-10-31'),
+        {},
+        'stale',
+        {
+            fetchFacebook: async () =>
+                insight({ error: 'access_token=SECRET-VALUE' }),
+            now: () => FIXED_NOW,
+        }
+    );
+
+    assert.equal(result.synced, 1);
+    assert.equal(writes.create.length, 1);
+    const error = String(writes.create[0]?.error);
+    assert.equal(error.includes('SECRET-VALUE'), false);
+    assert.match(error, /redacted/i);
+});
+
 test('dedupes snapshots within one minute using the owning user', async (t) => {
     t.after(() => mock.restoreAll());
 
