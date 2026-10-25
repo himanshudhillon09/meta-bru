@@ -164,13 +164,22 @@ function mockLatestSnapshots(snapshots: unknown[]) {
     );
 }
 
-function mockConnections(connections: unknown[]) {
-    return mock.method(SocialConnection, 'find', () => ({
-        select: async () => connections,
-    }));
+function mockConnections(
+    connections: unknown[],
+    captures: Array<Record<string, unknown>> = []
+) {
+    return mock.method(SocialConnection, 'find', (query: Record<string, unknown>) => {
+        captures.push(query);
+        return {
+            select: async () => connections,
+        };
+    });
 }
 
-function mockSnapshotWrites(existing: unknown = null) {
+function mockSnapshotWrites(
+    existing: unknown = null,
+    onCreate?: (data: Record<string, unknown>) => Promise<unknown>
+) {
     const captured = {
         findOne: [] as Array<Record<string, unknown>>,
         create: [] as Array<Record<string, unknown>>,
@@ -193,7 +202,7 @@ function mockSnapshotWrites(existing: unknown = null) {
         'create',
         (data: Record<string, unknown>) => {
             captured.create.push(data);
-            return Promise.resolve(data);
+            return onCreate ? onCreate(data) : Promise.resolve(data);
         }
     );
     mock.method(
@@ -466,6 +475,78 @@ test('skips targets without an external id or an owned connection', async (t) =>
     assert.equal(writes.create.length, 0);
 });
 
+test('does not let ineligible targets consume the sync cap', async (t) => {
+    t.after(() => mock.restoreAll());
+
+    const brokenPosts = Array.from({ length: 21 }, (_, index) =>
+        targetPost({
+            _id: objectId(100 + index),
+            connectionId: populatedConnection({
+                _id: OTHER_CONNECTION_ID,
+                pageId: 'page-broken',
+                pageName: 'Broken Page',
+            }),
+            publishedAt: new Date(Date.UTC(2026, 9, index + 1, 9)),
+            targets: [
+                {
+                    platform: 'facebook',
+                    status: 'published',
+                    externalId: `broken-${index}`,
+                    publishedAt: new Date(Date.UTC(2026, 9, index + 1, 9)),
+                },
+            ],
+        })
+    );
+    const healthyPost = targetPost({
+        _id: objectId(200),
+        publishedAt: new Date(Date.UTC(2026, 8, 1, 9)),
+        targets: [
+            {
+                platform: 'facebook',
+                status: 'published',
+                externalId: 'healthy-1',
+                publishedAt: new Date(Date.UTC(2026, 8, 1, 9)),
+            },
+        ],
+    });
+
+    mockTargets([...brokenPosts, healthyPost]);
+    mockLatestSnapshots([]);
+    const connectionQueries: Array<Record<string, unknown>> = [];
+    mockConnections([connection()], connectionQueries);
+    const writes = mockSnapshotWrites(null);
+
+    const fetched: string[] = [];
+    const fetchFacebook = async (postId: string) => {
+        fetched.push(postId);
+        return insight();
+    };
+
+    const result = await syncAnalytics(
+        USER_ID,
+        analyticsRange('2026-09-01', '2026-10-31'),
+        {},
+        'stale',
+        { fetchFacebook, now: () => FIXED_NOW }
+    );
+
+    assert.deepEqual(fetched, ['healthy-1']);
+    assert.equal(result.synced, 1);
+    assert.equal(result.failed, 0);
+    assert.equal(result.skipped, 21);
+    assert.equal(result.remaining, 0);
+    assert.equal(writes.create.length, 1);
+    assert.equal(writes.create[0]?.externalId, 'healthy-1');
+
+    // Eligibility is resolved from active connections owned by this user.
+    assert.equal(connectionQueries.length, 1);
+    assert.equal(connectionQueries[0]?.userId, USER_ID);
+    assert.equal(connectionQueries[0]?.tokenStatus, 'active');
+    const ids = connectionQueries[0]?._id as { $in?: unknown[] };
+    assert.equal(Array.isArray(ids?.$in), true);
+    assert.equal(ids.$in?.length, 2);
+});
+
 test('marks the connection needs_reauth when the stored token cannot be decrypted', async (t) => {
     t.after(() => mock.restoreAll());
 
@@ -557,6 +638,118 @@ test('marks the connection needs_reauth on a Meta token error', async (t) => {
     assert.ok(!lastError.includes('EAABsecret-token-value'));
 });
 
+test('does not abort the sync when reauth bookkeeping fails', async (t) => {
+    t.after(() => mock.restoreAll());
+
+    mockTargets([facebookOnlyPost()]);
+    mockLatestSnapshots([]);
+    mockConnections([connection()]);
+    mockSnapshotWrites(null);
+    mock.method(SocialConnection, 'updateOne', () =>
+        Promise.reject(new Error('database unavailable'))
+    );
+
+    const fetchFacebook = async () => {
+        throw new MetaApiError('Invalid OAuth access token', 400, 190, 0, true);
+    };
+
+    const result = await syncAnalytics(
+        USER_ID,
+        analyticsRange('2026-10-01', '2026-10-31'),
+        {},
+        'stale',
+        { fetchFacebook, now: () => FIXED_NOW }
+    );
+
+    assert.equal(result.synced, 0);
+    assert.equal(result.failed, 1);
+    assert.equal(result.skipped, 0);
+});
+
+test('dedupes reauth updates for multiple targets on one Page', async (t) => {
+    t.after(() => mock.restoreAll());
+
+    mockTargets([targetPost()]);
+    mockLatestSnapshots([]);
+    mockConnections([connection()]);
+    mockSnapshotWrites(null);
+    const connectionUpdates = mockConnectionUpdates();
+
+    const tokenError = async () => {
+        throw new MetaApiError('Invalid OAuth access token', 400, 190, 0, true);
+    };
+
+    const result = await syncAnalytics(
+        USER_ID,
+        analyticsRange('2026-10-01', '2026-10-31'),
+        {},
+        'stale',
+        { fetchFacebook: tokenError, fetchInstagram: tokenError, now: () => FIXED_NOW }
+    );
+
+    assert.equal(result.synced, 0);
+    assert.equal(result.failed, 2);
+    assert.equal(connectionUpdates.length, 1);
+    assert.equal(connectionUpdates[0]?.query._id, CONNECTION_ID);
+});
+
+test('continues after a snapshot write failure', async (t) => {
+    t.after(() => mock.restoreAll());
+
+    const posts = [
+        facebookOnlyPost({
+            _id: objectId(71),
+            publishedAt: new Date(Date.UTC(2026, 9, 1, 9)),
+            targets: [
+                {
+                    platform: 'facebook',
+                    status: 'published',
+                    externalId: 'fb-ok',
+                    publishedAt: new Date(Date.UTC(2026, 9, 1, 9)),
+                },
+            ],
+        }),
+        facebookOnlyPost({
+            _id: objectId(72),
+            publishedAt: new Date(Date.UTC(2026, 9, 2, 9)),
+            targets: [
+                {
+                    platform: 'facebook',
+                    status: 'published',
+                    externalId: 'fb-fail',
+                    publishedAt: new Date(Date.UTC(2026, 9, 2, 9)),
+                },
+            ],
+        }),
+    ];
+
+    mockTargets(posts);
+    mockLatestSnapshots([]);
+    mockConnections([connection()]);
+    const writes = mockSnapshotWrites(null, async (data) => {
+        if (data.externalId === 'fb-fail') {
+            throw new Error('snapshot write failed');
+        }
+        return data;
+    });
+
+    const result = await syncAnalytics(
+        USER_ID,
+        analyticsRange('2026-10-01', '2026-10-31'),
+        {},
+        'stale',
+        { fetchFacebook: async () => insight(), now: () => FIXED_NOW }
+    );
+
+    assert.equal(result.synced, 1);
+    assert.equal(result.failed, 1);
+    assert.equal(writes.create.length, 2);
+    assert.equal(
+        writes.create.some((data) => data.externalId === 'fb-ok'),
+        true
+    );
+});
+
 test('dedupes snapshots within one minute using the owning user', async (t) => {
     t.after(() => mock.restoreAll());
 
@@ -644,51 +837,33 @@ test('reports remaining targets when more are stale than the mode cap', async (t
     assert.equal(writes.create.length, 10);
 });
 
-test('continues syncing other targets after one token error', async (t) => {
+test('continues syncing queued targets after one token error', async (t) => {
     t.after(() => mock.restoreAll());
 
-    const successPost = targetPost({
-        _id: objectId(31),
-        targets: [
-            {
-                platform: 'facebook',
-                status: 'published',
-                externalId: 'fb-ok',
-                publishedAt: PUBLISHED_AT,
-            },
-        ],
-    });
-    const failingPost = targetPost({
-        _id: objectId(32),
-        connectionId: populatedConnection({
-            _id: OTHER_CONNECTION_ID,
-            pageId: 'page-2',
-            pageName: 'Other Page',
-        }),
-        targets: [
-            {
-                platform: 'facebook',
-                status: 'published',
-                externalId: 'fb-fail',
-                publishedAt: PUBLISHED_AT,
-            },
-        ],
-    });
+    const posts = Array.from({ length: 4 }, (_, index) =>
+        facebookOnlyPost({
+            _id: objectId(31 + index),
+            publishedAt: new Date(Date.UTC(2026, 9, index + 1, 9)),
+            targets: [
+                {
+                    platform: 'facebook',
+                    status: 'published',
+                    externalId: index === 3 ? 'fb-fail' : `fb-ok-${index}`,
+                    publishedAt: new Date(Date.UTC(2026, 9, index + 1, 9)),
+                },
+            ],
+        })
+    );
 
-    mockTargets([successPost, failingPost]);
+    mockTargets(posts);
     mockLatestSnapshots([]);
-    mockConnections([
-        connection(),
-        connection({
-            _id: OTHER_CONNECTION_ID,
-            pageId: 'page-2',
-            pageName: 'Other Page',
-        }),
-    ]);
+    mockConnections([connection()]);
     const writes = mockSnapshotWrites(null);
     const connectionUpdates = mockConnectionUpdates();
 
+    const fetched: string[] = [];
     const fetchFacebook = async (postId: string) => {
+        fetched.push(postId);
         if (postId === 'fb-fail') {
             throw new MetaApiError('Invalid OAuth access token', 400, 190, 0, true);
         }
@@ -703,13 +878,16 @@ test('continues syncing other targets after one token error', async (t) => {
         { fetchFacebook, now: () => FIXED_NOW }
     );
 
-    assert.equal(result.synced, 1);
+    assert.equal(result.synced, 3);
     assert.equal(result.failed, 1);
     assert.equal(result.skipped, 0);
-    assert.equal(writes.create.length, 1);
-    assert.equal(writes.create[0]?.externalId, 'fb-ok');
+    assert.equal(writes.create.length, 3);
+    assert.equal(writes.create.some((data) => data.externalId === 'fb-ok-0'), true);
     assert.equal(connectionUpdates.length, 1);
-    assert.equal(connectionUpdates[0]?.query._id, OTHER_CONNECTION_ID);
+    assert.equal(connectionUpdates[0]?.query._id, CONNECTION_ID);
+    // The oldest target is queued behind the first three workers, so it only
+    // syncs if the token error does not abort the rest of the queue.
+    assert.equal(fetched.includes('fb-ok-0'), true);
 });
 
 test('runs Meta fetches with concurrency 3', async (t) => {

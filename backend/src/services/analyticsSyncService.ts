@@ -18,6 +18,7 @@ import type { AnalyticsRange } from './analyticsDateService.js';
 import {
     fetchFacebookMetrics,
     fetchInstagramMetrics,
+    sanitizeErrorMessage,
     type NormalizedInsightMetrics,
 } from './metaInsightsService.js';
 import { MetaApiError } from './metaService.js';
@@ -123,7 +124,7 @@ async function upsertSnapshot(
         metrics: result.metrics,
         availableMetrics: result.availableMetrics,
         status: result.status,
-        error: result.error,
+        error: sanitizeErrorMessage(result.error),
     };
 
     if (existing) {
@@ -175,25 +176,40 @@ export async function syncAnalytics(
     const snapshots = await loadLatestSnapshots(userId, targets, range);
     const latest = latestSnapshotsByTarget(snapshots);
     const stale = selectStaleTargets(targets, latest, mode, clock());
-    const selected = stale.slice(0, syncCapForMode(mode));
 
-    const connectionIds = [...new Set(selected.map((target) => target.connectionId))];
+    // Resolve eligibility before applying the per-mode cap. A broken Page must
+    // not consume the cap forever and starve healthy Pages behind it. Only
+    // active, owned connections are eligible to call Meta.
+    const staleConnectionIds = [
+        ...new Set(stale.map((target) => target.connectionId)),
+    ];
     const connections =
-        connectionIds.length === 0
+        staleConnectionIds.length === 0
             ? []
             : await SocialConnection.find({
-                  _id: { $in: connectionIds },
+                  _id: { $in: staleConnectionIds },
                   userId,
+                  tokenStatus: 'active',
               } as QueryFilter<ISocialConnection>).select('+pageAccessTokenEnc');
     const connectionMap = new Map<string, ISocialConnection>(
         connections.map((connection) => [String(connection._id), connection])
     );
+    const eligible = stale.filter(
+        (target) =>
+            Boolean(target.externalId) &&
+            connectionMap.has(target.connectionId)
+    );
+    const selected = eligible.slice(0, syncCapForMode(mode));
 
     // Decrypt one Page token per selected connection for the whole request.
+    const selectedConnectionIds = new Set(
+        selected.map((target) => target.connectionId)
+    );
     const tokens = new Map<string, string>();
     const decryptFailures = new Set<string>();
     for (const connection of connections) {
         const connectionId = String(connection._id);
+        if (!selectedConnectionIds.has(connectionId)) continue;
         try {
             tokens.set(connectionId, decryptSecret(connection.pageAccessTokenEnc));
         } catch {
@@ -203,7 +219,9 @@ export async function syncAnalytics(
 
     let synced = 0;
     let failed = 0;
-    let skipped = 0;
+    // Targets that cannot be synced without a reconnect or data repair are
+    // skipped; eligible targets beyond the cap remain "waiting".
+    let skipped = stale.length - eligible.length;
     const permissionErrors: SyncResult['permissionErrors'] = [];
     const permissionConnectionIds = new Set<string>();
     const reauthMarked = new Set<string>();
@@ -227,7 +245,7 @@ export async function syncAnalytics(
         }
 
         const token = tokens.get(target.connectionId);
-        if (!token) {
+        if (token === undefined) {
             failed += 1;
             await markNeedsReauth(connection, DECRYPT_ERROR, reauthMarked);
             return;
@@ -265,7 +283,7 @@ export async function syncAnalytics(
         synced,
         failed,
         skipped,
-        remaining: Math.max(0, stale.length - selected.length),
+        remaining: Math.max(0, eligible.length - selected.length),
         permissionErrors,
         lastSyncedAt: clock().toISOString(),
     };
