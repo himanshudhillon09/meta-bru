@@ -57,7 +57,7 @@ function isPermissionError(error: unknown): boolean {
         (error.code === 200 ||
             error.code === 10 ||
             (error.code === 100 &&
-                /permission|insufficient|not authorized|requires/i.test(error.message)))
+                /permission|insufficient|not authorized/i.test(error.message)))
     );
 }
 
@@ -68,8 +68,37 @@ function isTokenError(error: unknown): boolean {
     );
 }
 
+function isRateLimitError(error: unknown): boolean {
+    return (
+        error instanceof MetaApiError &&
+        (error.code === 4 ||
+            error.code === 17 ||
+            error.code === 32 ||
+            error.code === 613)
+    );
+}
+
+function isNetworkError(error: unknown): boolean {
+    if (error instanceof MetaApiError) {
+        if (isRateLimitError(error)) return false;
+        return error.status === 0;
+    }
+    return true;
+}
+
+export function sanitizeErrorMessage(message: string): string {
+    return message
+        .replace(/access_token=[^&\s"'<>]+/gi, 'access_token=[redacted]')
+        .replace(/(https?:\/\/[^\s?#"'<>]+)[?#][^\s"'<>]*/gi, '$1')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 500);
+}
+
 function errorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : 'Meta insights request failed';
+    return sanitizeErrorMessage(
+        error instanceof Error ? error.message : 'Meta insights request failed'
+    );
 }
 
 function finalize(
@@ -110,8 +139,8 @@ function finalize(
             : null;
 
     const resolvedStatus: SnapshotStatus =
-        status === 'permission_error'
-            ? 'permission_error'
+        status === 'permission_error' || status === 'unavailable'
+            ? status
             : availableMetrics.length === 0
               ? 'unavailable'
               : expected.every((key) => metrics[key as keyof IAnalyticsMetrics] !== null)
@@ -128,6 +157,7 @@ export async function fetchFacebookMetrics(
 ): Promise<NormalizedInsightMetrics> {
     const metrics = emptyAnalyticsMetrics();
     let permissionError = false;
+    let networkError = false;
     let lastError = '';
 
     try {
@@ -148,7 +178,10 @@ export async function fetchFacebookMetrics(
     } catch (error) {
         if (isTokenError(error)) throw error;
         if (isPermissionError(error)) permissionError = true;
-        else lastError = errorMessage(error);
+        else {
+            if (isNetworkError(error)) networkError = true;
+            lastError = errorMessage(error);
+        }
     }
 
     const ladders = [
@@ -169,20 +202,24 @@ export async function fetchFacebookMetrics(
             break;
         } catch (error) {
             if (isTokenError(error)) throw error;
+            if (isInvalidMetricError(error)) continue;
             if (isPermissionError(error)) {
                 permissionError = true;
                 break;
             }
-            if (!isInvalidMetricError(error)) {
-                lastError = errorMessage(error);
-                break;
-            }
+            if (isNetworkError(error)) networkError = true;
+            lastError = errorMessage(error);
+            break;
         }
     }
 
     return finalize(
         metrics,
-        permissionError ? 'permission_error' : 'partial',
+        networkError
+            ? 'unavailable'
+            : permissionError
+              ? 'permission_error'
+              : 'partial',
         lastError,
         ['likes', 'comments', 'shares', 'reach', 'views', 'clicks']
     );
@@ -195,11 +232,12 @@ export async function fetchInstagramMetrics(
 ): Promise<NormalizedInsightMetrics> {
     const metrics = emptyAnalyticsMetrics();
     let permissionError = false;
+    let networkError = false;
     let lastError = '';
 
     const ladders = [
         'reach,views,likes,comments,shares,saved',
-        'reach,views,likes,comments,shares',
+        'reach,likes,comments,shares,saved',
         'reach,likes,comments',
         'reach',
     ];
@@ -219,14 +257,14 @@ export async function fetchInstagramMetrics(
             break;
         } catch (error) {
             if (isTokenError(error)) throw error;
+            if (isInvalidMetricError(error)) continue;
             if (isPermissionError(error)) {
                 permissionError = true;
                 break;
             }
-            if (!isInvalidMetricError(error)) {
-                lastError = errorMessage(error);
-                break;
-            }
+            if (isNetworkError(error)) networkError = true;
+            lastError = errorMessage(error);
+            break;
         }
     }
 
@@ -237,8 +275,13 @@ export async function fetchInstagramMetrics(
                 params: { metric: 'impressions' },
             });
             metrics.views = metricValue(legacy, 'impressions');
-        } catch {
-            // Legacy impressions are optional.
+        } catch (error) {
+            if (isTokenError(error)) throw error;
+            if (isPermissionError(error)) permissionError = true;
+            else if (!isInvalidMetricError(error)) {
+                if (isNetworkError(error)) networkError = true;
+                lastError = errorMessage(error);
+            }
         }
     }
 
@@ -251,18 +294,29 @@ export async function fetchInstagramMetrics(
                 like_count?: number | null;
                 comments_count?: number | null;
             };
-            metrics.likes = numberOrNull(fields.like_count);
-            metrics.comments = numberOrNull(fields.comments_count);
+            if (metrics.likes === null) {
+                metrics.likes = numberOrNull(fields.like_count);
+            }
+            if (metrics.comments === null) {
+                metrics.comments = numberOrNull(fields.comments_count);
+            }
         } catch (error) {
             if (isTokenError(error)) throw error;
             if (isPermissionError(error)) permissionError = true;
-            else lastError = errorMessage(error);
+            else {
+                if (isNetworkError(error)) networkError = true;
+                lastError = errorMessage(error);
+            }
         }
     }
 
     return finalize(
         metrics,
-        permissionError ? 'permission_error' : 'partial',
+        networkError
+            ? 'unavailable'
+            : permissionError
+              ? 'permission_error'
+              : 'partial',
         lastError,
         ['likes', 'comments', 'shares', 'saves', 'reach', 'views']
     );

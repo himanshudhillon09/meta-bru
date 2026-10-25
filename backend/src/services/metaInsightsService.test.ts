@@ -5,9 +5,8 @@ process.env.JWT_SECRET = 'test-jwt-secret-that-is-at-least-32-chars';
 process.env.TOKEN_ENCRYPTION_KEY = '0123456789abcdef'.repeat(4);
 
 const { MetaApiError } = await import('./metaService.js');
-const { fetchFacebookMetrics, fetchInstagramMetrics } = await import(
-    './metaInsightsService.js'
-);
+const { fetchFacebookMetrics, fetchInstagramMetrics, sanitizeErrorMessage } =
+    await import('./metaInsightsService.js');
 
 test('normalizes Facebook fields and insights', async () => {
     const request = async (path: string) => {
@@ -74,7 +73,7 @@ test('marks Facebook permission errors without losing field metrics', async () =
     assert.equal(result.status, 'permission_error');
 });
 
-test('normalizes Instagram insights and falls back to media fields', async () => {
+test('normalizes Instagram insights after retrying an invalid metric', async () => {
     let insightCalls = 0;
     const request = async (
         path: string,
@@ -164,4 +163,269 @@ test('rethrows token errors from both fetchers', async () => {
         () => fetchInstagramMetrics('media-1', 'token', instagramRequest),
         (error: unknown) => error instanceof MetaApiError && error.code === 190
     );
+});
+
+test('uses the spec Instagram insights ladder', async () => {
+    const requested: string[] = [];
+    const request = async (
+        path: string,
+        options?: { params?: { metric?: string } }
+    ) => {
+        if (path.endsWith('/insights')) {
+            requested.push(options?.params?.metric ?? '');
+            if (requested.length === 1) {
+                throw new MetaApiError('invalid metric', 400, 100);
+            }
+            return {
+                data: [
+                    { name: 'reach', values: [{ value: 100 }] },
+                    { name: 'views', values: [{ value: 200 }] },
+                ],
+            };
+        }
+        return {};
+    };
+
+    await fetchInstagramMetrics('media-1', 'token', request);
+    assert.equal(requested[0], 'reach,views,likes,comments,shares,saved');
+    assert.equal(requested[1], 'reach,likes,comments,shares,saved');
+});
+
+test('does not treat a metric requirement as a permission error', async () => {
+    const request = async (path: string) => {
+        if (path.endsWith('/insights')) {
+            throw new MetaApiError(
+                'This metric requires the Page to have at least 100 likes',
+                400,
+                100
+            );
+        }
+        return { reactions: { summary: { total_count: 7 } } };
+    };
+
+    const result = await fetchFacebookMetrics('post-1', 'token', request);
+    assert.equal(result.metrics.likes, 7);
+    assert.notEqual(result.status, 'permission_error');
+    assert.equal(result.status, 'partial');
+});
+
+test('marks explicit permission errors as permission_error', async () => {
+    for (const code of [10, 100]) {
+        const request = async (path: string) => {
+            if (path.endsWith('/insights')) {
+                throw new MetaApiError('insufficient permission', 403, code);
+            }
+            return { reactions: { summary: { total_count: 2 } } };
+        };
+
+        const result = await fetchFacebookMetrics('post-1', 'token', request);
+        assert.equal(result.metrics.likes, 2);
+        assert.equal(result.status, 'permission_error');
+    }
+});
+
+test('rethrows token errors from the legacy Instagram impressions probe', async () => {
+    const request = async (
+        path: string,
+        options?: { params?: { metric?: string } }
+    ) => {
+        if (path.endsWith('/insights')) {
+            if (options?.params?.metric === 'impressions') {
+                throw new MetaApiError('token expired', 400, 190, 0, true);
+            }
+            return { data: [{ name: 'reach', values: [{ value: 50 }] }] };
+        }
+        return {};
+    };
+
+    await assert.rejects(
+        () => fetchInstagramMetrics('media-1', 'token', request),
+        (error: unknown) => error instanceof MetaApiError && error.code === 190
+    );
+});
+
+test('preserves Instagram insights values when filling missing media fields', async () => {
+    const request = async (path: string) => {
+        if (path.endsWith('/insights')) {
+            return { data: [{ name: 'likes', values: [{ value: 9 }] }] };
+        }
+        return { comments_count: 4 };
+    };
+
+    const result = await fetchInstagramMetrics('media-1', 'token', request);
+    assert.equal(result.metrics.likes, 9);
+    assert.equal(result.metrics.comments, 4);
+});
+
+test('sanitizes token-bearing URLs in stored errors', async () => {
+    const request = async (path: string) => {
+        if (path.endsWith('/insights')) {
+            throw new MetaApiError(
+                'Request failed for https://graph.facebook.com/v19.0/post-1/insights?access_token=SUPERSECRET&fields=id',
+                500,
+                1
+            );
+        }
+        return { reactions: { summary: { total_count: 5 } } };
+    };
+
+    const result = await fetchFacebookMetrics('post-1', 'token', request);
+    assert.equal(result.metrics.likes, 5);
+    assert.equal(result.error.includes('SUPERSECRET'), false);
+    assert.equal(result.error.includes('access_token=SUPERSECRET'), false);
+    assert.equal(result.error.includes('?'), false);
+    assert.equal(
+        sanitizeErrorMessage('token access_token=abc123'),
+        'token access_token=[redacted]'
+    );
+});
+
+test('marks status unavailable on network errors while preserving field metrics', async () => {
+    const request = async (path: string) => {
+        if (path.endsWith('/insights')) {
+            throw new MetaApiError('socket hang up', 0, 1);
+        }
+        return { reactions: { summary: { total_count: 11 } } };
+    };
+
+    const result = await fetchFacebookMetrics('post-1', 'token', request);
+    assert.equal(result.metrics.likes, 11);
+    assert.equal(result.status, 'unavailable');
+});
+
+test('does not treat rate-limit errors as network errors', async () => {
+    const request = async (path: string) => {
+        if (path.endsWith('/insights')) {
+            throw new MetaApiError('rate limit', 400, 4);
+        }
+        return { reactions: { summary: { total_count: 6 } } };
+    };
+
+    const result = await fetchFacebookMetrics('post-1', 'token', request);
+    assert.equal(result.metrics.likes, 6);
+    assert.equal(result.status, 'partial');
+});
+
+test('falls back to legacy Instagram impressions for views', async () => {
+    const request = async (
+        path: string,
+        options?: { params?: { metric?: string } }
+    ) => {
+        if (path.endsWith('/insights')) {
+            if (options?.params?.metric === 'impressions') {
+                return { data: [{ name: 'impressions', values: [{ value: 700 }] }] };
+            }
+            return { data: [{ name: 'reach', values: [{ value: 300 }] }] };
+        }
+        return {};
+    };
+
+    const result = await fetchInstagramMetrics('media-1', 'token', request);
+    assert.equal(result.metrics.reach, 300);
+    assert.equal(result.metrics.views, 700);
+});
+
+test('maps Instagram saved to saves', async () => {
+    const request = async (path: string) => {
+        if (path.endsWith('/insights')) {
+            return {
+                data: [
+                    { name: 'reach', values: [{ value: 100 }] },
+                    { name: 'views', values: [{ value: 200 }] },
+                    { name: 'saved', values: [{ value: 3 }] },
+                ],
+            };
+        }
+        return {};
+    };
+
+    const result = await fetchInstagramMetrics('media-1', 'token', request);
+    assert.equal(result.metrics.saves, 3);
+});
+
+test('computes engagement rate from reach and falls back to views', async () => {
+    const fields = {
+        reactions: { summary: { total_count: 20 } },
+        comments: { summary: { total_count: 5 } },
+        shares: { count: 5 },
+    };
+
+    const withReach = async (path: string) => {
+        if (path.endsWith('/insights')) {
+            return {
+                data: [
+                    { name: 'post_media_view', values: [{ value: 1000 }] },
+                    { name: 'post_total_media_view_unique', total_value: { value: 200 } },
+                ],
+            };
+        }
+        return fields;
+    };
+    const reachResult = await fetchFacebookMetrics('post-1', 'token', withReach);
+    assert.equal(reachResult.metrics.interactions, 30);
+    assert.equal(reachResult.metrics.engagementRate, 15);
+
+    const withZeroReach = async (path: string) => {
+        if (path.endsWith('/insights')) {
+            return {
+                data: [
+                    { name: 'post_media_view', values: [{ value: 1000 }] },
+                    { name: 'post_total_media_view_unique', total_value: { value: 0 } },
+                ],
+            };
+        }
+        return fields;
+    };
+    const zeroReachResult = await fetchFacebookMetrics('post-1', 'token', withZeroReach);
+    assert.equal(zeroReachResult.metrics.reach, 0);
+    assert.equal(zeroReachResult.metrics.engagementRate, 3);
+
+    const withViews = async (path: string) => {
+        if (path.endsWith('/insights')) {
+            return { data: [{ name: 'post_media_view', values: [{ value: 1000 }] }] };
+        }
+        return fields;
+    };
+    const viewsResult = await fetchFacebookMetrics('post-1', 'token', withViews);
+    assert.equal(viewsResult.metrics.reach, null);
+    assert.equal(viewsResult.metrics.engagementRate, 3);
+});
+
+test('excludes derived metrics from availableMetrics', async () => {
+    const request = async (path: string) => {
+        if (path.endsWith('/insights')) {
+            return {
+                data: [
+                    { name: 'post_media_view', values: [{ value: 1000 }] },
+                    { name: 'post_total_media_view_unique', total_value: { value: 500 } },
+                    { name: 'post_clicks', values: [{ value: 3 }] },
+                ],
+            };
+        }
+        return {
+            reactions: { summary: { total_count: 20 } },
+            comments: { summary: { total_count: 5 } },
+            shares: { count: 5 },
+        };
+    };
+
+    const result = await fetchFacebookMetrics('post-1', 'token', request);
+    assert.deepEqual(result.availableMetrics, [
+        'likes',
+        'comments',
+        'shares',
+        'reach',
+        'views',
+        'clicks',
+    ]);
+    assert.equal(result.availableMetrics.includes('interactions'), false);
+    assert.equal(result.availableMetrics.includes('engagementRate'), false);
+});
+
+test('marks status unavailable when no metrics are returned', async () => {
+    const request = async () => ({});
+
+    const result = await fetchFacebookMetrics('post-1', 'token', request);
+    assert.deepEqual(result.availableMetrics, []);
+    assert.equal(result.status, 'unavailable');
 });
