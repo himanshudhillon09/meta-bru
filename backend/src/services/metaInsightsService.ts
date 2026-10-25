@@ -80,7 +80,7 @@ function isInvalidMetricError(error: unknown): boolean {
 function isMetricUnavailableError(error: unknown): boolean {
     return (
         error instanceof MetaApiError &&
-        /at least \d+ likes|requires.*likes/i.test(error.message)
+        /at least \d+ likes|requires.*\d+ likes/i.test(error.message)
     );
 }
 
@@ -97,7 +97,7 @@ function isPermissionError(error: unknown): boolean {
         (error.code === 200 ||
             error.code === 10 ||
             (error.code === 100 &&
-                /permission|insufficient (?:permission|privilege|scope|access)|not authorized/i.test(
+                /permission|insufficient (?:permission|privilege|scope|access|authorization|rights)|not authorized/i.test(
                     error.message
                 )))
     );
@@ -140,6 +140,15 @@ export function sanitizeErrorMessage(message: string): string {
                 valueQuote: string
             ) =>
                 `${keyQuote}${key}${keyQuote}${separator}${valueQuote}[redacted]${valueQuote}`
+        )
+        .replace(
+            /(access[_-]?token|client[_-]?secret|fb[_-]?exchange[_-]?token)(\s*[:=]\s*)(["'])[^"']*\3/gi,
+            (
+                _match,
+                key: string,
+                separator: string,
+                valueQuote: string
+            ) => `${key}${separator}${valueQuote}[redacted]${valueQuote}`
         )
         .replace(
             /(access[_-]?token|client[_-]?secret|fb[_-]?exchange[_-]?token)(=|%3D|:)(\s*)[^&\s"'<>]+/gi,
@@ -281,9 +290,9 @@ export async function fetchFacebookMetrics(
                 permissionError = true;
                 break;
             }
+            if (isMetricUnavailableError(error)) break;
             if (isMetricDataUnavailableError(error)) continue;
             if (isInvalidMetricError(error)) continue;
-            if (isMetricUnavailableError(error)) break;
             if (isNetworkError(error)) networkError = true;
             lastError = errorMessage(error);
             break;
@@ -343,12 +352,12 @@ export async function fetchInstagramMetrics(
                 terminalError = true;
                 break;
             }
-            if (isMetricDataUnavailableError(error)) continue;
-            if (isInvalidMetricError(error)) continue;
             if (isMetricUnavailableError(error)) {
                 terminalError = true;
                 break;
             }
+            if (isMetricDataUnavailableError(error)) continue;
+            if (isInvalidMetricError(error)) continue;
             if (isNetworkError(error)) networkError = true;
             terminalError = true;
             lastError = errorMessage(error);

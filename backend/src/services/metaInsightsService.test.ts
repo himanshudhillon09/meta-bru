@@ -804,6 +804,54 @@ test('classifies insufficient permission as a permission error', async () => {
     assert.equal(result.status, 'permission_error');
 });
 
+test('classifies insufficient authorization and rights as permission errors', async () => {
+    for (const message of [
+        'Insufficient authorization to access this resource',
+        'Insufficient rights to access this resource',
+    ]) {
+        const request = async (path: string) => {
+            if (path.endsWith('/insights')) {
+                throw new MetaApiError(message, 403, 100);
+            }
+            return { reactions: { summary: { total_count: 2 } } };
+        };
+
+        const result = await fetchFacebookMetrics('post-1', 'token', request);
+        assert.equal(result.status, 'permission_error', message);
+    }
+});
+
+test('ignores insufficient data from the optional Instagram legacy probe', async () => {
+    const request = async (
+        path: string,
+        options?: { params?: { metric?: string } }
+    ) => {
+        if (!path.endsWith('/insights')) {
+            throw new Error(`unexpected media fields request: ${path}`);
+        }
+        if (options?.params?.metric === 'impressions') {
+            throw new MetaApiError(
+                'Not enough data to compute this metric',
+                400,
+                100
+            );
+        }
+        return {
+            data: [
+                { name: 'reach', values: [{ value: 300 }] },
+                { name: 'likes', values: [{ value: 20 }] },
+                { name: 'comments', values: [{ value: 4 }] },
+            ],
+        };
+    };
+
+    const result = await fetchInstagramMetrics('media-1', 'token', request);
+    assert.equal(result.metrics.reach, 300);
+    assert.equal(result.status, 'partial');
+    assert.equal(result.error, '');
+    assert.notEqual(result.status, 'permission_error');
+});
+
 test('preserves a Facebook fields error when insights hit a Page like requirement', async () => {
     const request = async (path: string) => {
         if (path.endsWith('/insights')) {
@@ -875,6 +923,19 @@ test('handles null fields payloads without throwing', async () => {
     assert.equal(instagramResult.metrics.likes, null);
     assert.equal(instagramResult.metrics.comments, null);
     assert.equal(instagramResult.status, 'unavailable');
+});
+
+test('sanitizes unquoted keys with quoted values', () => {
+    assert.equal(
+        sanitizeErrorMessage('access_token:"SECRET"'),
+        'access_token:"[redacted]"'
+    );
+    assert.equal(
+        sanitizeErrorMessage(
+            'client_secret:"SECRET" fb_exchange_token:"SECRET"'
+        ),
+        'client_secret:"[redacted]" fb_exchange_token:"[redacted]"'
+    );
 });
 
 test('sanitizes JSON-style secrets', () => {
