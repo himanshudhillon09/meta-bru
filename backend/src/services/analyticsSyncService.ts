@@ -107,7 +107,7 @@ async function upsertSnapshot(
         userId,
         postId: target.postId,
         platform: target.platform,
-        capturedAt: { $gte: new Date(now.getTime() - DEDUPE_WINDOW_MS) },
+        capturedAt: { $gt: new Date(now.getTime() - DEDUPE_WINDOW_MS) },
     } as QueryFilter<IPostMetricSnapshot>);
 
     const data = {
@@ -145,14 +145,19 @@ async function markNeedsReauth(
     if (marked.has(connectionId)) return;
     marked.add(connectionId);
 
-    await SocialConnection.updateOne(
-        {
-            _id: connection._id,
-            userId: connection.userId,
-            tokenStatus: { $ne: 'disconnected' },
-        } as QueryFilter<ISocialConnection>,
-        { $set: { tokenStatus: 'needs_reauth', lastError: message } }
-    );
+    try {
+        await SocialConnection.updateOne(
+            {
+                _id: connection._id,
+                userId: connection.userId,
+                tokenStatus: { $ne: 'disconnected' },
+            } as QueryFilter<ISocialConnection>,
+            { $set: { tokenStatus: 'needs_reauth', lastError: message } }
+        );
+    } catch {
+        // Reauth bookkeeping is best-effort. A DB failure here must not abort
+        // the rest of the sync or hide the per-target failure count.
+    }
 }
 
 export async function syncAnalytics(

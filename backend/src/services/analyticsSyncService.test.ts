@@ -587,7 +587,7 @@ test('dedupes snapshots within one minute using the owning user', async (t) => {
         userId: USER_ID,
         postId: POST_ID,
         platform: 'facebook',
-        capturedAt: { $gte: new Date(FIXED_NOW.getTime() - 60_000) },
+        capturedAt: { $gt: new Date(FIXED_NOW.getTime() - 60_000) },
     });
 
     assert.equal(writes.create.length, 0);
@@ -642,4 +642,118 @@ test('reports remaining targets when more are stale than the mode cap', async (t
     assert.equal(result.skipped, 0);
     assert.equal(result.remaining, 2);
     assert.equal(writes.create.length, 10);
+});
+
+test('continues syncing other targets after one token error', async (t) => {
+    t.after(() => mock.restoreAll());
+
+    const successPost = targetPost({
+        _id: objectId(31),
+        targets: [
+            {
+                platform: 'facebook',
+                status: 'published',
+                externalId: 'fb-ok',
+                publishedAt: PUBLISHED_AT,
+            },
+        ],
+    });
+    const failingPost = targetPost({
+        _id: objectId(32),
+        connectionId: populatedConnection({
+            _id: OTHER_CONNECTION_ID,
+            pageId: 'page-2',
+            pageName: 'Other Page',
+        }),
+        targets: [
+            {
+                platform: 'facebook',
+                status: 'published',
+                externalId: 'fb-fail',
+                publishedAt: PUBLISHED_AT,
+            },
+        ],
+    });
+
+    mockTargets([successPost, failingPost]);
+    mockLatestSnapshots([]);
+    mockConnections([
+        connection(),
+        connection({
+            _id: OTHER_CONNECTION_ID,
+            pageId: 'page-2',
+            pageName: 'Other Page',
+        }),
+    ]);
+    const writes = mockSnapshotWrites(null);
+    const connectionUpdates = mockConnectionUpdates();
+
+    const fetchFacebook = async (postId: string) => {
+        if (postId === 'fb-fail') {
+            throw new MetaApiError('Invalid OAuth access token', 400, 190, 0, true);
+        }
+        return insight();
+    };
+
+    const result = await syncAnalytics(
+        USER_ID,
+        analyticsRange('2026-10-01', '2026-10-31'),
+        {},
+        'stale',
+        { fetchFacebook, now: () => FIXED_NOW }
+    );
+
+    assert.equal(result.synced, 1);
+    assert.equal(result.failed, 1);
+    assert.equal(result.skipped, 0);
+    assert.equal(writes.create.length, 1);
+    assert.equal(writes.create[0]?.externalId, 'fb-ok');
+    assert.equal(connectionUpdates.length, 1);
+    assert.equal(connectionUpdates[0]?.query._id, OTHER_CONNECTION_ID);
+});
+
+test('runs Meta fetches with concurrency 3', async (t) => {
+    t.after(() => mock.restoreAll());
+
+    const posts = Array.from({ length: 6 }, (_, index) =>
+        facebookOnlyPost({
+            _id: objectId(index + 41),
+            publishedAt: new Date(Date.UTC(2026, 9, index + 1, 9)),
+            targets: [
+                {
+                    platform: 'facebook',
+                    status: 'published',
+                    externalId: `fb-${index}`,
+                    publishedAt: new Date(Date.UTC(2026, 9, index + 1, 9)),
+                },
+            ],
+        })
+    );
+
+    mockTargets(posts);
+    mockLatestSnapshots([]);
+    mockConnections([connection()]);
+    mockSnapshotWrites(null);
+
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const fetchFacebook = async () => {
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        inFlight -= 1;
+        return insight();
+    };
+
+    const result = await syncAnalytics(
+        USER_ID,
+        analyticsRange('2026-10-01', '2026-10-31'),
+        {},
+        'stale',
+        { fetchFacebook, now: () => FIXED_NOW }
+    );
+
+    assert.equal(result.synced, 6);
+    assert.equal(result.failed, 0);
+    assert.equal(maxInFlight, 3);
 });
