@@ -653,3 +653,241 @@ test('marks status unavailable when no metrics are returned', async () => {
     assert.deepEqual(result.availableMetrics, []);
     assert.equal(result.status, 'unavailable');
 });
+
+test('retries the Facebook ladder when a metric has insufficient data', async () => {
+    const requested: string[] = [];
+    const request = async (
+        path: string,
+        options?: { params?: { metric?: string } }
+    ) => {
+        if (path.endsWith('/insights')) {
+            requested.push(options?.params?.metric ?? '');
+            if (requested.length === 1) {
+                throw new MetaApiError(
+                    'Not enough data to compute this metric',
+                    400,
+                    100
+                );
+            }
+            return {
+                data: [
+                    { name: 'post_media_view', values: [{ value: 100 }] },
+                    { name: 'post_total_media_view_unique', total_value: { value: 80 } },
+                ],
+            };
+        }
+        return {};
+    };
+
+    const result = await fetchFacebookMetrics('post-1', 'token', request);
+    assert.equal(requested.length, 2);
+    assert.equal(
+        requested[1],
+        'post_media_view,post_total_media_view_unique'
+    );
+    assert.equal(result.metrics.views, 100);
+    assert.equal(result.metrics.reach, 80);
+    assert.notEqual(result.status, 'permission_error');
+});
+
+test('retries the Instagram ladder when a metric has insufficient data', async () => {
+    const requested: string[] = [];
+    const request = async (
+        path: string,
+        options?: { params?: { metric?: string } }
+    ) => {
+        if (!path.endsWith('/insights')) return {};
+        const metric = options?.params?.metric ?? '';
+        requested.push(metric);
+        if (requested.length === 1) {
+            throw new MetaApiError(
+                'Not enough data to compute this metric',
+                400,
+                100
+            );
+        }
+        if (metric === 'impressions') return { data: [] };
+        return {
+            data: [
+                { name: 'reach', values: [{ value: 300 }] },
+                { name: 'likes', values: [{ value: 20 }] },
+                { name: 'comments', values: [{ value: 4 }] },
+            ],
+        };
+    };
+
+    const result = await fetchInstagramMetrics('media-1', 'token', request);
+    assert.equal(
+        requested[1],
+        'reach,likes,comments,shares,saved'
+    );
+    assert.equal(result.metrics.reach, 300);
+    assert.equal(result.metrics.likes, 20);
+    assert.equal(result.metrics.comments, 4);
+    assert.notEqual(result.status, 'permission_error');
+});
+
+test('runs optional Instagram probes when every ladder has insufficient data', async () => {
+    const ladderMetrics: string[] = [];
+    let mediaFieldsCalls = 0;
+    const request = async (
+        path: string,
+        options?: { params?: { metric?: string } }
+    ) => {
+        if (path.endsWith('/insights')) {
+            const metric = options?.params?.metric ?? '';
+            if (metric === 'impressions') {
+                return {
+                    data: [{ name: 'impressions', values: [{ value: 700 }] }],
+                };
+            }
+            ladderMetrics.push(metric);
+            throw new MetaApiError(
+                'Not enough data to compute this metric',
+                400,
+                100
+            );
+        }
+        mediaFieldsCalls += 1;
+        return { like_count: 12, comments_count: 3 };
+    };
+
+    const result = await fetchInstagramMetrics('media-1', 'token', request);
+    assert.equal(ladderMetrics.length, 4);
+    assert.equal(mediaFieldsCalls, 1);
+    assert.equal(result.metrics.views, 700);
+    assert.equal(result.metrics.likes, 12);
+    assert.equal(result.metrics.comments, 3);
+});
+
+test('does not treat insufficient data as a permission error', async () => {
+    let insightCalls = 0;
+    const request = async (path: string) => {
+        if (path.endsWith('/insights')) {
+            insightCalls += 1;
+            if (insightCalls === 1) {
+                throw new MetaApiError(
+                    'Insufficient data to compute this metric',
+                    400,
+                    100
+                );
+            }
+            return {
+                data: [{ name: 'post_media_view', values: [{ value: 55 }] }],
+            };
+        }
+        return { reactions: { summary: { total_count: 1 } } };
+    };
+
+    const result = await fetchFacebookMetrics('post-1', 'token', request);
+    assert.equal(insightCalls, 2);
+    assert.equal(result.metrics.views, 55);
+    assert.notEqual(result.status, 'permission_error');
+});
+
+test('classifies insufficient permission as a permission error', async () => {
+    let insightCalls = 0;
+    const request = async (path: string) => {
+        if (path.endsWith('/insights')) {
+            insightCalls += 1;
+            throw new MetaApiError(
+                'Insufficient permission to access this resource',
+                403,
+                100
+            );
+        }
+        return { reactions: { summary: { total_count: 1 } } };
+    };
+
+    const result = await fetchFacebookMetrics('post-1', 'token', request);
+    assert.equal(insightCalls, 1);
+    assert.equal(result.status, 'permission_error');
+});
+
+test('preserves a Facebook fields error when insights hit a Page like requirement', async () => {
+    const request = async (path: string) => {
+        if (path.endsWith('/insights')) {
+            throw new MetaApiError(
+                'This metric requires the Page to have at least 100 likes',
+                400,
+                100
+            );
+        }
+        throw new MetaApiError('fields failed', 500, 1);
+    };
+
+    const result = await fetchFacebookMetrics('post-1', 'token', request);
+    assert.deepEqual(result.availableMetrics, []);
+    assert.equal(result.status, 'unavailable');
+    assert.equal(result.error.includes('fields failed'), true);
+});
+
+test('falls back to values when total_value is an empty string', async () => {
+    const request = async (
+        path: string,
+        options?: { params?: { metric?: string } }
+    ) => {
+        if (path.endsWith('/insights')) {
+            if (options?.params?.metric === 'impressions') {
+                return { data: [] };
+            }
+            return {
+                data: [
+                    {
+                        name: 'reach',
+                        total_value: { value: '' },
+                        values: [{ value: 42 }],
+                    },
+                ],
+            };
+        }
+        return {};
+    };
+
+    const result = await fetchInstagramMetrics('media-1', 'token', request);
+    assert.equal(result.metrics.reach, 42);
+});
+
+test('handles null fields payloads without throwing', async () => {
+    const facebookRequest = async (path: string) => {
+        if (path.endsWith('/insights')) return { data: [] };
+        return null;
+    };
+    const facebookResult = await fetchFacebookMetrics(
+        'post-1',
+        'token',
+        facebookRequest
+    );
+    assert.equal(facebookResult.metrics.likes, null);
+    assert.equal(facebookResult.metrics.comments, null);
+    assert.equal(facebookResult.metrics.shares, null);
+    assert.equal(facebookResult.status, 'unavailable');
+
+    const instagramRequest = async (path: string) => {
+        if (path.endsWith('/insights')) return { data: [] };
+        return null;
+    };
+    const instagramResult = await fetchInstagramMetrics(
+        'media-1',
+        'token',
+        instagramRequest
+    );
+    assert.equal(instagramResult.metrics.likes, null);
+    assert.equal(instagramResult.metrics.comments, null);
+    assert.equal(instagramResult.status, 'unavailable');
+});
+
+test('sanitizes JSON-style secrets', () => {
+    assert.equal(
+        sanitizeErrorMessage('{"access_token":"SECRET"}'),
+        '{"access_token":"[redacted]"}'
+    );
+    assert.equal(
+        sanitizeErrorMessage('{"client_secret": "SECRET"}'),
+        '{"client_secret": "[redacted]"}'
+    );
+    assert.equal(
+        sanitizeErrorMessage("{'fb_exchange_token':'SECRET'}"),
+        "{'fb_exchange_token':'[redacted]'}"
+    );
+});

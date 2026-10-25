@@ -59,14 +59,13 @@ function metricValue(data: unknown, name: string): number | null {
     );
     if (!entry) return null;
 
-    const totalValue = entry.total_value?.value;
-    if (totalValue !== null && totalValue !== undefined) {
-        return numberOrNull(totalValue);
-    }
+    const total = numberOrNull(entry.total_value?.value);
+    if (total !== null) return total;
 
     if (!Array.isArray(entry.values)) return null;
-    const firstValue = entry.values[0] as { value?: unknown } | undefined;
-    return numberOrNull(firstValue?.value);
+    const firstValue = entry.values[0];
+    if (typeof firstValue !== 'object' || firstValue === null) return null;
+    return numberOrNull((firstValue as { value?: unknown }).value);
 }
 
 function isInvalidMetricError(error: unknown): boolean {
@@ -81,9 +80,14 @@ function isInvalidMetricError(error: unknown): boolean {
 function isMetricUnavailableError(error: unknown): boolean {
     return (
         error instanceof MetaApiError &&
-        /at least \d+ likes|requires.*likes|not enough data|too few|insufficient data/i.test(
-            error.message
-        )
+        /at least \d+ likes|requires.*likes/i.test(error.message)
+    );
+}
+
+function isMetricDataUnavailableError(error: unknown): boolean {
+    return (
+        error instanceof MetaApiError &&
+        /not enough data|too few|insufficient data/i.test(error.message)
     );
 }
 
@@ -93,7 +97,9 @@ function isPermissionError(error: unknown): boolean {
         (error.code === 200 ||
             error.code === 10 ||
             (error.code === 100 &&
-                /permission|insufficient|not authorized/i.test(error.message)))
+                /permission|insufficient (?:permission|privilege|scope|access)|not authorized/i.test(
+                    error.message
+                )))
     );
 }
 
@@ -124,6 +130,17 @@ function isNetworkError(error: unknown): boolean {
 
 export function sanitizeErrorMessage(message: string): string {
     return message
+        .replace(
+            /(["'])(access[_-]?token|client[_-]?secret|fb[_-]?exchange[_-]?token)\1(\s*:\s*)(["'])[^"']*\4/gi,
+            (
+                _match,
+                keyQuote: string,
+                key: string,
+                separator: string,
+                valueQuote: string
+            ) =>
+                `${keyQuote}${key}${keyQuote}${separator}${valueQuote}[redacted]${valueQuote}`
+        )
         .replace(
             /(access[_-]?token|client[_-]?secret|fb[_-]?exchange[_-]?token)(=|%3D|:)(\s*)[^&\s"'<>]+/gi,
             (
@@ -226,9 +243,11 @@ export async function fetchFacebookMetrics(
             comments?: { summary?: { total_count?: number | null } };
             shares?: { count?: number | null };
         };
-        metrics.likes = numberOrNull(fields.reactions?.summary?.total_count);
-        metrics.comments = numberOrNull(fields.comments?.summary?.total_count);
-        metrics.shares = numberOrNull(fields.shares?.count);
+        metrics.likes = numberOrNull(fields?.reactions?.summary?.total_count);
+        metrics.comments = numberOrNull(
+            fields?.comments?.summary?.total_count
+        );
+        metrics.shares = numberOrNull(fields?.shares?.count);
     } catch (error) {
         if (!(error instanceof MetaApiError)) throw error;
         if (isTokenError(error)) throw error;
@@ -262,11 +281,9 @@ export async function fetchFacebookMetrics(
                 permissionError = true;
                 break;
             }
+            if (isMetricDataUnavailableError(error)) continue;
             if (isInvalidMetricError(error)) continue;
-            if (isMetricUnavailableError(error)) {
-                lastError = '';
-                break;
-            }
+            if (isMetricUnavailableError(error)) break;
             if (isNetworkError(error)) networkError = true;
             lastError = errorMessage(error);
             break;
@@ -326,9 +343,9 @@ export async function fetchInstagramMetrics(
                 terminalError = true;
                 break;
             }
+            if (isMetricDataUnavailableError(error)) continue;
             if (isInvalidMetricError(error)) continue;
             if (isMetricUnavailableError(error)) {
-                lastError = '';
                 terminalError = true;
                 break;
             }
@@ -342,6 +359,8 @@ export async function fetchInstagramMetrics(
     const handleOptionalError = (error: unknown): void => {
         if (!(error instanceof MetaApiError)) throw error;
         if (isTokenError(error)) throw error;
+        if (isMetricUnavailableError(error)) return;
+        if (isMetricDataUnavailableError(error)) return;
         if (isInvalidMetricError(error)) return;
         if (!ladderSucceeded) {
             if (isPermissionError(error)) permissionError = true;
@@ -375,10 +394,10 @@ export async function fetchInstagramMetrics(
                 comments_count?: number | null;
             };
             if (metrics.likes === null) {
-                metrics.likes = numberOrNull(fields.like_count);
+                metrics.likes = numberOrNull(fields?.like_count);
             }
             if (metrics.comments === null) {
-                metrics.comments = numberOrNull(fields.comments_count);
+                metrics.comments = numberOrNull(fields?.comments_count);
             }
         } catch (error) {
             handleOptionalError(error);
