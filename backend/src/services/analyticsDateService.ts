@@ -123,7 +123,9 @@ export function bucketKeyForDate(value: Date, granularity: 'day' | 'week'): stri
     return granularity === 'day' ? toIstDayKey(value) : toIstWeekKey(value);
 }
 
-export function buildAnalyticsBuckets(range: AnalyticsRange): AnalyticsBucket[] {
+export function buildAnalyticsBuckets(
+    range: Pick<AnalyticsRange, 'fromKey' | 'toKey' | 'granularity'>
+): AnalyticsBucket[] {
     // Weekly buckets are Monday-anchored in IST and may extend outside the
     // requested range by design; callers filter posts by the requested range
     // before bucketing.

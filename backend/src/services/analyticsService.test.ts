@@ -1,7 +1,9 @@
 import test, { mock } from 'node:test';
 import assert from 'node:assert/strict';
+import { Types } from 'mongoose';
 import type { IAnalyticsMetrics } from '../models/postMetricSnapshotModel.js';
-import type { AnalyticsRange, AnalyticsSummary } from './analyticsService.js';
+import type { AnalyticsRange } from './analyticsDateService.js';
+import type { AnalyticsSummary } from './analyticsService.js';
 
 process.env.JWT_SECRET = 'test-jwt-secret-that-is-at-least-32-chars';
 process.env.TOKEN_ENCRYPTION_KEY = '0123456789abcdef'.repeat(4);
@@ -13,7 +15,9 @@ const {
     buildBestTimes,
     buildMonitorSeries,
     buildPublishedTargetsQuery,
+    buildPublishedTargetsPagePipeline,
     buildSnapshotQuery,
+    buildLatestSnapshotsPipeline,
     uniquePermissionErrors,
     lastSyncedAt,
     rangePreset,
@@ -28,6 +32,12 @@ const {
 const { Post } = await import('../models/postModel.js');
 const { PostMetricSnapshot } = await import('../models/postMetricSnapshotModel.js');
 const { SocialConnection } = await import('../models/socialConnectionModel.js');
+
+const USER_ID = '64b000000000000000000001';
+const CONNECTION_ID = '64b000000000000000000002';
+const POST_1 = '64b000000000000000000010';
+const POST_2 = '64b000000000000000000011';
+const POST_OUTSIDE = '64b000000000000000000012';
 
 function metrics(overrides: Partial<IAnalyticsMetrics> = {}): IAnalyticsMetrics {
     return {
@@ -133,9 +143,23 @@ function mockPostFind(posts: unknown[]) {
     }));
 }
 
+function mockPostAggregate(
+    handler: (pipeline: Record<string, unknown>[]) => unknown[]
+) {
+    return mock.method(Post, 'aggregate', (pipeline: Record<string, unknown>[]) =>
+        Promise.resolve(handler(pipeline))
+    );
+}
+
+function mockSnapshotAggregate(snapshots: unknown[]) {
+    return mock.method(PostMetricSnapshot, 'aggregate', () =>
+        Promise.resolve(snapshots)
+    );
+}
+
 function mockSnapshotFind(snapshots: unknown[]) {
     return mock.method(PostMetricSnapshot, 'find', () => ({
-        sort: async () => snapshots,
+        sort: () => ({ limit: async () => snapshots }),
     }));
 }
 
@@ -338,6 +362,82 @@ test('builds a snapshot query scoped by post ids and range', () => {
     assert.deepEqual(query?.postId, { $in: ['post-1', 'post-2'] });
     assert.deepEqual(query?.publishedAt, { $gte: from, $lte: to });
     assert.equal(buildSnapshotQuery('user-1', []), null);
+});
+
+test('builds a bounded latest-snapshot aggregation pipeline', () => {
+    const from = new Date('2026-10-01T00:00:00.000Z');
+    const to = new Date('2026-10-31T23:59:59.999Z');
+    const pipeline = buildLatestSnapshotsPipeline(
+        USER_ID,
+        [target({ postId: POST_1, connectionId: CONNECTION_ID })] as never[],
+        { from, to }
+    );
+
+    const match = pipeline[0]?.$match as {
+        userId: Types.ObjectId;
+        postId: { $in: Types.ObjectId[] };
+        publishedAt: { $gte: Date; $lte: Date };
+    };
+    assert.equal(match.userId.toHexString(), USER_ID);
+    assert.deepEqual(
+        match.postId.$in.map((id) => id.toHexString()),
+        [POST_1]
+    );
+    assert.deepEqual(match.publishedAt, { $gte: from, $lte: to });
+    assert.deepEqual(pipeline[1], {
+        $sort: { postId: 1, platform: 1, capturedAt: -1 },
+    });
+    assert.deepEqual(pipeline[2], {
+        $group: {
+            _id: { postId: '$postId', platform: '$platform' },
+            doc: { $first: '$$ROOT' },
+        },
+    });
+    assert.deepEqual(pipeline[3], { $replaceRoot: { newRoot: '$doc' } });
+});
+
+test('builds a paginated published-targets pipeline scoped by user', () => {
+    const range = analyticsRange('2026-10-01', '2026-10-31');
+    const pipeline = buildPublishedTargetsPagePipeline(
+        USER_ID,
+        range,
+        { connectionId: CONNECTION_ID },
+        2,
+        10
+    );
+
+    const match = pipeline[0]?.$match as {
+        userId: Types.ObjectId;
+        connectionId: Types.ObjectId;
+    };
+    assert.equal(match.userId.toHexString(), USER_ID);
+    assert.equal(match.connectionId.toHexString(), CONNECTION_ID);
+
+    const facet = pipeline[3]?.$facet as {
+        metadata: Record<string, unknown>[];
+        data: Record<string, unknown>[];
+    };
+    assert.deepEqual(facet.metadata, [{ $count: 'total' }]);
+    assert.deepEqual(facet.data[0], {
+        $sort: { latestPublishedAt: -1, _id: -1 },
+    });
+    assert.deepEqual(facet.data[1], { $skip: 10 });
+    assert.deepEqual(facet.data[2], { $limit: 10 });
+
+    const lookup = facet.data[3]?.$lookup as {
+        from: string;
+        let: { connectionId: string };
+        pipeline: Record<string, unknown>[];
+    };
+    assert.equal(lookup.from, SocialConnection.collection.name);
+    const lookupMatch = lookup.pipeline[0]?.$match as {
+        $expr: { $and: Array<Record<string, unknown>> };
+    };
+    const userCondition = lookupMatch.$expr.$and[1] as {
+        $eq: [string, Types.ObjectId];
+    };
+    assert.equal(userCondition.$eq[0], '$userId');
+    assert.equal(userCondition.$eq[1].toHexString(), USER_ID);
 });
 
 test('scopes permission errors and last-sync time to the selected targets', () => {
@@ -625,11 +725,11 @@ test('builds an overview response with remaining targets from mocked data', asyn
     const range = analyticsRange('2026-10-01', '2026-10-30');
     mockPostFind([
         post({
-            _id: 'post-1',
+            _id: POST_1,
             publishedAt: new Date('2026-10-05T09:00:00.000Z'),
         }),
         post({
-            _id: 'post-2',
+            _id: POST_2,
             publishedAt: new Date('2026-10-06T09:00:00.000Z'),
             targets: [
                 {
@@ -641,16 +741,16 @@ test('builds an overview response with remaining targets from mocked data', asyn
             ],
         }),
     ]);
-    mockSnapshotFind([
+    mockSnapshotAggregate([
         snapshot({
-            postId: 'post-1',
+            postId: POST_1,
             platform: 'facebook',
             capturedAt: new Date('2026-10-07T09:00:00.000Z'),
             metrics: metrics({ reach: 100, interactions: 13 }),
         }),
     ]);
 
-    const overview = await getAnalyticsOverview('user-1', range, {});
+    const overview = await getAnalyticsOverview(USER_ID, range, {});
 
     assert.equal(overview.totals.posts, 2);
     assert.equal(overview.totals.reach, 100);
@@ -670,7 +770,7 @@ test('scopes monitor series and deduplicates same-Page permission errors', async
     const range = analyticsRange('2026-10-01', '2026-10-31');
     mockPostFind([
         post({
-            _id: 'post-1',
+            _id: POST_1,
             publishedAt: new Date('2026-10-05T09:00:00.000Z'),
             targets: [
                 {
@@ -690,26 +790,26 @@ test('scopes monitor series and deduplicates same-Page permission errors', async
     ]);
     mockSnapshotFind([
         snapshot({
-            postId: 'post-1',
+            postId: POST_1,
             platform: 'facebook',
             status: 'permission_error',
             capturedAt: new Date('2026-10-06T09:00:00.000Z'),
         }),
         snapshot({
-            postId: 'post-1',
+            postId: POST_1,
             platform: 'instagram',
             status: 'permission_error',
             capturedAt: new Date('2026-10-06T09:00:00.000Z'),
         }),
         snapshot({
-            postId: 'post-outside',
+            postId: POST_OUTSIDE,
             platform: 'facebook',
             capturedAt: new Date('2026-10-06T09:05:00.000Z'),
             metrics: metrics({ reach: 999 }),
         }),
     ]);
 
-    const monitor = await getAnalyticsMonitor('user-1', range, {
+    const monitor = await getAnalyticsMonitor(USER_ID, range, {
         connectionId: 'connection-1',
     });
 
@@ -727,7 +827,7 @@ test('resolves the selected Page name when the monitor scope has no targets', as
     mockPostFind([]);
     mock.method(SocialConnection, 'findOne', () => ({ pageName: 'Empty Page' }));
 
-    const monitor = await getAnalyticsMonitor('user-1', range, {
+    const monitor = await getAnalyticsMonitor(USER_ID, range, {
         connectionId: 'connection-1',
     });
 
@@ -738,49 +838,70 @@ test('resolves the selected Page name when the monitor scope has no targets', as
 test('groups posts per post, sorts by latest publish, and paginates', async (t) => {
     t.after(() => mock.restoreAll());
     const range = analyticsRange('2026-10-01', '2026-10-31');
-    mockPostFind([
-        post({
-            _id: 'post-1',
-            publishedAt: new Date('2026-10-10T09:00:00.000Z'),
-            targets: [
-                {
-                    platform: 'facebook',
-                    status: 'published',
-                    externalId: 'external-1',
-                    publishedAt: new Date('2026-10-10T09:00:00.000Z'),
-                },
-                {
-                    platform: 'instagram',
-                    status: 'published',
-                    externalId: 'external-2',
-                    publishedAt: new Date('2026-10-11T09:00:00.000Z'),
-                },
-            ],
-        }),
-        post({
-            _id: 'post-2',
-            publishedAt: new Date('2026-10-15T09:00:00.000Z'),
-            targets: [
-                {
-                    platform: 'facebook',
-                    status: 'published',
-                    externalId: 'external-3',
-                    publishedAt: new Date('2026-10-15T09:00:00.000Z'),
-                },
-            ],
-        }),
-    ]);
-    mockSnapshotFind([]);
+    const connection = {
+        _id: CONNECTION_ID,
+        pageName: 'Page One',
+        pageId: 'page-1',
+        instagram: { username: 'pageone' },
+    };
+    const postOne = post({
+        _id: POST_1,
+        connection,
+        publishedAt: new Date('2026-10-10T09:00:00.000Z'),
+        targets: [
+            {
+                platform: 'facebook',
+                status: 'published',
+                externalId: 'external-1',
+                publishedAt: new Date('2026-10-10T09:00:00.000Z'),
+            },
+            {
+                platform: 'instagram',
+                status: 'published',
+                externalId: 'external-2',
+                publishedAt: new Date('2026-10-11T09:00:00.000Z'),
+            },
+        ],
+    });
+    const postTwo = post({
+        _id: POST_2,
+        connection,
+        publishedAt: new Date('2026-10-15T09:00:00.000Z'),
+        targets: [
+            {
+                platform: 'facebook',
+                status: 'published',
+                externalId: 'external-3',
+                publishedAt: new Date('2026-10-15T09:00:00.000Z'),
+            },
+        ],
+    });
 
-    const first = await getAnalyticsPosts('user-1', range, {}, 1, 1);
+    let call = 0;
+    mockPostAggregate(() => {
+        call += 1;
+        return call === 1
+            ? [{ metadata: [{ total: 2 }], data: [postTwo, postOne] }]
+            : [{ metadata: [{ total: 2 }], data: [postOne] }];
+    });
+    mockSnapshotAggregate([]);
+
+    const first = await getAnalyticsPosts(USER_ID, range, {}, 1, 1);
     assert.equal(first.total, 2);
+    assert.equal(first.page, 1);
+    assert.equal(first.limit, 1);
     assert.equal(first.posts.length, 1);
-    assert.equal(first.posts[0]?.postId, 'post-2');
+    assert.equal(first.posts[0]?.postId, POST_2);
+    assert.equal(first.posts[0]?.targets.length, 1);
     assert.equal(first.hasMore, true);
 
-    const second = await getAnalyticsPosts('user-1', range, {}, 2, 1);
+    const second = await getAnalyticsPosts(USER_ID, range, {}, 2, 1);
+    assert.equal(second.total, 2);
+    assert.equal(second.page, 2);
     assert.equal(second.posts.length, 1);
-    assert.equal(second.posts[0]?.postId, 'post-1');
+    assert.equal(second.posts[0]?.postId, POST_1);
+    // The page loader already paginated, so both platforms on post 1 are kept.
+    assert.equal(second.posts[0]?.targets.length, 2);
     assert.equal(second.hasMore, false);
 });
 
@@ -821,4 +942,149 @@ test('uses singular grammar for one Page with permission errors', () => {
     assert.equal(tips.length, 1);
     assert.equal(tips[0]?.id, 'permissions');
     assert.match(tips[0]?.body || '', /1 Page needs/);
+});
+
+test('skips null metrics in the monitor series instead of throwing', () => {
+    const series = buildMonitorSeries([snapshot({ metrics: null })] as never[]);
+
+    assert.equal(series.all.length, 1);
+    assert.equal(series.all[0]?.reach, 0);
+    assert.equal(series.all[0]?.engagementRate, null);
+});
+
+test('treats partial metrics as an unknown rate in summaries', () => {
+    const latest = new Map([
+        ['post-1:facebook', { metrics: { reach: 100 } as never }],
+    ]);
+
+    const result = summarizeTargets([target()] as never[], latest as never);
+
+    assert.equal(result.reach, 100);
+    assert.equal(result.engagementRate, null);
+});
+
+test('treats partial metrics as an unknown rate in the monitor series', () => {
+    const series = buildMonitorSeries([
+        snapshot({ metrics: { reach: 100 } as never }),
+    ] as never[]);
+
+    assert.equal(series.all[0]?.reach, 100);
+    assert.equal(series.all[0]?.engagementRate, null);
+});
+
+test('reports a weekly posting gap in weeks rather than days', () => {
+    const bucket = (date: string, posts: number) => ({
+        date,
+        label: date,
+        posts,
+        facebook: posts,
+        instagram: 0,
+        reach: 0,
+        interactions: 0,
+    });
+
+    const tips = buildRuleBasedTips({
+        summary: summary({ posts: 2, facebookPosts: 2 }),
+        byPlatform: { facebook: summary({ posts: 2 }), instagram: summary() },
+        bestTimes: [],
+        activity: [bucket('2026-01-05', 1), bucket('2026-01-19', 1)],
+        permissionErrors: [],
+        posts: [],
+        granularity: 'week',
+    });
+
+    const gap = tips.find((tip) => tip.id === 'gap');
+    assert.ok(gap);
+    assert.match(gap.body, /7 days/);
+});
+
+test('deduplicates the permission tip by Page name', () => {
+    const tips = buildRuleBasedTips({
+        summary: summary({ posts: 1, facebookPosts: 1 }),
+        byPlatform: { facebook: summary({ posts: 1 }), instagram: summary() },
+        bestTimes: [],
+        activity: [],
+        permissionErrors: [{ pageName: 'Page One' }, { pageName: 'Page One' }],
+        posts: [],
+    });
+
+    const permissions = tips.find((tip) => tip.id === 'permissions');
+    assert.ok(permissions);
+    assert.match(permissions.body, /^1 Page needs/);
+});
+
+test('deduplicates cross-posted entries in the AI payload top posts', () => {
+    const payload = buildAnalyticsAiPayload({
+        range: analyticsRange('2026-10-01', '2026-10-30'),
+        scopeName: 'Page One',
+        summary: summary({ posts: 1 }),
+        byPlatform: { facebook: summary(), instagram: summary() },
+        activity: [],
+        bestTimes: [],
+        permissionErrors: [],
+        topPosts: [
+            {
+                postId: POST_1,
+                caption: 'Cross post',
+                reach: 100,
+                interactions: 10,
+                engagementRate: 10,
+            },
+            {
+                postId: POST_1,
+                caption: 'Cross post',
+                reach: 300,
+                interactions: 30,
+                engagementRate: 10,
+            },
+        ],
+        brandProfile: {},
+    });
+
+    assert.equal(payload.topPosts.length, 1);
+    assert.equal(payload.topPosts[0]?.reach, 400);
+    assert.equal(payload.topPosts[0]?.interactions, 40);
+    assert.equal(payload.topPosts[0]?.engagementRate, 10);
+    assert.equal(payload.topEngagementPosts.length, 1);
+});
+
+test('uses the unique post count for publishing frequency', () => {
+    const payload = buildAnalyticsAiPayload({
+        range: analyticsRange('2026-10-01', '2026-10-30'),
+        scopeName: 'Page One',
+        summary: summary({ posts: 1 }),
+        byPlatform: { facebook: summary(), instagram: summary() },
+        activity: [
+            {
+                date: '2026-10-01',
+                label: '1 Oct',
+                posts: 1,
+                facebook: 1,
+                instagram: 0,
+                reach: 0,
+                interactions: 0,
+            },
+            {
+                date: '2026-10-02',
+                label: '2 Oct',
+                posts: 1,
+                facebook: 0,
+                instagram: 1,
+                reach: 0,
+                interactions: 0,
+            },
+        ],
+        bestTimes: [],
+        permissionErrors: [],
+        topPosts: [],
+        brandProfile: {},
+    });
+
+    assert.deepEqual(payload.publishingFrequency, {
+        posts: 1,
+        activeBuckets: 2,
+        buckets: 2,
+        postsPerBucket: 0.5,
+        postsPerActiveBucket: 0.5,
+    });
 });

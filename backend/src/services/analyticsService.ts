@@ -1,4 +1,4 @@
-import type { QueryFilter } from 'mongoose';
+import { Types, type QueryFilter } from 'mongoose';
 import { Post } from '../models/postModel.js';
 import type { IPost, Platform, PostStatus } from '../models/postModel.js';
 import {
@@ -112,8 +112,8 @@ export function latestSnapshotsByTarget(
  * reach to a global total.
  */
 function rateDenominator(metrics: IAnalyticsMetrics): number {
-    if (metrics.reach !== null && metrics.reach > 0) return metrics.reach;
-    if (metrics.views !== null && metrics.views > 0) return metrics.views;
+    if (typeof metrics.reach === 'number' && metrics.reach > 0) return metrics.reach;
+    if (typeof metrics.views === 'number' && metrics.views > 0) return metrics.views;
     return 0;
 }
 
@@ -130,13 +130,13 @@ function rateFrom(interactions: number, denominator: number): number | null {
  * the rate denominator instead of diluting the overall rate.
  */
 function availableInteractions(metrics: IAnalyticsMetrics): number | null {
-    if (metrics.interactions !== null) return metrics.interactions;
+    if (typeof metrics.interactions === 'number') return metrics.interactions;
     const values = [
         metrics.likes,
         metrics.comments,
         metrics.shares,
         metrics.saves,
-    ].filter((value): value is number => value !== null);
+    ].filter((value): value is number => typeof value === 'number');
     return values.length > 0
         ? values.reduce((sum, value) => sum + value, 0)
         : null;
@@ -205,7 +205,7 @@ export function buildActivity(
     latest: Map<string, IPostMetricSnapshot>,
     range: Pick<AnalyticsRange, 'fromKey' | 'toKey' | 'granularity'>
 ): ActivityBucket[] {
-    const buckets = buildAnalyticsBuckets(range as AnalyticsRange);
+    const buckets = buildAnalyticsBuckets(range);
     const byKey = new Map(
         buckets.map((bucket) => [
             bucket.key,
@@ -351,6 +351,7 @@ export function buildMonitorSeries(
 
                 for (const snapshot of value.targets.values()) {
                     const metrics = snapshot.metrics;
+                    if (!metrics) continue;
                     const interactionsForTarget = availableInteractions(metrics);
                     reach += metrics.reach ?? 0;
                     views += metrics.views ?? 0;
@@ -398,6 +399,67 @@ export function buildPublishedTargetsQuery(
     return query;
 }
 
+interface PostLike {
+    _id?: { toString(): string };
+    connectionId?: unknown;
+    connection?: ConnectionLike | null;
+    caption?: string;
+    mediaUrl?: string;
+    status?: PostStatus;
+    publishedAt?: Date | null;
+    targets?: Array<{
+        platform: Platform;
+        status: string;
+        externalId?: string;
+        publishedAt?: Date | null;
+    }>;
+}
+
+interface ConnectionLike {
+    _id?: { toString(): string };
+    pageName?: string;
+    pageId?: string;
+    instagram?: { username?: string } | null;
+}
+
+function targetsFromPost(
+    post: PostLike,
+    connection: ConnectionLike | null,
+    filters: AnalyticsFilters,
+    range: Pick<AnalyticsRange, 'from' | 'to'>
+): PublishedTarget[] {
+    if (!post._id) return [];
+    const connectionId = connection?._id
+        ? String(connection._id)
+        : post.connectionId
+          ? String(post.connectionId)
+          : '';
+    if (!connectionId) return [];
+    const targets: PublishedTarget[] = [];
+    for (const target of post.targets ?? []) {
+        if (target.status !== 'published') continue;
+        if (filters.platform && target.platform !== filters.platform) continue;
+        const publishedAt = target.publishedAt || post.publishedAt;
+        if (!publishedAt || publishedAt < range.from || publishedAt > range.to) {
+            continue;
+        }
+        targets.push({
+            postId: String(post._id),
+            connectionId,
+            pageId: connection?.pageId || '',
+            pageName: connection?.pageName || 'Connected page',
+            platform: target.platform,
+            externalId: target.externalId || '',
+            publishedAt,
+            caption: post.caption || '',
+            mediaUrl: post.mediaUrl || '',
+            postStatus: post.status || 'published',
+            instagramUsername: connection?.instagram?.username || '',
+        });
+    }
+    return targets;
+}
+
 export async function loadPublishedTargets(
     userId: string,
     range: AnalyticsRange,
@@ -411,37 +473,133 @@ export async function loadPublishedTargets(
 
     const targets: PublishedTarget[] = [];
     for (const post of posts) {
-        const connection = post.connectionId as unknown as {
-            _id?: { toString(): string };
-            pageName?: string;
-            pageId?: string;
-            instagram?: { username?: string } | null;
-        };
-        if (!connection || !connection._id) continue;
-
-        for (const target of post.targets) {
-            if (target.status !== 'published') continue;
-            if (filters.platform && target.platform !== filters.platform) continue;
-            const publishedAt = target.publishedAt || post.publishedAt;
-            if (!publishedAt || publishedAt < range.from || publishedAt > range.to) {
-                continue;
-            }
-            targets.push({
-                postId: String(post._id),
-                connectionId: String(connection._id),
-                pageId: connection.pageId || '',
-                pageName: connection.pageName || 'Connected page',
-                platform: target.platform,
-                externalId: target.externalId,
-                publishedAt,
-                caption: post.caption,
-                mediaUrl: post.mediaUrl,
-                postStatus: post.status,
-                instagramUsername: connection.instagram?.username || '',
-            });
-        }
+        const raw = post as unknown as PostLike;
+        const connection = (post.connectionId as unknown as ConnectionLike | null) ?? null;
+        targets.push(...targetsFromPost(raw, connection, filters, range));
     }
     return targets;
+}
+
+export function buildPublishedTargetsPagePipeline(
+    userId: string,
+    range: AnalyticsRange,
+    filters: AnalyticsFilters,
+    page: number,
+    limit: number
+): Record<string, unknown>[] {
+    const safePage = Math.max(1, Math.floor(page) || 1);
+    const safeLimit = Math.min(100, Math.max(1, Math.floor(limit) || 25));
+    const match: Record<string, unknown> = {
+        userId: new Types.ObjectId(userId),
+        status: { $in: ['published', 'partial'] },
+        $or: [
+            { 'targets.publishedAt': { $gte: range.from, $lte: range.to } },
+            { publishedAt: { $gte: range.from, $lte: range.to } },
+        ],
+    };
+    if (filters.connectionId) {
+        match.connectionId = new Types.ObjectId(filters.connectionId);
+    }
+
+    const targetPublishedAt = { $ifNull: ['$$target.publishedAt', '$publishedAt'] };
+    const targetConditions: Record<string, unknown>[] = [
+        { $eq: ['$$target.status', 'published'] },
+        { $gte: [targetPublishedAt, range.from] },
+        { $lte: [targetPublishedAt, range.to] },
+    ];
+    if (filters.platform) {
+        targetConditions.push({ $eq: ['$$target.platform', filters.platform] });
+    }
+
+    return [
+        { $match: match },
+        {
+            $addFields: {
+                latestPublishedAt: {
+                    $max: {
+                        $map: {
+                            input: {
+                                $filter: {
+                                    input: '$targets',
+                                    as: 'target',
+                                    cond: { $and: targetConditions },
+                                },
+                            },
+                            as: 'target',
+                            in: targetPublishedAt,
+                        },
+                    },
+                },
+            },
+        },
+        { $match: { latestPublishedAt: { $ne: null } } },
+        {
+            $facet: {
+                metadata: [{ $count: 'total' }],
+                data: [
+                    { $sort: { latestPublishedAt: -1, _id: -1 } },
+                    { $skip: (safePage - 1) * safeLimit },
+                    { $limit: safeLimit },
+                    {
+                        $lookup: {
+                            from: SocialConnection.collection.name,
+                            let: { connectionId: '$connectionId' },
+                            pipeline: [
+                                {
+                                    $match: {
+                                        $expr: {
+                                            $and: [
+                                                { $eq: ['$_id', '$$connectionId'] },
+                                                {
+                                                    $eq: [
+                                                        '$userId',
+                                                        new Types.ObjectId(userId),
+                                                    ],
+                                                },
+                                            ],
+                                        },
+                                    },
+                                },
+                                {
+                                    $project: {
+                                        pageName: 1,
+                                        pageId: 1,
+                                        instagram: 1,
+                                    },
+                                },
+                            ],
+                            as: 'connection',
+                        },
+                    },
+                    {
+                        $unwind: {
+                            path: '$connection',
+                            preserveNullAndEmptyArrays: true,
+                        },
+                    },
+                ],
+            },
+        },
+    ];
+}
+
+export async function loadPublishedTargetsPage(
+    userId: string,
+    range: AnalyticsRange,
+    filters: AnalyticsFilters,
+    page: number,
+    limit: number
+): Promise<{ targets: PublishedTarget[]; total: number }> {
+    const rows = await Post.aggregate<{
+        metadata: Array<{ total: number }>;
+        data: PostLike[];
+    }>(buildPublishedTargetsPagePipeline(userId, range, filters, page, limit) as never);
+    const result = rows[0];
+    const total = result?.metadata[0]?.total ?? 0;
+    const targets = (result?.data ?? []).flatMap((post) =>
+        targetsFromPost(post, post.connection ?? null, filters, range)
+    );
+    return { targets, total };
 }
 
 export function buildSnapshotQuery(
@@ -472,6 +630,70 @@ export async function loadSnapshots(
     return PostMetricSnapshot.find(query as QueryFilter<IPostMetricSnapshot>).sort({
         capturedAt: -1,
     });
+}
+
+/**
+ * Returns only the newest snapshot per post/platform, so overview and posts
+ * endpoints never load every historical snapshot for a target.
+ */
+export function buildLatestSnapshotsPipeline(
+    userId: string,
+    targets: PublishedTarget[],
+    range?: Pick<AnalyticsRange, 'from' | 'to'>
+): Record<string, unknown>[] {
+    const postIds = [...new Set(targets.map((target) => target.postId))].map(
+        (postId) => new Types.ObjectId(postId)
+    );
+    const match: Record<string, unknown> = {
+        userId: new Types.ObjectId(userId),
+        postId: { $in: postIds },
+    };
+    if (range) {
+        match.publishedAt = { $gte: range.from, $lte: range.to };
+    }
+    return [
+        { $match: match },
+        { $sort: { postId: 1, platform: 1, capturedAt: -1 } },
+        {
+            $group: {
+                _id: { postId: '$postId', platform: '$platform' },
+                doc: { $first: '$$ROOT' },
+            },
+        },
+        { $replaceRoot: { newRoot: '$doc' } },
+    ];
+}
+
+export async function loadLatestSnapshots(
+    userId: string,
+    targets: PublishedTarget[],
+    range?: Pick<AnalyticsRange, 'from' | 'to'>
+): Promise<IPostMetricSnapshot[]> {
+    if (targets.length === 0) return [];
+    return PostMetricSnapshot.aggregate<IPostMetricSnapshot>(
+        buildLatestSnapshotsPipeline(userId, targets, range) as never
+    );
+}
+
+const MONITOR_HISTORY_DAYS = 90;
+const MONITOR_SNAPSHOT_LIMIT = 50_000;
+
+/**
+ * The live monitor is a recent-history view. The overview remains the
+ * full-range historical view, so this bounds the monitor to a rolling window.
+ */
+export async function loadMonitorSnapshots(
+    userId: string,
+    targets: PublishedTarget[],
+    range: AnalyticsRange
+): Promise<IPostMetricSnapshot[]> {
+    const query = buildSnapshotQuery(userId, targets, range);
+    if (!query) return [];
+    const cutoff = new Date(Date.now() - MONITOR_HISTORY_DAYS * 86_400_000);
+    query.capturedAt = { $gte: cutoff > range.from ? cutoff : range.from };
+    return PostMetricSnapshot.find(query as QueryFilter<IPostMetricSnapshot>)
+        .sort({ capturedAt: -1 })
+        .limit(MONITOR_SNAPSHOT_LIMIT);
 }
 
 export function uniquePermissionErrors(
@@ -570,7 +792,7 @@ export async function getAnalyticsOverview(
     filters: AnalyticsFilters
 ) {
     const targets = await loadPublishedTargets(userId, range, filters);
-    const snapshots = await loadSnapshots(userId, targets, range);
+    const snapshots = await loadLatestSnapshots(userId, targets, range);
     const latest = latestSnapshotsByTarget(snapshots);
     const summary = summarizeTargets(targets, latest);
 
@@ -611,7 +833,7 @@ export async function getAnalyticsMonitor(
     filters: AnalyticsFilters
 ) {
     const targets = await loadPublishedTargets(userId, range, filters);
-    const snapshots = await loadSnapshots(userId, targets, range);
+    const snapshots = await loadMonitorSnapshots(userId, targets, range);
     const latest = latestSnapshotsByTarget(snapshots);
     const summary = summarizeTargets(targets, latest);
     const targetKeys = new Set(
@@ -664,8 +886,16 @@ export async function getAnalyticsPosts(
     page: number,
     limit: number
 ) {
-    const targets = await loadPublishedTargets(userId, range, filters);
-    const snapshots = await loadSnapshots(userId, targets, range);
+    const safePage = Math.max(1, Math.floor(page) || 1);
+    const safeLimit = Math.min(100, Math.max(1, Math.floor(limit) || 25));
+    const { targets, total } = await loadPublishedTargetsPage(
+        userId,
+        range,
+        filters,
+        safePage,
+        safeLimit
+    );
+    const snapshots = await loadLatestSnapshots(userId, targets, range);
     const latest = latestSnapshotsByTarget(snapshots);
     const grouped = new Map<string, PublishedTarget[]>();
 
@@ -706,15 +936,15 @@ export async function getAnalyticsPosts(
         }))
         .sort((a, b) => b.latestPublishedAt - a.latestPublishedAt);
 
-    const start = (page - 1) * limit;
-    const pagePosts = posts.slice(start, start + limit).map(({ latestPublishedAt, ...post }) => post);
+    const start = (safePage - 1) * safeLimit;
+    const pagePosts = posts.slice(0, safeLimit).map(({ latestPublishedAt, ...post }) => post);
 
     return {
         posts: pagePosts,
-        page,
-        limit,
-        total: posts.length,
-        hasMore: start + limit < posts.length,
+        page: safePage,
+        limit: safeLimit,
+        total,
+        hasMore: start + safeLimit < total,
     };
 }
 
@@ -734,6 +964,7 @@ export function buildRuleBasedTips(input: {
     activity: ActivityBucket[];
     permissionErrors: Array<{ pageName: string }>;
     posts: Array<{ caption: string; engagementRate: number | null }>;
+    granularity?: 'day' | 'week';
 }): RuleBasedTip[] {
     const tips: RuleBasedTip[] = [];
     const overallRate = input.summary.engagementRate;
@@ -789,13 +1020,15 @@ export function buildRuleBasedTips(input: {
 
     const daysWithPosts = input.activity.filter((bucket) => bucket.posts > 0);
     if (daysWithPosts.length > 1) {
+        const span = input.granularity === 'week' ? 7 : 1;
         let longestGap = 0;
         for (let index = 1; index < daysWithPosts.length; index += 1) {
             const previous = new Date(`${daysWithPosts[index - 1]?.date}T00:00:00+05:30`);
             const current = new Date(`${daysWithPosts[index]?.date}T00:00:00+05:30`);
             longestGap = Math.max(
                 longestGap,
-                Math.round((current.getTime() - previous.getTime()) / 86_400_000) - 1
+                Math.round((current.getTime() - previous.getTime()) / 86_400_000) -
+                    span
             );
         }
         if (longestGap >= 7) {
@@ -824,8 +1057,9 @@ export function buildRuleBasedTips(input: {
         });
     }
 
-    if (input.permissionErrors.length > 0) {
-        const count = input.permissionErrors.length;
+    const pageNames = new Set(input.permissionErrors.map((error) => error.pageName));
+    if (pageNames.size > 0) {
+        const count = pageNames.size;
         tips.push({
             id: 'permissions',
             title: 'Reconnect to unlock reach data',
@@ -839,8 +1073,8 @@ export function buildRuleBasedTips(input: {
     return tips.slice(0, 6);
 }
 
-function publishingFrequency(activity: ActivityBucket[]) {
-    const posts = activity.reduce((sum, bucket) => sum + bucket.posts, 0);
+function publishingFrequency(activity: ActivityBucket[], uniquePosts: number) {
+    const posts = uniquePosts;
     const activeBuckets = activity.filter((bucket) => bucket.posts > 0).length;
     const round1 = (value: number) => Math.round(value * 10) / 10;
     return {
@@ -881,22 +1115,56 @@ export function buildAnalyticsAiPayload(input: {
     activity: ActivityBucket[];
     bestTimes: BestTimeBucket[];
     permissionErrors: Array<{ pageName: string }>;
-    topPosts: Array<{ caption: string; reach: number; interactions: number; engagementRate: number | null }>;
+    topPosts: Array<{
+        postId?: string;
+        caption: string;
+        reach: number;
+        interactions: number;
+        engagementRate: number | null;
+    }>;
     brandProfile: Record<string, string | undefined>;
 }) {
+    // A cross-posted post appears once per platform. Collapse those entries so
+    // the AI sees one row per post with combined reach and interactions.
+    const dedupedTopPosts = new Map<
+        string,
+        { caption: string; reach: number; interactions: number }
+    >();
+    for (const post of input.topPosts) {
+        const key = post.postId || post.caption;
+        const current = dedupedTopPosts.get(key);
+        if (current) {
+            current.reach += post.reach;
+            current.interactions += post.interactions;
+        } else {
+            dedupedTopPosts.set(key, {
+                caption: post.caption,
+                reach: post.reach,
+                interactions: post.interactions,
+            });
+        }
+    }
+    const topPosts = [...dedupedTopPosts.values()].map((post) => ({
+        ...post,
+        engagementRate:
+            post.reach > 0
+                ? Math.round((post.interactions / post.reach) * 1000) / 10
+                : null,
+    }));
+
     return {
         range: { from: input.range.fromKey, to: input.range.toKey, timezone: 'Asia/Kolkata' },
         scopeName: input.scopeName,
         summary: input.summary,
         byPlatform: input.byPlatform,
         activity: input.activity,
-        publishingFrequency: publishingFrequency(input.activity),
+        publishingFrequency: publishingFrequency(input.activity, input.summary.posts),
         longestGapDays: longestGapDays(input.activity, input.range.granularity),
         bestTimes: input.bestTimes.filter((bucket) => bucket.posts > 0),
         permissionErrors: input.permissionErrors.map((error) => ({
             pageName: error.pageName,
         })),
-        topPosts: [...input.topPosts]
+        topPosts: [...topPosts]
             .sort((a, b) => b.reach - a.reach)
             .slice(0, 5)
             .map((post) => ({
@@ -905,7 +1173,7 @@ export function buildAnalyticsAiPayload(input: {
                 interactions: post.interactions,
                 engagementRate: post.engagementRate,
             })),
-        topEngagementPosts: [...input.topPosts]
+        topEngagementPosts: [...topPosts]
             .filter((post) => post.engagementRate !== null)
             .sort(
                 (a, b) =>
