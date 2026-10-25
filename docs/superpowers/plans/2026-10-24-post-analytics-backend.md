@@ -1763,8 +1763,8 @@ import { PostMetricSnapshot } from '../models/postMetricSnapshotModel.js';
 import { decryptSecret } from './cryptoService.js';
 import {
     latestSnapshotsByTarget,
+    loadLatestSnapshots,
     loadPublishedTargets,
-    loadSnapshots,
     targetKey,
     type AnalyticsFilters,
     type PublishedTarget,
@@ -1869,7 +1869,7 @@ export async function syncAnalytics(
     mode: SyncMode
 ): Promise<SyncResult> {
     const targets = await loadPublishedTargets(userId, range, filters);
-    const snapshots = await loadSnapshots(userId, targets);
+    const snapshots = await loadLatestSnapshots(userId, targets, range);
     const latest = latestSnapshotsByTarget(snapshots);
     const stale = selectStaleTargets(targets, latest, mode, new Date());
     const selected = stale.slice(0, syncCapForMode(mode));
@@ -2372,8 +2372,8 @@ import {
     getAnalyticsMonitor,
     getAnalyticsOverview,
     getAnalyticsPosts,
+    loadLatestSnapshots,
     loadPublishedTargets,
-    loadSnapshots,
     latestSnapshotsByTarget,
     summarizeTargets,
 } from '../services/analyticsService.js';
@@ -2453,7 +2453,7 @@ export async function tips(req: Request, res: Response): Promise<void> {
     const input = parseQuery(rangeQuerySchema, req);
     const { range, filters } = rangeAndFilters(input);
     const targets = await loadPublishedTargets(req.user!.id, range, filters);
-    const snapshots = await loadSnapshots(req.user!.id, targets);
+    const snapshots = await loadLatestSnapshots(req.user!.id, targets, range);
     const latest = latestSnapshotsByTarget(snapshots);
     const summary = summarizeTargets(targets, latest);
     const byPlatform = {
@@ -2483,6 +2483,7 @@ export async function tips(req: Request, res: Response): Promise<void> {
         activity,
         permissionErrors,
         posts,
+        granularity: range.granularity,
     });
     const scopeKey = filters.connectionId || 'all';
     const rangeKey = `${range.fromKey}:${range.toKey}:${filters.platform || 'all'}`;
@@ -2495,12 +2496,12 @@ export async function tips(req: Request, res: Response): Promise<void> {
         bestTimes,
         permissionErrors,
         topPosts: targets.map((target) => ({
+            postId: target.postId,
             caption: target.caption,
             reach: latest.get(`${target.postId}:${target.platform}`)?.metrics.reach ?? 0,
+            views: latest.get(`${target.postId}:${target.platform}`)?.metrics.views ?? null,
             interactions:
                 latest.get(`${target.postId}:${target.platform}`)?.metrics.interactions ?? 0,
-            engagementRate:
-                latest.get(`${target.postId}:${target.platform}`)?.metrics.engagementRate ?? null,
         })),
         brandProfile: req.user!.brandProfile || {},
     });
@@ -2529,7 +2530,7 @@ export async function generateTips(req: Request, res: Response): Promise<void> {
     const input = parseBody(tipsBodySchema, req);
     const { range, filters } = rangeAndFilters(input);
     const targets = await loadPublishedTargets(req.user!.id, range, filters);
-    const snapshots = await loadSnapshots(req.user!.id, targets);
+    const snapshots = await loadLatestSnapshots(req.user!.id, targets, range);
     const latest = latestSnapshotsByTarget(snapshots);
     const summary = summarizeTargets(targets, latest);
     const byPlatform = {
@@ -2555,12 +2556,12 @@ export async function generateTips(req: Request, res: Response): Promise<void> {
             .filter((snapshot) => snapshot.status === 'permission_error')
             .map((snapshot) => ({ pageName: snapshot.pageName })),
         topPosts: targets.map((target) => ({
+            postId: target.postId,
             caption: target.caption,
             reach: latest.get(`${target.postId}:${target.platform}`)?.metrics.reach ?? 0,
+            views: latest.get(`${target.postId}:${target.platform}`)?.metrics.views ?? null,
             interactions:
                 latest.get(`${target.postId}:${target.platform}`)?.metrics.interactions ?? 0,
-            engagementRate:
-                latest.get(`${target.postId}:${target.platform}`)?.metrics.engagementRate ?? null,
         })),
         brandProfile: req.user!.brandProfile || {},
     });

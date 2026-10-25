@@ -722,8 +722,8 @@ const MONITOR_SNAPSHOT_LIMIT = 50_000;
  * The live monitor is a recent-history view. The overview remains the
  * full-range historical view, so this bounds the monitor to a rolling window.
  * Queries are issued per target so each one can use the
- * (userId, postId, platform, capturedAt) index, and the total row count stays
- * bounded by MONITOR_SNAPSHOT_LIMIT.
+ * (postId, platform, capturedAt) index, and the total row count stays bounded
+ * by MONITOR_SNAPSHOT_LIMIT.
  */
 export async function loadMonitorSnapshots(
     userId: string,
@@ -1219,14 +1219,15 @@ export function buildAnalyticsAiPayload(input: {
         };
         const reach = finiteOrZero(post.reach);
         const views = finiteOrZero(post.views);
-        const interactions = finiteOrZero(post.interactions);
+        const interactionValue = finiteOrNull(post.interactions);
+        const interactions = interactionValue ?? 0;
         current.caption = current.caption || post.caption;
         current.reach += reach;
         current.views += views;
         current.interactions += interactions;
         const denominator = reach > 0 ? reach : views > 0 ? views : 0;
-        if (denominator > 0) {
-            current.rateInteractions += interactions;
+        if (denominator > 0 && interactionValue !== null) {
+            current.rateInteractions += interactionValue;
             current.rateDenominator += denominator;
         }
         dedupedTopPosts.set(post.postId, current);
