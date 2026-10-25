@@ -75,33 +75,119 @@ test('marks Facebook permission errors without losing field metrics', async () =
 
 test('normalizes Instagram insights after retrying an invalid metric', async () => {
     let insightCalls = 0;
-    const request = async (
-        path: string,
-        options?: { params?: { metric?: string } }
-    ) => {
-        if (path.endsWith('/insights')) {
-            // The optional legacy `impressions` probe is not part of the ladder.
-            if (options?.params?.metric !== 'impressions') insightCalls += 1;
-            if (insightCalls === 1) {
-                throw new MetaApiError('invalid metric', 400, 100);
-            }
-            return {
-                data: [
-                    { name: 'reach', values: [{ value: 500 }] },
-                    { name: 'likes', values: [{ value: 40 }] },
-                    { name: 'comments', values: [{ value: 5 }] },
-                ],
-            };
+    const request = async (path: string) => {
+        if (!path.endsWith('/insights')) {
+            throw new Error(`unexpected media fields request: ${path}`);
         }
-        return { like_count: 40, comments_count: 5 };
+        insightCalls += 1;
+        if (insightCalls === 1) {
+            throw new MetaApiError('invalid metric', 400, 100);
+        }
+        // Views are returned here so the test stays focused on the ladder retry;
+        // the legacy impressions fallback has its own test below.
+        return {
+            data: [
+                { name: 'reach', values: [{ value: 500 }] },
+                { name: 'views', values: [{ value: 900 }] },
+                { name: 'likes', values: [{ value: 40 }] },
+                { name: 'comments', values: [{ value: 5 }] },
+            ],
+        };
     };
 
     const result = await fetchInstagramMetrics('media-1', 'token', request);
     assert.equal(insightCalls, 2);
     assert.equal(result.metrics.reach, 500);
+    assert.equal(result.metrics.views, 900);
     assert.equal(result.metrics.likes, 40);
     assert.equal(result.metrics.comments, 5);
     assert.equal(result.status, 'partial');
+});
+
+test('retries Instagram insights for common invalid-metric variants', async () => {
+    const variants = [
+        'The following metric is invalid: views',
+        'The following metrics are not valid: views',
+        'Unknown metric: views',
+    ];
+
+    for (const message of variants) {
+        const requested: string[] = [];
+        const request = async (
+            path: string,
+            options?: { params?: { metric?: string } }
+        ) => {
+            if (!path.endsWith('/insights')) {
+                throw new Error(`unexpected request: ${path}`);
+            }
+            requested.push(options?.params?.metric ?? '');
+            if (requested.length === 1) {
+                throw new MetaApiError(message, 400, 100);
+            }
+            return {
+                data: [
+                    { name: 'reach', values: [{ value: 70 }] },
+                    { name: 'views', values: [{ value: 90 }] },
+                    { name: 'likes', values: [{ value: 5 }] },
+                    { name: 'comments', values: [{ value: 1 }] },
+                ],
+            };
+        };
+
+        const result = await fetchInstagramMetrics('media-1', 'token', request);
+        assert.equal(requested.length, 2, message);
+        assert.equal(
+            requested[0],
+            'reach,views,likes,comments,shares,saved',
+            message
+        );
+        assert.equal(
+            requested[1],
+            'reach,likes,comments,shares,saved',
+            message
+        );
+        assert.equal(result.metrics.reach, 70, message);
+        assert.equal(result.metrics.views, 90, message);
+    }
+});
+
+test('skips optional Instagram probes after a permission error', async () => {
+    const requestedPaths: string[] = [];
+    const request = async (path: string) => {
+        requestedPaths.push(path);
+        throw new MetaApiError('permission denied', 403, 200);
+    };
+
+    const result = await fetchInstagramMetrics('media-1', 'token', request);
+    assert.equal(requestedPaths.length, 1);
+    assert.equal(result.status, 'permission_error');
+});
+
+test('does not let an optional probe failure override primary Instagram success', async () => {
+    const request = async (
+        path: string,
+        options?: { params?: { metric?: string } }
+    ) => {
+        if (!path.endsWith('/insights')) {
+            throw new Error(`unexpected media fields request: ${path}`);
+        }
+        if (options?.params?.metric === 'impressions') {
+            throw new MetaApiError('permission denied', 403, 200);
+        }
+        return {
+            data: [
+                { name: 'reach', values: [{ value: 300 }] },
+                { name: 'likes', values: [{ value: 20 }] },
+                { name: 'comments', values: [{ value: 4 }] },
+            ],
+        };
+    };
+
+    const result = await fetchInstagramMetrics('media-1', 'token', request);
+    assert.equal(result.metrics.reach, 300);
+    assert.equal(result.status, 'partial');
+    assert.equal(result.error.length > 0, true);
+    assert.equal(result.error.includes('permission denied'), true);
 });
 
 test('treats null and missing Facebook field values as null, not zero', async () => {
@@ -124,6 +210,54 @@ test('treats null and missing Facebook field values as null, not zero', async ()
     assert.equal(result.availableMetrics.includes('likes'), false);
     assert.equal(result.availableMetrics.includes('shares'), true);
     assert.equal(result.status, 'partial');
+});
+
+test('falls back to the first value when total_value is null', async () => {
+    const request = async (
+        path: string,
+        options?: { params?: { metric?: string } }
+    ) => {
+        if (path.endsWith('/insights')) {
+            if (options?.params?.metric === 'impressions') {
+                return { data: [] };
+            }
+            return {
+                data: [
+                    {
+                        name: 'reach',
+                        total_value: { value: null },
+                        values: [{ value: 42 }],
+                    },
+                ],
+            };
+        }
+        return {};
+    };
+
+    const result = await fetchInstagramMetrics('media-1', 'token', request);
+    assert.equal(result.metrics.reach, 42);
+});
+
+test('rejects invalid Facebook field values', async () => {
+    const invalidValues = [true, [], '   ', -5];
+
+    for (const value of invalidValues) {
+        const request = async (path: string) => {
+            if (path.endsWith('/insights')) {
+                return { data: [] };
+            }
+            return {
+                reactions: { summary: { total_count: value } },
+                comments: { summary: { total_count: 1 } },
+                shares: { count: 0 },
+            };
+        };
+
+        const result = await fetchFacebookMetrics('post-1', 'token', request);
+        assert.equal(result.metrics.likes, null, String(value));
+        assert.equal(result.metrics.comments, 1);
+        assert.equal(result.metrics.shares, 0);
+    }
 });
 
 test('uses Instagram media fields when likes and comments are missing', async () => {
@@ -162,6 +296,26 @@ test('rethrows token errors from both fetchers', async () => {
     await assert.rejects(
         () => fetchInstagramMetrics('media-1', 'token', instagramRequest),
         (error: unknown) => error instanceof MetaApiError && error.code === 190
+    );
+});
+
+test('rethrows non-Meta errors from both fetchers', async () => {
+    const boom = new Error('boom');
+
+    await assert.rejects(
+        () =>
+            fetchFacebookMetrics('post-1', 'token', async () => {
+                throw boom;
+            }),
+        (error: unknown) => error === boom
+    );
+
+    await assert.rejects(
+        () =>
+            fetchInstagramMetrics('media-1', 'token', async () => {
+                throw boom;
+            }),
+        (error: unknown) => error === boom
     );
 });
 
@@ -207,6 +361,24 @@ test('does not treat a metric requirement as a permission error', async () => {
     assert.equal(result.metrics.likes, 7);
     assert.notEqual(result.status, 'permission_error');
     assert.equal(result.status, 'partial');
+});
+
+test('treats a Page like requirement as an empty state', async () => {
+    const request = async (path: string) => {
+        if (path.endsWith('/insights')) {
+            throw new MetaApiError(
+                'This metric requires the Page to have at least 100 likes',
+                400,
+                100
+            );
+        }
+        return { reactions: { summary: { total_count: 4 } } };
+    };
+
+    const result = await fetchFacebookMetrics('post-1', 'token', request);
+    assert.equal(result.metrics.likes, 4);
+    assert.equal(result.status, 'partial');
+    assert.equal(result.error, '');
 });
 
 test('marks explicit permission errors as permission_error', async () => {
@@ -304,11 +476,31 @@ test('sanitizes token-bearing URLs in stored errors', async () => {
     const result = await fetchFacebookMetrics('post-1', 'token', request);
     assert.equal(result.metrics.likes, 5);
     assert.equal(result.error.includes('SUPERSECRET'), false);
-    assert.equal(result.error.includes('access_token=SUPERSECRET'), false);
-    assert.equal(result.error.includes('?'), false);
+    assert.equal(result.error.includes('access_token'), false);
+    assert.equal(result.error.includes('fields=id'), false);
     assert.equal(
         sanitizeErrorMessage('token access_token=abc123'),
         'token access_token=[redacted]'
+    );
+});
+
+test('sanitizes encoded secrets and bare Meta tokens', () => {
+    assert.equal(
+        sanitizeErrorMessage(
+            'request failed access_token%3DSUPERSECRET&fields=id'
+        ),
+        'request failed access_token%3D[redacted]&fields=id'
+    );
+
+    const bareToken = `EAA${'a'.repeat(24)}`;
+    assert.equal(
+        sanitizeErrorMessage(`request failed ${bareToken}`),
+        'request failed [redacted]'
+    );
+
+    assert.equal(
+        sanitizeErrorMessage('client_secret: abc123 fb_exchange_token=def456'),
+        'client_secret: [redacted] fb_exchange_token=[redacted]'
     );
 });
 
