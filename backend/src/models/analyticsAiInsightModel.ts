@@ -14,9 +14,11 @@ export interface IAnalyticsTip {
  * `Document` declares a `model()` method, which collides with the cached
  * Gemini model name field. Omitting it keeps the field typed as `string`.
  *
- * Note: hydrated documents still type `model` as
- * `Document['model'] & string` because `model()` remains callable at runtime.
- * Callers should read `doc.model` as a string and never call `doc.model()`.
+ * Note: hydrated documents still type `model` as `Document['model'] & string`
+ * because that intersection comes from the `HydratedDocument`/`Document`
+ * declarations. At runtime `Document.prototype.model` is undefined, so calling
+ * `doc.model()` throws. Callers must read `doc.model` as a string and never
+ * call it.
  */
 export interface IAnalyticsAiInsight extends Omit<mongoose.Document, 'model'> {
     userId: mongoose.Types.ObjectId;
@@ -54,7 +56,7 @@ const insightSchema = new mongoose.Schema<IAnalyticsAiInsight>(
         },
         rangeKey: { type: String, required: true },
         dataHash: { type: String, required: true },
-        tips: { type: [tipSchema], default: [] },
+        tips: { type: [tipSchema], required: true, default: [] },
         model: { type: String, default: '' },
         generatedAt: { type: Date, required: true },
         expiresAt: { type: Date, required: true },
