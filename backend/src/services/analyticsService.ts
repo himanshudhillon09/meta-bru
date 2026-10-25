@@ -6,6 +6,7 @@ import {
     type IAnalyticsMetrics,
     type IPostMetricSnapshot,
 } from '../models/postMetricSnapshotModel.js';
+import { SocialConnection } from '../models/socialConnectionModel.js';
 import {
     buildAnalyticsBuckets,
     bucketKeyForDate,
@@ -122,6 +123,25 @@ function rateFrom(interactions: number, denominator: number): number | null {
         : null;
 }
 
+/**
+ * The interaction numerator for a target. Meta does not always return the
+ * aggregate `interactions` metric, so fall back to summing the components that
+ * are available. Returning null (rather than 0) keeps an unknown target out of
+ * the rate denominator instead of diluting the overall rate.
+ */
+function availableInteractions(metrics: IAnalyticsMetrics): number | null {
+    if (metrics.interactions !== null) return metrics.interactions;
+    const values = [
+        metrics.likes,
+        metrics.comments,
+        metrics.shares,
+        metrics.saves,
+    ].filter((value): value is number => value !== null);
+    return values.length > 0
+        ? values.reduce((sum, value) => sum + value, 0)
+        : null;
+}
+
 export function summarizeTargets(
     targets: PublishedTarget[],
     latest: Map<string, IPostMetricSnapshot>
@@ -147,9 +167,10 @@ export function summarizeTargets(
 
         const metrics = latest.get(targetKey(target.postId, target.platform))?.metrics;
         if (!metrics) continue;
+        const interactionsForTarget = availableInteractions(metrics);
         reach += metrics.reach ?? 0;
         views += metrics.views ?? 0;
-        interactions += metrics.interactions ?? 0;
+        interactions += interactionsForTarget ?? 0;
         likes += metrics.likes ?? 0;
         comments += metrics.comments ?? 0;
         shares += metrics.shares ?? 0;
@@ -157,8 +178,8 @@ export function summarizeTargets(
         clicks += metrics.clicks ?? 0;
 
         const denominator = rateDenominator(metrics);
-        if (denominator > 0) {
-            rateInteractions += metrics.interactions ?? 0;
+        if (denominator > 0 && interactionsForTarget !== null) {
+            rateInteractions += interactionsForTarget;
             rateDenominatorTotal += denominator;
         }
     }
@@ -209,7 +230,7 @@ export function buildActivity(
         const metrics = latest.get(targetKey(target.postId, target.platform))?.metrics;
         if (metrics) {
             bucket.reach += metrics.reach ?? 0;
-            bucket.interactions += metrics.interactions ?? 0;
+            bucket.interactions += availableInteractions(metrics) ?? 0;
         }
     }
 
@@ -234,7 +255,7 @@ export function buildBestTimes(
     const buckets = new Map<
         string,
         {
-            posts: number;
+            postIds: Set<string>;
             rateInteractions: number;
             rateDenominator: number;
         }
@@ -245,16 +266,17 @@ export function buildBestTimes(
         const block = istHourBlock(target.publishedAt);
         const key = `${day}:${block}`;
         const value = buckets.get(key) ?? {
-            posts: 0,
+            postIds: new Set<string>(),
             rateInteractions: 0,
             rateDenominator: 0,
         };
-        value.posts += 1;
+        value.postIds.add(target.postId);
         const metrics = latest.get(targetKey(target.postId, target.platform))?.metrics;
         if (metrics) {
             const denominator = rateDenominator(metrics);
-            if (denominator > 0) {
-                value.rateInteractions += metrics.interactions ?? 0;
+            const interactions = availableInteractions(metrics);
+            if (denominator > 0 && interactions !== null) {
+                value.rateInteractions += interactions;
                 value.rateDenominator += denominator;
             }
         }
@@ -265,7 +287,7 @@ export function buildBestTimes(
     for (let day = 1; day <= 7; day += 1) {
         for (let block = 0; block < 8; block += 1) {
             const value = buckets.get(`${day}:${block}`) ?? {
-                posts: 0,
+                postIds: new Set<string>(),
                 rateInteractions: 0,
                 rateDenominator: 0,
             };
@@ -274,9 +296,9 @@ export function buildBestTimes(
                 dayLabel: DAY_LABELS[day - 1] || '',
                 block,
                 label: BLOCK_LABELS[block] || '',
-                posts: value.posts,
+                posts: value.postIds.size,
                 avgEngagementRate:
-                    value.posts >= 2
+                    value.postIds.size >= 2
                         ? rateFrom(value.rateInteractions, value.rateDenominator)
                         : null,
             });
@@ -329,12 +351,13 @@ export function buildMonitorSeries(
 
                 for (const snapshot of value.targets.values()) {
                     const metrics = snapshot.metrics;
+                    const interactionsForTarget = availableInteractions(metrics);
                     reach += metrics.reach ?? 0;
                     views += metrics.views ?? 0;
-                    interactions += metrics.interactions ?? 0;
+                    interactions += interactionsForTarget ?? 0;
                     const denominator = rateDenominator(metrics);
-                    if (denominator > 0) {
-                        rateInteractions += metrics.interactions ?? 0;
+                    if (denominator > 0 && interactionsForTarget !== null) {
+                        rateInteractions += interactionsForTarget;
                         rateDenominatorTotal += denominator;
                     }
                 }
@@ -464,9 +487,11 @@ export function uniquePermissionErrors(
         if (!targetKeys.has(key)) continue;
         if (snapshot.status !== 'permission_error') continue;
         const connectionId = String(snapshot.connectionId);
-        const errorKey = `${connectionId}:${snapshot.platform}`;
-        if (seen.has(errorKey)) continue;
-        seen.add(errorKey);
+        // A Page shares one connection across Facebook and Instagram. Dedupe by
+        // connection so one reconnect action is surfaced once, keeping the first
+        // encountered snapshot's platform for that Page.
+        if (seen.has(connectionId)) continue;
+        seen.add(connectionId);
         errors.push({
             connectionId,
             pageName: snapshot.pageName,
@@ -503,6 +528,15 @@ function staleCount(
     }).length;
 }
 
+function remainingTargets(
+    targets: PublishedTarget[],
+    latest: Map<string, IPostMetricSnapshot>
+): number {
+    return targets.filter(
+        (target) => !latest.has(targetKey(target.postId, target.platform))
+    ).length;
+}
+
 export function rangePreset(
     range: Pick<AnalyticsRange, 'from' | 'to'>
 ): '7d' | '30d' | '60d' | '90d' | 'custom' {
@@ -514,6 +548,20 @@ export function rangePreset(
     if (days === 60) return '60d';
     if (days === 90) return '90d';
     return 'custom';
+}
+
+async function resolvePageName(
+    userId: string,
+    connectionId: string,
+    targets: PublishedTarget[]
+): Promise<string> {
+    const fromTargets = targets[0]?.pageName;
+    if (fromTargets) return fromTargets;
+    const connection = await SocialConnection.findOne(
+        { _id: connectionId, userId },
+        'pageName'
+    );
+    return connection?.pageName || 'Page';
 }
 
 export async function getAnalyticsOverview(
@@ -551,7 +599,7 @@ export async function getAnalyticsOverview(
         sync: {
             lastSyncedAt: lastSyncedAt(targets, latest),
             staleTargets: staleCount(targets, latest, 15),
-            remainingTargets: 0,
+            remainingTargets: remainingTargets(targets, latest),
             permissionErrors: uniquePermissionErrors(targets, latest),
         },
     };
@@ -588,12 +636,14 @@ export async function getAnalyticsMonitor(
             metrics: latest.get(targetKey(target.postId, target.platform))?.metrics ?? null,
         }));
 
+    const pageName = filters.connectionId
+        ? await resolvePageName(userId, filters.connectionId, targets)
+        : 'All Pages';
+
     return {
         scope: {
             connectionId: filters.connectionId || null,
-            pageName: filters.connectionId
-                ? targets[0]?.pageName || 'Page'
-                : 'All Pages',
+            pageName,
         },
         summary,
         series,
@@ -775,10 +825,11 @@ export function buildRuleBasedTips(input: {
     }
 
     if (input.permissionErrors.length > 0) {
+        const count = input.permissionErrors.length;
         tips.push({
             id: 'permissions',
             title: 'Reconnect to unlock reach data',
-            body: `${input.permissionErrors.length} Page${input.permissionErrors.length === 1 ? '' : 's'} need insight permission. Reconnect to load complete engagement data.`,
+            body: `${count} Page${count === 1 ? '' : 's'} ${count === 1 ? 'needs' : 'need'} insight permission. Reconnect to load complete engagement data.`,
             severity: 'warning',
             actionLabel: 'Open connections',
             actionHref: '/connections',
@@ -786,6 +837,40 @@ export function buildRuleBasedTips(input: {
     }
 
     return tips.slice(0, 6);
+}
+
+function publishingFrequency(activity: ActivityBucket[]) {
+    const posts = activity.reduce((sum, bucket) => sum + bucket.posts, 0);
+    const activeBuckets = activity.filter((bucket) => bucket.posts > 0).length;
+    const round1 = (value: number) => Math.round(value * 10) / 10;
+    return {
+        posts,
+        activeBuckets,
+        buckets: activity.length,
+        postsPerBucket: activity.length > 0 ? round1(posts / activity.length) : 0,
+        postsPerActiveBucket:
+            activeBuckets > 0 ? round1(posts / activeBuckets) : 0,
+    };
+}
+
+function longestGapDays(
+    activity: ActivityBucket[],
+    granularity: 'day' | 'week'
+): number {
+    const active = activity.filter((bucket) => bucket.posts > 0);
+    if (active.length < 2) return 0;
+    const span = granularity === 'week' ? 7 : 1;
+    let longest = 0;
+    for (let index = 1; index < active.length; index += 1) {
+        const previous = new Date(`${active[index - 1]?.date}T00:00:00+05:30`);
+        const current = new Date(`${active[index]?.date}T00:00:00+05:30`);
+        longest = Math.max(
+            longest,
+            Math.round((current.getTime() - previous.getTime()) / 86_400_000) -
+                span
+        );
+    }
+    return longest;
 }
 
 export function buildAnalyticsAiPayload(input: {
@@ -805,8 +890,12 @@ export function buildAnalyticsAiPayload(input: {
         summary: input.summary,
         byPlatform: input.byPlatform,
         activity: input.activity,
+        publishingFrequency: publishingFrequency(input.activity),
+        longestGapDays: longestGapDays(input.activity, input.range.granularity),
         bestTimes: input.bestTimes.filter((bucket) => bucket.posts > 0),
-        permissionErrors: input.permissionErrors,
+        permissionErrors: input.permissionErrors.map((error) => ({
+            pageName: error.pageName,
+        })),
         topPosts: [...input.topPosts]
             .sort((a, b) => b.reach - a.reach)
             .slice(0, 5)

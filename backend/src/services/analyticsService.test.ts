@@ -1,6 +1,7 @@
-import test from 'node:test';
+import test, { mock } from 'node:test';
 import assert from 'node:assert/strict';
 import type { IAnalyticsMetrics } from '../models/postMetricSnapshotModel.js';
+import type { AnalyticsRange, AnalyticsSummary } from './analyticsService.js';
 
 process.env.JWT_SECRET = 'test-jwt-secret-that-is-at-least-32-chars';
 process.env.TOKEN_ENCRYPTION_KEY = '0123456789abcdef'.repeat(4);
@@ -16,7 +17,17 @@ const {
     uniquePermissionErrors,
     lastSyncedAt,
     rangePreset,
+    loadPublishedTargets,
+    getAnalyticsOverview,
+    getAnalyticsMonitor,
+    getAnalyticsPosts,
+    buildRuleBasedTips,
+    buildAnalyticsAiPayload,
 } = await import('./analyticsService.js');
+
+const { Post } = await import('../models/postModel.js');
+const { PostMetricSnapshot } = await import('../models/postMetricSnapshotModel.js');
+const { SocialConnection } = await import('../models/socialConnectionModel.js');
 
 function metrics(overrides: Partial<IAnalyticsMetrics> = {}): IAnalyticsMetrics {
     return {
@@ -61,6 +72,71 @@ function snapshot(overrides: Record<string, unknown> = {}) {
         metrics: metrics(),
         ...overrides,
     };
+}
+
+function post(overrides: Record<string, unknown> = {}) {
+    return {
+        _id: 'post-1',
+        connectionId: {
+            _id: 'connection-1',
+            pageName: 'Page One',
+            pageId: 'page-1',
+            instagram: { username: 'pageone' },
+        },
+        caption: 'A short caption',
+        mediaUrl: 'https://example.com/image.jpg',
+        status: 'published',
+        publishedAt: new Date('2026-10-05T09:00:00.000Z'),
+        targets: [
+            {
+                platform: 'facebook',
+                status: 'published',
+                externalId: 'external-1',
+                publishedAt: new Date('2026-10-05T09:00:00.000Z'),
+            },
+        ],
+        ...overrides,
+    };
+}
+
+function summary(overrides: Partial<AnalyticsSummary> = {}): AnalyticsSummary {
+    return {
+        posts: 0,
+        facebookPosts: 0,
+        instagramPosts: 0,
+        reach: 0,
+        views: 0,
+        interactions: 0,
+        likes: 0,
+        comments: 0,
+        shares: 0,
+        saves: 0,
+        clicks: 0,
+        engagementRate: null,
+        ...overrides,
+    };
+}
+
+function analyticsRange(fromKey: string, toKey: string): AnalyticsRange {
+    return {
+        fromKey,
+        toKey,
+        from: new Date(`${fromKey}T00:00:00+05:30`),
+        to: new Date(`${toKey}T23:59:59.999+05:30`),
+        granularity: 'day',
+    };
+}
+
+function mockPostFind(posts: unknown[]) {
+    return mock.method(Post, 'find', () => ({
+        populate: () => ({ sort: async () => posts }),
+    }));
+}
+
+function mockSnapshotFind(snapshots: unknown[]) {
+    return mock.method(PostMetricSnapshot, 'find', () => ({
+        sort: async () => snapshots,
+    }));
 }
 
 test('keeps the latest snapshot per post and platform', () => {
@@ -304,4 +380,445 @@ test('derives the range preset from the inclusive day count', () => {
     assert.equal(rangePreset(makeRange(60)), '60d');
     assert.equal(rangePreset(makeRange(90)), '90d');
     assert.equal(rangePreset(makeRange(14)), 'custom');
+});
+
+test('deduplicates permission errors per Page across platforms', () => {
+    const targets = [target(), target({ platform: 'instagram' })] as never[];
+    const latest = new Map([
+        [
+            'post-1:facebook',
+            snapshot({ status: 'permission_error', platform: 'facebook' }),
+        ],
+        [
+            'post-1:instagram',
+            snapshot({
+                status: 'permission_error',
+                platform: 'instagram',
+                connectionId: 'connection-1',
+            }),
+        ],
+    ]) as never;
+
+    const errors = uniquePermissionErrors(targets, latest);
+    assert.equal(errors.length, 1);
+    assert.equal(errors[0]?.connectionId, 'connection-1');
+    assert.equal(errors[0]?.pageName, 'Page One');
+    // The first encountered snapshot wins for that Page.
+    assert.equal(errors[0]?.platform, 'facebook');
+});
+
+test('keeps targets with unknown interactions out of the rate denominator', () => {
+    const latest = new Map([
+        [
+            'post-1:facebook',
+            { metrics: metrics({ reach: 100, views: null, interactions: 13 }) },
+        ],
+        [
+            'post-2:instagram',
+            {
+                metrics: metrics({
+                    reach: 1000,
+                    views: null,
+                    interactions: null,
+                    likes: null,
+                    comments: null,
+                    shares: null,
+                    saves: null,
+                }),
+            },
+        ],
+    ]);
+
+    const result = summarizeTargets(
+        [target(), target({ postId: 'post-2', platform: 'instagram' })] as never[],
+        latest as never
+    );
+
+    assert.equal(result.interactions, 13);
+    // 13 / 100 = 13%, not 13 / 1100 = 1.2%.
+    assert.equal(result.engagementRate, 13);
+});
+
+test('falls back to interaction components when the aggregate is null', () => {
+    const latest = new Map([
+        [
+            'post-1:facebook',
+            {
+                metrics: metrics({
+                    reach: 100,
+                    views: null,
+                    interactions: null,
+                    likes: 5,
+                    comments: 3,
+                    shares: null,
+                    saves: null,
+                }),
+            },
+        ],
+        [
+            'post-2:instagram',
+            { metrics: metrics({ reach: 1000, views: null, interactions: 13 }) },
+        ],
+    ]);
+
+    const result = summarizeTargets(
+        [target(), target({ postId: 'post-2', platform: 'instagram' })] as never[],
+        latest as never
+    );
+
+    // 5 + 3 = 8 on the first target, plus 13 on the second.
+    assert.equal(result.interactions, 21);
+    assert.equal(result.engagementRate, 1.9);
+});
+
+test('returns a null monitor engagement rate when interactions are unknown', () => {
+    const series = buildMonitorSeries([
+        snapshot({
+            metrics: metrics({
+                reach: 1000,
+                interactions: null,
+                likes: null,
+                comments: null,
+                shares: null,
+                saves: null,
+            }),
+        }),
+    ] as never[]);
+
+    assert.equal(series.all[0]?.interactions, 0);
+    assert.equal(series.all[0]?.engagementRate, null);
+});
+
+test('counts cross-posted targets as one post in best-time samples', () => {
+    const publishedAt = new Date('2026-10-24T09:00:00.000Z');
+    const bestTimes = buildBestTimes(
+        [
+            target({ publishedAt }),
+            target({ platform: 'instagram', publishedAt }),
+        ] as never[],
+        new Map() as never
+    );
+    // 2026-10-24T09:00Z is Saturday 14:30 IST: day 6, block 4.
+    const block = bestTimes.find((value) => value.day === 6 && value.block === 4);
+    assert.equal(block?.posts, 1);
+    assert.equal(block?.avgEngagementRate, null);
+});
+
+test('adds publishing frequency and longest gap to the AI payload', () => {
+    const range = analyticsRange('2026-10-01', '2026-10-30');
+    const activity = buildActivity(
+        [
+            target({
+                postId: 'post-1',
+                publishedAt: new Date('2026-10-01T09:00:00.000Z'),
+            }),
+            target({
+                postId: 'post-2',
+                publishedAt: new Date('2026-10-01T11:00:00.000Z'),
+            }),
+            target({
+                postId: 'post-3',
+                publishedAt: new Date('2026-10-10T09:00:00.000Z'),
+            }),
+        ] as never[],
+        new Map() as never,
+        range
+    );
+
+    const payload = buildAnalyticsAiPayload({
+        range,
+        scopeName: 'Page One',
+        summary: summary({ posts: 3 }),
+        byPlatform: { facebook: summary(), instagram: summary() },
+        activity,
+        bestTimes: [],
+        permissionErrors: [],
+        topPosts: [],
+        brandProfile: {},
+    });
+
+    assert.deepEqual(payload.publishingFrequency, {
+        posts: 3,
+        activeBuckets: 2,
+        buckets: 30,
+        postsPerBucket: 0.1,
+        postsPerActiveBucket: 1.5,
+    });
+    assert.equal(payload.longestGapDays, 8);
+});
+
+test('strips connection identifiers from the AI permission payload', () => {
+    const permissionErrors = [
+        {
+            pageName: 'Page One',
+            connectionId: 'connection-1',
+            platform: 'facebook',
+        },
+    ] as unknown as Array<{ pageName: string }>;
+
+    const payload = buildAnalyticsAiPayload({
+        range: analyticsRange('2026-10-01', '2026-10-30'),
+        scopeName: 'Page One',
+        summary: summary(),
+        byPlatform: { facebook: summary(), instagram: summary() },
+        activity: [],
+        bestTimes: [],
+        permissionErrors,
+        topPosts: [],
+        brandProfile: {},
+    });
+
+    assert.deepEqual(payload.permissionErrors, [{ pageName: 'Page One' }]);
+});
+
+test('loads targets by target publish time and legacy post publish time', async (t) => {
+    t.after(() => mock.restoreAll());
+    const range = analyticsRange('2026-10-01', '2026-10-31');
+    let capturedQuery: Record<string, unknown> | undefined;
+    const posts = [
+        post({
+            _id: 'post-1',
+            publishedAt: new Date('2026-09-01T09:00:00.000Z'),
+            targets: [
+                {
+                    platform: 'facebook',
+                    status: 'published',
+                    externalId: 'external-1',
+                    publishedAt: new Date('2026-10-05T09:00:00.000Z'),
+                },
+            ],
+        }),
+        post({
+            _id: 'post-2',
+            publishedAt: new Date('2026-10-10T09:00:00.000Z'),
+            targets: [
+                {
+                    platform: 'instagram',
+                    status: 'published',
+                    externalId: 'external-2',
+                    publishedAt: null,
+                },
+            ],
+        }),
+    ];
+
+    mock.method(Post, 'find', (query: Record<string, unknown>) => {
+        capturedQuery = query;
+        return { populate: () => ({ sort: async () => posts }) };
+    });
+
+    const targets = await loadPublishedTargets('user-1', range, {});
+
+    assert.equal(targets.length, 2);
+    assert.equal(targets[0]?.postId, 'post-1');
+    assert.equal(targets[0]?.publishedAt.toISOString(), '2026-10-05T09:00:00.000Z');
+    assert.equal(targets[1]?.postId, 'post-2');
+    assert.equal(targets[1]?.publishedAt.toISOString(), '2026-10-10T09:00:00.000Z');
+    assert.deepEqual(capturedQuery?.$or, [
+        { 'targets.publishedAt': { $gte: range.from, $lte: range.to } },
+        { publishedAt: { $gte: range.from, $lte: range.to } },
+    ]);
+});
+
+test('builds an overview response with remaining targets from mocked data', async (t) => {
+    t.after(() => mock.restoreAll());
+    const range = analyticsRange('2026-10-01', '2026-10-30');
+    mockPostFind([
+        post({
+            _id: 'post-1',
+            publishedAt: new Date('2026-10-05T09:00:00.000Z'),
+        }),
+        post({
+            _id: 'post-2',
+            publishedAt: new Date('2026-10-06T09:00:00.000Z'),
+            targets: [
+                {
+                    platform: 'instagram',
+                    status: 'published',
+                    externalId: 'external-2',
+                    publishedAt: new Date('2026-10-06T09:00:00.000Z'),
+                },
+            ],
+        }),
+    ]);
+    mockSnapshotFind([
+        snapshot({
+            postId: 'post-1',
+            platform: 'facebook',
+            capturedAt: new Date('2026-10-07T09:00:00.000Z'),
+            metrics: metrics({ reach: 100, interactions: 13 }),
+        }),
+    ]);
+
+    const overview = await getAnalyticsOverview('user-1', range, {});
+
+    assert.equal(overview.totals.posts, 2);
+    assert.equal(overview.totals.reach, 100);
+    assert.equal(overview.totals.interactions, 13);
+    assert.equal(overview.range.preset, '30d');
+    assert.equal(overview.range.from, '2026-10-01');
+    assert.equal(overview.range.to, '2026-10-30');
+    assert.equal(overview.activity.length, 30);
+    assert.equal(overview.bestTimes.length, 56);
+    assert.equal(overview.sync.lastSyncedAt, '2026-10-07T09:00:00.000Z');
+    assert.equal(overview.sync.remainingTargets, 1);
+    assert.deepEqual(overview.sync.permissionErrors, []);
+});
+
+test('scopes monitor series and deduplicates same-Page permission errors', async (t) => {
+    t.after(() => mock.restoreAll());
+    const range = analyticsRange('2026-10-01', '2026-10-31');
+    mockPostFind([
+        post({
+            _id: 'post-1',
+            publishedAt: new Date('2026-10-05T09:00:00.000Z'),
+            targets: [
+                {
+                    platform: 'facebook',
+                    status: 'published',
+                    externalId: 'external-1',
+                    publishedAt: new Date('2026-10-05T09:00:00.000Z'),
+                },
+                {
+                    platform: 'instagram',
+                    status: 'published',
+                    externalId: 'external-2',
+                    publishedAt: new Date('2026-10-05T09:00:00.000Z'),
+                },
+            ],
+        }),
+    ]);
+    mockSnapshotFind([
+        snapshot({
+            postId: 'post-1',
+            platform: 'facebook',
+            status: 'permission_error',
+            capturedAt: new Date('2026-10-06T09:00:00.000Z'),
+        }),
+        snapshot({
+            postId: 'post-1',
+            platform: 'instagram',
+            status: 'permission_error',
+            capturedAt: new Date('2026-10-06T09:00:00.000Z'),
+        }),
+        snapshot({
+            postId: 'post-outside',
+            platform: 'facebook',
+            capturedAt: new Date('2026-10-06T09:05:00.000Z'),
+            metrics: metrics({ reach: 999 }),
+        }),
+    ]);
+
+    const monitor = await getAnalyticsMonitor('user-1', range, {
+        connectionId: 'connection-1',
+    });
+
+    assert.equal(monitor.scope.pageName, 'Page One');
+    assert.equal(monitor.sync.permissionErrors.length, 1);
+    assert.equal(monitor.sync.permissionErrors[0]?.platform, 'facebook');
+    // The out-of-scope snapshot would create a second bucket if it leaked in.
+    assert.equal(monitor.series.all.length, 1);
+    assert.equal(monitor.series.all[0]?.reach, 200);
+});
+
+test('resolves the selected Page name when the monitor scope has no targets', async (t) => {
+    t.after(() => mock.restoreAll());
+    const range = analyticsRange('2026-10-01', '2026-10-31');
+    mockPostFind([]);
+    mock.method(SocialConnection, 'findOne', () => ({ pageName: 'Empty Page' }));
+
+    const monitor = await getAnalyticsMonitor('user-1', range, {
+        connectionId: 'connection-1',
+    });
+
+    assert.equal(monitor.scope.connectionId, 'connection-1');
+    assert.equal(monitor.scope.pageName, 'Empty Page');
+});
+
+test('groups posts per post, sorts by latest publish, and paginates', async (t) => {
+    t.after(() => mock.restoreAll());
+    const range = analyticsRange('2026-10-01', '2026-10-31');
+    mockPostFind([
+        post({
+            _id: 'post-1',
+            publishedAt: new Date('2026-10-10T09:00:00.000Z'),
+            targets: [
+                {
+                    platform: 'facebook',
+                    status: 'published',
+                    externalId: 'external-1',
+                    publishedAt: new Date('2026-10-10T09:00:00.000Z'),
+                },
+                {
+                    platform: 'instagram',
+                    status: 'published',
+                    externalId: 'external-2',
+                    publishedAt: new Date('2026-10-11T09:00:00.000Z'),
+                },
+            ],
+        }),
+        post({
+            _id: 'post-2',
+            publishedAt: new Date('2026-10-15T09:00:00.000Z'),
+            targets: [
+                {
+                    platform: 'facebook',
+                    status: 'published',
+                    externalId: 'external-3',
+                    publishedAt: new Date('2026-10-15T09:00:00.000Z'),
+                },
+            ],
+        }),
+    ]);
+    mockSnapshotFind([]);
+
+    const first = await getAnalyticsPosts('user-1', range, {}, 1, 1);
+    assert.equal(first.total, 2);
+    assert.equal(first.posts.length, 1);
+    assert.equal(first.posts[0]?.postId, 'post-2');
+    assert.equal(first.hasMore, true);
+
+    const second = await getAnalyticsPosts('user-1', range, {}, 2, 1);
+    assert.equal(second.posts.length, 1);
+    assert.equal(second.posts[0]?.postId, 'post-1');
+    assert.equal(second.hasMore, false);
+});
+
+test('returns the no-posts tip when the range has no posts', () => {
+    const tips = buildRuleBasedTips({
+        summary: summary(),
+        byPlatform: { facebook: summary(), instagram: summary() },
+        bestTimes: [],
+        activity: [],
+        permissionErrors: [],
+        posts: [],
+    });
+
+    assert.equal(tips.length, 1);
+    assert.equal(tips[0]?.id, 'no-posts');
+});
+
+test('uses singular grammar for one Page with permission errors', () => {
+    const tips = buildRuleBasedTips({
+        summary: summary({ posts: 1, facebookPosts: 1 }),
+        byPlatform: { facebook: summary({ posts: 1 }), instagram: summary() },
+        bestTimes: [],
+        activity: [
+            {
+                date: '2026-10-01',
+                label: '1 Oct',
+                posts: 1,
+                facebook: 1,
+                instagram: 0,
+                reach: 0,
+                interactions: 0,
+            },
+        ],
+        permissionErrors: [{ pageName: 'Page One' }],
+        posts: [],
+    });
+
+    assert.equal(tips.length, 1);
+    assert.equal(tips[0]?.id, 'permissions');
+    assert.match(tips[0]?.body || '', /1 Page needs/);
 });
