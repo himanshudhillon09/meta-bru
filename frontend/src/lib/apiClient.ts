@@ -1,4 +1,11 @@
-import type { DeleteMediaResult, StorageOverview } from './types';
+import type {
+    AnalyticsMonitor,
+    AnalyticsOverview,
+    AnalyticsPostsResponse,
+    AnalyticsTipsResponse,
+    DeleteMediaResult,
+    StorageOverview,
+} from './types';
 
 const BASE_URL = (
     process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api'
@@ -230,6 +237,42 @@ export const adminApi = {
     overview: () => api.get('/admin/overview'),
     connections: () => api.get('/admin/connections'),
     posts: () => api.get('/admin/posts'),
+};
+
+export const analyticsApi = {
+    overview: (params: Record<string, string>) =>
+        api.get<{ success: boolean } & AnalyticsOverview>(
+            '/analytics/overview',
+            params
+        ),
+    monitor: (params: Record<string, string>) =>
+        api.get<{ success: boolean } & AnalyticsMonitor>(
+            '/analytics/monitor',
+            params
+        ),
+    posts: (params: Record<string, string>) =>
+        api.get<{ success: boolean } & AnalyticsPostsResponse>(
+            '/analytics/posts',
+            params
+        ),
+    sync: (data: {
+        from: string;
+        to: string;
+        mode: 'stale' | 'live';
+        connectionId?: string;
+        platform?: string;
+    }) => api.post('/analytics/sync', data),
+    tips: (params: Record<string, string>) =>
+        api.get<{ success: boolean } & AnalyticsTipsResponse>(
+            '/analytics/tips',
+            params
+        ),
+    generateTips: (data: {
+        from: string;
+        to: string;
+        connectionId?: string;
+        platform?: string;
+    }) => api.post('/analytics/tips', data),
 };
 
 export default api;
