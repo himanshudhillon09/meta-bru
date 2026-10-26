@@ -221,7 +221,11 @@ export async function generateAnalyticsAiInsight(
         );
     }
 
-    const data = (await response.json().catch(() => ({}))) as GeminiResponse;
+    const parsedBody: unknown = await response.json().catch(() => ({}));
+    const data: GeminiResponse =
+        parsedBody && typeof parsedBody === 'object'
+            ? (parsedBody as GeminiResponse)
+            : {};
 
     if (!response.ok || data.error) {
         throw new AppError(
@@ -236,7 +240,7 @@ export async function generateAnalyticsAiInsight(
         throw new AppError(
             502,
             'Gemini returned an empty analysis',
-            'AI_TIPS_FAILED'
+            'AI_TIPS_EMPTY'
         );
     }
 

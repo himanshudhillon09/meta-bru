@@ -626,7 +626,7 @@ test('returns 502 AI_TIPS_FAILED on a network failure', async (t) => {
     assert.equal(createMock.mock.callCount(), 0);
 });
 
-test('returns 502 AI_TIPS_FAILED on an empty Gemini response', async (t) => {
+test('returns 502 AI_TIPS_EMPTY on an empty Gemini response', async (t) => {
     t.after(() => mock.restoreAll());
     mockFindOne(null);
     const { createMock } = mockCreate();
@@ -645,13 +645,38 @@ test('returns 502 AI_TIPS_FAILED on an empty Gemini response', async (t) => {
                 getCredentials: async () => ({ apiKey: 'user-key' }),
                 fetch: fn,
             }),
-        isAppError(502, 'AI_TIPS_FAILED')
+        isAppError(502, 'AI_TIPS_EMPTY')
     );
 
     assert.equal(createMock.mock.callCount(), 0);
 });
 
-test('returns 502 AI_TIPS_FAILED when the Gemini envelope is not JSON', async (t) => {
+test('returns 502 AI_TIPS_EMPTY when the Gemini body is not an object', async (t) => {
+    t.after(() => mock.restoreAll());
+    mockFindOne(null);
+    const { createMock } = mockCreate();
+    const { fn } = mockFetch(
+        () =>
+            new Response('null', {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+            })
+    );
+
+    await assert.rejects(
+        () =>
+            generate(SAMPLE_PAYLOAD, {
+                now: () => FIXED_NOW,
+                getCredentials: async () => ({ apiKey: 'user-key' }),
+                fetch: fn,
+            }),
+        isAppError(502, 'AI_TIPS_EMPTY')
+    );
+
+    assert.equal(createMock.mock.callCount(), 0);
+});
+
+test('returns 502 AI_TIPS_EMPTY when the Gemini envelope is not JSON', async (t) => {
     t.after(() => mock.restoreAll());
     mockFindOne(null);
     const { createMock } = mockCreate();
@@ -670,7 +695,7 @@ test('returns 502 AI_TIPS_FAILED when the Gemini envelope is not JSON', async (t
                 getCredentials: async () => ({ apiKey: 'user-key' }),
                 fetch: fn,
             }),
-        isAppError(502, 'AI_TIPS_FAILED')
+        isAppError(502, 'AI_TIPS_EMPTY')
     );
 
     assert.equal(createMock.mock.callCount(), 0);
