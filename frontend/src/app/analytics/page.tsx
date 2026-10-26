@@ -16,6 +16,7 @@ import {
     MetricCard,
 } from '@/components/AnalyticsCharts';
 import { AnalyticsMonitor } from '@/components/AnalyticsMonitor';
+import { PostTrackerCalendar } from '@/components/PostTrackerCalendar';
 import { analyticsApi, connectionsApi } from '@/lib/apiClient';
 import {
     formatElapsed,
@@ -80,6 +81,14 @@ export default function AnalyticsPage() {
     const [tips, setTips] = useState<AnalyticsTipsResponse | null>(null);
     const [live, setLive] = useState(false);
     const [monitorLoading, setMonitorLoading] = useState(false);
+    const [trackerMonth, setTrackerMonth] = useState(() =>
+        new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' })
+            .format(new Date())
+            .slice(0, 7)
+    );
+    const [trackerPosts, setTrackerPosts] = useState<AnalyticsPost[]>([]);
+    const [trackerLoading, setTrackerLoading] = useState(false);
+    const [selectedDay, setSelectedDay] = useState<string | null>(null);
     const [page, setPage] = useState(1);
     const [hasMore, setHasMore] = useState(false);
     const [loading, setLoading] = useState(true);
@@ -204,6 +213,33 @@ export default function AnalyticsPage() {
         };
     }, [tab, live, loadMonitor, syncLive]);
 
+    const loadTracker = useCallback(async () => {
+        setTrackerLoading(true);
+        try {
+            const [year, monthNumber] = trackerMonth.split('-').map(Number);
+            const lastDay = new Date(
+                Date.UTC(year, monthNumber, 0)
+            ).getUTCDate();
+            const data = await analyticsApi.posts({
+                from: `${trackerMonth}-01`,
+                to: `${trackerMonth}-${String(lastDay).padStart(2, '0')}`,
+                ...(connectionId ? { connectionId } : {}),
+                ...(platform ? { platform } : {}),
+                page: '1',
+                limit: '100',
+            });
+            setTrackerPosts(data.posts);
+        } catch {
+            setError('Could not load the post tracker.');
+        } finally {
+            setTrackerLoading(false);
+        }
+    }, [trackerMonth, connectionId, platform]);
+
+    useEffect(() => {
+        if (tab === 'tracker') void loadTracker();
+    }, [tab, loadTracker]);
+
     const loadMore = async () => {
         const next = page + 1;
         try {
@@ -242,6 +278,8 @@ export default function AnalyticsPage() {
             );
             if (tab === 'monitor') {
                 await loadMonitor();
+            } else if (tab === 'tracker') {
+                await loadTracker();
             } else {
                 await loadAll();
             }
@@ -616,9 +654,18 @@ export default function AnalyticsPage() {
                     </div>
                 )
             ) : tab === 'tracker' ? (
-                <div className="rounded-3xl border border-dashed border-white/10 bg-slate-900/30 p-12 text-center text-sm text-slate-400">
-                    Select a month to view published post dates and times.
-                </div>
+                <PostTrackerCalendar
+                    month={trackerMonth}
+                    posts={trackerPosts}
+                    selectedDay={selectedDay}
+                    onSelectDay={setSelectedDay}
+                    onMonthChange={(next) => {
+                        setTrackerMonth(next);
+                        setSelectedDay(null);
+                    }}
+                    loading={trackerLoading}
+                    now={now}
+                />
             ) : (
                 <div className="rounded-3xl border border-dashed border-white/10 bg-slate-900/30 p-12 text-center text-sm text-slate-400">
                     Run an AI analysis to generate page, engagement, and timing
