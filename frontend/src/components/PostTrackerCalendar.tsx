@@ -28,7 +28,7 @@ export function PostTrackerCalendar({
     onSelectDay,
     onMonthChange,
     loading,
-    now = Date.now(),
+    now,
 }: {
     month: string;
     posts: AnalyticsPost[];
@@ -36,7 +36,7 @@ export function PostTrackerCalendar({
     onSelectDay: (day: string | null) => void;
     onMonthChange: (month: string) => void;
     loading: boolean;
-    now?: number;
+    now: number;
 }) {
     const [year, monthNumber] = month.split('-').map(Number);
     const daysInMonth = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
@@ -47,9 +47,12 @@ export function PostTrackerCalendar({
         month: 'long',
         year: 'numeric',
     }).format(new Date(`${month}-15T12:00:00+05:30`));
-    const today = new Intl.DateTimeFormat('en-CA', {
-        timeZone: 'Asia/Kolkata',
-    }).format(new Date(now));
+    const today =
+        now > 0
+            ? new Intl.DateTimeFormat('en-CA', {
+                  timeZone: 'Asia/Kolkata',
+              }).format(new Date(now))
+            : '';
 
     const byDay = useMemo(() => {
         const map = new Map<string, AnalyticsPost[]>();
@@ -105,6 +108,7 @@ export function PostTrackerCalendar({
                         <button
                             type="button"
                             onClick={() => {
+                                if (!today) return;
                                 onMonthChange(today.slice(0, 7));
                                 onSelectDay(today);
                             }}
@@ -148,7 +152,7 @@ export function PostTrackerCalendar({
                             const key = `${month}-${String(dayNumber).padStart(2, '0')}`;
                             const dayPosts = byDay.get(key) ?? [];
                             const isSelected = selectedDay === key;
-                            const isToday = today === key;
+                            const isToday = today !== '' && today === key;
                             return (
                                 <button
                                     key={key}

@@ -15,7 +15,9 @@ import {
     AnalyticsHeatmap,
     MetricCard,
 } from '@/components/AnalyticsCharts';
+import { AnalyticsAiTips } from '@/components/AnalyticsAiTips';
 import { AnalyticsMonitor } from '@/components/AnalyticsMonitor';
+import { AnalyticsTips } from '@/components/AnalyticsTips';
 import { PostTrackerCalendar } from '@/components/PostTrackerCalendar';
 import { analyticsApi, connectionsApi } from '@/lib/apiClient';
 import {
@@ -89,13 +91,15 @@ export default function AnalyticsPage() {
     const [trackerPosts, setTrackerPosts] = useState<AnalyticsPost[]>([]);
     const [trackerLoading, setTrackerLoading] = useState(false);
     const [selectedDay, setSelectedDay] = useState<string | null>(null);
+    const [aiLoading, setAiLoading] = useState(false);
+    const [aiError, setAiError] = useState('');
     const [page, setPage] = useState(1);
     const [hasMore, setHasMore] = useState(false);
     const [loading, setLoading] = useState(true);
     const [syncing, setSyncing] = useState(false);
     const [error, setError] = useState('');
     const [notice, setNotice] = useState('');
-    const [now, setNow] = useState(Date.now());
+    const [now, setNow] = useState(0);
     const syncingRef = useRef(false);
 
     useEffect(() => {
@@ -112,8 +116,13 @@ export default function AnalyticsPage() {
     }, []);
 
     useEffect(() => {
-        const timer = setInterval(() => setNow(Date.now()), 60_000);
-        return () => clearInterval(timer);
+        const tick = () => setNow(Date.now());
+        const initial = setTimeout(tick, 0);
+        const timer = setInterval(tick, 60_000);
+        return () => {
+            clearTimeout(initial);
+            clearInterval(timer);
+        };
     }, []);
 
     const params = useMemo(() => {
@@ -126,10 +135,15 @@ export default function AnalyticsPage() {
         };
     }, [range, customFrom, customTo, connectionId, platform]);
 
+    useEffect(() => {
+        setAiError('');
+    }, [params]);
+
     const loadAll = useCallback(
         async (showSpinner = false) => {
             if (showSpinner) setLoading(true);
             setError('');
+            setAiError('');
             try {
                 const [overviewData, postsData, tipsData] = await Promise.all([
                     analyticsApi.overview(params),
@@ -324,6 +338,33 @@ export default function AnalyticsPage() {
         }
     };
 
+    const generateAi = async () => {
+        setAiLoading(true);
+        setAiError('');
+        try {
+            const result: any = await analyticsApi.generateTips(params);
+            if (!result?.insight) {
+                throw new Error('AI analysis returned no tips.');
+            }
+            setTips((current) => ({
+                ruleBased: current?.ruleBased || [],
+                ai: {
+                    cached: Boolean(result.cached),
+                    ...result.insight,
+                },
+            }));
+        } catch (err: any) {
+            setAiError(
+                typeof err === 'string'
+                    ? err
+                    : 'Could not generate AI tips. Rule-based tips are still available.'
+            );
+        } finally {
+            setAiLoading(false);
+        }
+    };
+
+    const aiNotConfigured = /gemini api key is not configured/i.test(aiError);
     const reconnectCount = overview?.sync.permissionErrors.length || 0;
 
     return (
@@ -526,41 +567,7 @@ export default function AnalyticsPage() {
                         </h2>
                         <AnalyticsHeatmap buckets={overview.bestTimes} />
                     </section>
-                    {tips?.ruleBased.length ? (
-                        <section className="rounded-3xl border border-white/5 bg-slate-900/40 p-5">
-                            <div className="mb-4 flex items-center gap-2">
-                                <h2 className="text-sm font-bold text-white">
-                                    Engagement tips
-                                </h2>
-                                <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest text-slate-400">
-                                    Rule-based
-                                </span>
-                            </div>
-                            <div className="grid gap-3 sm:grid-cols-2">
-                                {tips.ruleBased.map((tip) => (
-                                    <div
-                                        key={tip.id}
-                                        className="rounded-2xl border border-white/5 bg-slate-950/40 p-4"
-                                    >
-                                        <div className="text-sm font-bold text-white">
-                                            {tip.title}
-                                        </div>
-                                        <p className="mt-1 text-xs text-slate-400">
-                                            {tip.body}
-                                        </p>
-                                        {tip.actionHref ? (
-                                            <Link
-                                                href={tip.actionHref}
-                                                className="mt-2 inline-block text-xs font-bold text-indigo-300"
-                                            >
-                                                {tip.actionLabel || 'Open'}
-                                            </Link>
-                                        ) : null}
-                                    </div>
-                                ))}
-                            </div>
-                        </section>
-                    ) : null}
+                    <AnalyticsTips tips={tips?.ruleBased || []} />
                     <section className="rounded-3xl border border-white/5 bg-slate-900/40 p-5">
                         <div className="mb-3 flex flex-wrap items-center gap-2">
                             <h2 className="text-sm font-bold text-white">
@@ -667,9 +674,15 @@ export default function AnalyticsPage() {
                     now={now}
                 />
             ) : (
-                <div className="rounded-3xl border border-dashed border-white/10 bg-slate-900/30 p-12 text-center text-sm text-slate-400">
-                    Run an AI analysis to generate page, engagement, and timing
-                    tips.
+                <div className="space-y-6">
+                    <AnalyticsTips tips={tips?.ruleBased || []} />
+                    <AnalyticsAiTips
+                        ai={tips?.ai || null}
+                        onGenerate={generateAi}
+                        loading={aiLoading}
+                        error={aiError}
+                        notConfigured={aiNotConfigured}
+                    />
                 </div>
             )}
         </AppShell>

@@ -95,10 +95,10 @@ function TargetMetrics({
 
 export function AnalyticsPostCard({
     post,
-    now = Date.now(),
+    now,
 }: {
     post: AnalyticsPost;
-    now?: number;
+    now: number;
 }) {
     return (
         <article className="rounded-3xl border border-white/5 bg-slate-900/40 p-5 shadow-xl">

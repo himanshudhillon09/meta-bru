@@ -432,7 +432,7 @@ export function formatElapsed(
     value: string | null | undefined,
     now = Date.now()
 ): string {
-    if (!value) return '';
+    if (!value || now <= 0) return '';
     const then = new Date(value).getTime();
     if (Number.isNaN(then)) return '';
     const seconds = Math.max(0, Math.floor((now - then) / 1000));
