@@ -121,7 +121,7 @@ export function parseAnalyticsAiTips(rawText: string): IAnalyticsTip[] {
     return normalized;
 }
 
-function hashPayload(payload: unknown): string {
+export function hashAnalyticsAiPayload(payload: unknown): string {
     return crypto
         .createHash('sha256')
         .update(JSON.stringify(payload))
@@ -162,7 +162,7 @@ export async function generateAnalyticsAiInsight(
     deps: AnalyticsAiDependencies = {}
 ) {
     const now = deps.now?.() ?? new Date();
-    const dataHash = hashPayload(payload);
+    const dataHash = hashAnalyticsAiPayload(payload);
 
     const cached = await getCachedAnalyticsAiInsight(
         userId,

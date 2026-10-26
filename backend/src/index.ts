@@ -5,6 +5,7 @@ import { connectDB } from './config/db.js';
 import { env } from './config/env.js';
 import adminRoutes from './routes/adminRoutes.js';
 import aiRoutes from './routes/aiRoutes.js';
+import analyticsRoutes from './routes/analyticsRoutes.js';
 import authRoutes from './routes/authRoutes.js';
 import connectionRoutes from './routes/connectionRoutes.js';
 import mediaRoutes from './routes/mediaRoutes.js';
@@ -48,6 +49,7 @@ app.get('/api/health', (_req: Request, res: Response) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/connections', connectionRoutes);
 app.use('/api/posts', postRoutes);
+app.use('/api/analytics', analyticsRoutes);
 app.use('/api/media', mediaRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/admin', adminRoutes);
