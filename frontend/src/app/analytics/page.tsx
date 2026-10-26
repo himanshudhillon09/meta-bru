@@ -15,10 +15,12 @@ import {
     AnalyticsHeatmap,
     MetricCard,
 } from '@/components/AnalyticsCharts';
+import { AnalyticsMonitor } from '@/components/AnalyticsMonitor';
 import { analyticsApi, connectionsApi } from '@/lib/apiClient';
 import {
     formatElapsed,
     formatIstDateTime,
+    type AnalyticsMonitor as AnalyticsMonitorData,
     type AnalyticsOverview,
     type AnalyticsPost,
     type AnalyticsTipsResponse,
@@ -73,8 +75,11 @@ export default function AnalyticsPage() {
     const [platform, setPlatform] = useState('');
     const [connections, setConnections] = useState<SocialConnection[]>([]);
     const [overview, setOverview] = useState<AnalyticsOverview | null>(null);
+    const [monitor, setMonitor] = useState<AnalyticsMonitorData | null>(null);
     const [posts, setPosts] = useState<AnalyticsPost[]>([]);
     const [tips, setTips] = useState<AnalyticsTipsResponse | null>(null);
+    const [live, setLive] = useState(false);
+    const [monitorLoading, setMonitorLoading] = useState(false);
     const [page, setPage] = useState(1);
     const [hasMore, setHasMore] = useState(false);
     const [loading, setLoading] = useState(true);
@@ -144,6 +149,61 @@ export default function AnalyticsPage() {
         void loadAll(true);
     }, [loadAll]);
 
+    const loadMonitor = useCallback(async () => {
+        setMonitorLoading(true);
+        try {
+            const data = await analyticsApi.monitor(params);
+            setMonitor(data);
+        } catch (err: any) {
+            setError(
+                typeof err === 'string'
+                    ? err
+                    : 'Could not load the live monitor'
+            );
+        } finally {
+            setMonitorLoading(false);
+        }
+    }, [params]);
+
+    useEffect(() => {
+        if (tab === 'monitor') void loadMonitor();
+    }, [tab, loadMonitor]);
+
+    const syncLive = useCallback(async () => {
+        if (syncingRef.current) return;
+        syncingRef.current = true;
+        setSyncing(true);
+        try {
+            await analyticsApi.sync({ ...params, mode: 'live' });
+            await loadMonitor();
+        } catch (err: any) {
+            setError(
+                typeof err === 'string'
+                    ? err
+                    : 'Could not sync live insights'
+            );
+        } finally {
+            syncingRef.current = false;
+            setSyncing(false);
+        }
+    }, [params, loadMonitor]);
+
+    useEffect(() => {
+        if (tab !== 'monitor' || !live) return;
+        const isVisible = () => document.visibilityState === 'visible';
+        const uiTimer = setInterval(() => {
+            if (isVisible()) void loadMonitor();
+        }, 30_000);
+        const syncTimer = setInterval(() => {
+            if (isVisible()) void syncLive();
+        }, 5 * 60_000);
+        if (isVisible()) void syncLive();
+        return () => {
+            clearInterval(uiTimer);
+            clearInterval(syncTimer);
+        };
+    }, [tab, live, loadMonitor, syncLive]);
+
     const loadMore = async () => {
         const next = page + 1;
         try {
@@ -180,7 +240,40 @@ export default function AnalyticsPage() {
                     ? `Updated ${result.synced} insight${result.synced === 1 ? '' : 's'}.`
                     : 'Analytics are already up to date.'
             );
-            await loadAll();
+            if (tab === 'monitor') {
+                await loadMonitor();
+            } else {
+                await loadAll();
+            }
+        } catch (err: any) {
+            setError(
+                typeof err === 'string'
+                    ? err
+                    : 'Could not refresh insights'
+            );
+        } finally {
+            syncingRef.current = false;
+            setSyncing(false);
+        }
+    };
+
+    const refreshMonitor = async () => {
+        if (syncingRef.current) return;
+        syncingRef.current = true;
+        setSyncing(true);
+        setNotice('');
+        setError('');
+        try {
+            const result: any = await analyticsApi.sync({
+                ...params,
+                mode: 'stale',
+            });
+            setNotice(
+                result.synced
+                    ? `Updated ${result.synced} insight${result.synced === 1 ? '' : 's'}.`
+                    : 'Analytics are already up to date.'
+            );
+            await loadMonitor();
         } catch (err: any) {
             setError(
                 typeof err === 'string'
@@ -506,9 +599,22 @@ export default function AnalyticsPage() {
                     ) : null}
                 </div>
             ) : tab === 'monitor' ? (
-                <div className="rounded-3xl border border-dashed border-white/10 bg-slate-900/30 p-12 text-center text-sm text-slate-400">
-                    Turn on the live monitor to build engagement history.
-                </div>
+                monitor ? (
+                    <AnalyticsMonitor
+                        data={monitor}
+                        live={live}
+                        onToggleLive={() => setLive((value) => !value)}
+                        onRefresh={refreshMonitor}
+                        refreshing={syncing}
+                        now={now}
+                    />
+                ) : (
+                    <div className="rounded-3xl border border-dashed border-white/10 bg-slate-900/30 p-12 text-center text-sm text-slate-400">
+                        {monitorLoading
+                            ? 'Loading live monitor...'
+                            : 'Turn on the live monitor to build engagement history.'}
+                    </div>
+                )
             ) : tab === 'tracker' ? (
                 <div className="rounded-3xl border border-dashed border-white/10 bg-slate-900/30 p-12 text-center text-sm text-slate-400">
                     Select a month to view published post dates and times.
