@@ -21,7 +21,9 @@ const PRIVATE_PATHS = [
     '/connections',
     '/composer',
     '/queue',
+    '/analytics',
     '/activity',
+    '/storage',
     '/settings',
     '/change-password',
 ];

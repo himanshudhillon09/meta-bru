@@ -16,8 +16,10 @@ const NAV_ITEMS: NavItem[] = [
     { href: '/dashboard', label: 'Overview', icon: 'grid' },
     { href: '/composer', label: 'Composer', icon: 'plus' },
     { href: '/queue', label: 'Queue', icon: 'list' },
+    { href: '/analytics', label: 'Analytics', icon: 'chart' },
     { href: '/activity', label: 'Activity', icon: 'clock' },
     { href: '/connections', label: 'Connections', icon: 'link' },
+    { href: '/storage', label: 'Storage', icon: 'cloud' },
     { href: '/settings', label: 'Profile', icon: 'settings' },
 ];
 
@@ -72,6 +74,24 @@ function NavIcon({ name }: { name: string }) {
             <svg {...common}>
                 <path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1.2 1.2" />
                 <path d="M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1.2-1.2" />
+            </svg>
+        );
+    }
+    if (name === 'cloud') {
+        return (
+            <svg {...common}>
+                <path d="M7 18a4.5 4.5 0 0 1-.9-8.9A6 6 0 0 1 17.7 9 4 4 0 0 1 17 17H7Z" />
+            </svg>
+        );
+    }
+    if (name === 'chart') {
+        return (
+            <svg {...common}>
+                <path d="M4 19V5" />
+                <path d="M4 19h16" />
+                <path d="M8 16v-5" />
+                <path d="M12 16V8" />
+                <path d="M16 16v-3" />
             </svg>
         );
     }

@@ -78,6 +78,7 @@ export const env = {
             [
                 'pages_show_list',
                 'pages_read_engagement',
+                'read_insights',
                 'pages_manage_posts',
                 // Business-owned Pages are omitted from /me/accounts unless
                 // this permission is granted (Meta requires it for Business
@@ -85,6 +86,7 @@ export const env = {
                 'business_management',
                 'instagram_basic',
                 'instagram_content_publish',
+                'instagram_manage_insights',
             ].join(',')
         )
             .split(',')
@@ -94,7 +96,7 @@ export const env = {
     gemini: {
         // Model selection is deployment-level; the API key is per-user.
         textModel: process.env.GEMINI_TEXT_MODEL || 'gemini-2.5-flash',
-        imageModel: process.env.GEMINI_IMAGE_MODEL || 'imagen-4.0-generate-001',
+        imageModel: process.env.GEMINI_IMAGE_MODEL || 'gemini-2.5-flash-image',
     },
     scheduler: {
         enabled: process.env.SCHEDULER_ENABLED !== 'false',

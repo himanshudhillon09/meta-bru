@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AppShell } from '@/components/AppShell';
@@ -8,9 +8,20 @@ import { useAuth } from '@/context/AuthContext';
 import { aiApi, connectionsApi, mediaApi, postsApi } from '@/lib/apiClient';
 import type { MediaAsset, SocialConnection } from '@/lib/types';
 
+interface ComposerDraft {
+    connectionId: string;
+    caption: string;
+    topic: string;
+    imagePrompt: string;
+    media: MediaAsset | null;
+    facebook: boolean;
+    instagram: boolean;
+}
+
 export default function ComposerPage() {
     const router = useRouter();
     const { user } = useAuth();
+    const draftKey = user?.id ? `meta-bru:composer-draft:${user.id}` : null;
     const [connections, setConnections] = useState<SocialConnection[]>([]);
     const [connectionId, setConnectionId] = useState('');
     const [caption, setCaption] = useState('');
@@ -26,21 +37,111 @@ export default function ComposerPage() {
     const [submitting, setSubmitting] = useState('');
     const [error, setError] = useState('');
     const [notice, setNotice] = useState('');
+    const [hydratedDraftKey, setHydratedDraftKey] = useState<string | null>(null);
+    const connectionIdRef = useRef('');
+    const connectionsRef = useRef<SocialConnection[]>([]);
+    const draftClearedRef = useRef(false);
     const submitDisabled =
         Boolean(submitting) || uploading || generatingImage;
+
+    useEffect(() => {
+        if (!draftKey || hydratedDraftKey === draftKey) return;
+
+        // If the signed-in user changed, clear the previous user's form first.
+        if (hydratedDraftKey !== null && hydratedDraftKey !== draftKey) {
+            setConnectionId('');
+            connectionIdRef.current = '';
+            setCaption('');
+            setTopic('');
+            setImagePrompt('');
+            setMedia(null);
+            setFacebook(true);
+            setInstagram(false);
+        }
+
+        try {
+            const raw = window.localStorage.getItem(draftKey);
+            if (raw) {
+                const draft = JSON.parse(raw) as Partial<ComposerDraft>;
+
+                if (typeof draft.connectionId === 'string') {
+                    setConnectionId(draft.connectionId);
+                    connectionIdRef.current = draft.connectionId;
+                }
+                if (typeof draft.caption === 'string') {
+                    setCaption(draft.caption.slice(0, 2200));
+                }
+                if (typeof draft.topic === 'string') {
+                    setTopic(draft.topic);
+                }
+                if (typeof draft.imagePrompt === 'string') {
+                    setImagePrompt(draft.imagePrompt.slice(0, 1000));
+                }
+                if (
+                    draft.media &&
+                    typeof draft.media.url === 'string' &&
+                    typeof draft.media.publicId === 'string'
+                ) {
+                    setMedia(draft.media);
+                }
+                if (typeof draft.facebook === 'boolean') {
+                    setFacebook(draft.facebook);
+                }
+                if (typeof draft.instagram === 'boolean') {
+                    setInstagram(draft.instagram);
+                }
+            }
+        } catch {
+            // Ignore malformed drafts and start with a clean composer.
+        }
+
+        // Connections may already be loaded if the draft hydrated late. If the
+        // saved Page is gone or disconnected, fall back to the first usable one.
+        if (connectionsRef.current.length > 0) {
+            const restored = connectionsRef.current.some(
+                (connection) =>
+                    connection._id === connectionIdRef.current &&
+                    connection.tokenStatus === 'active'
+            );
+            if (!restored) {
+                const first = connectionsRef.current.find(
+                    (connection) =>
+                        connection.isActive &&
+                        connection.tokenStatus === 'active'
+                );
+                if (first) {
+                    selectConnection(first);
+                } else {
+                    setConnectionId('');
+                    connectionIdRef.current = '';
+                }
+            }
+        }
+
+        draftClearedRef.current = false;
+        setHydratedDraftKey(draftKey);
+    }, [draftKey, hydratedDraftKey]);
 
     useEffect(() => {
         const load = async () => {
             try {
                 const data: any = await connectionsApi.list();
                 const list: SocialConnection[] = data.connections || [];
+                connectionsRef.current = list;
                 setConnections(list);
-                const first = list.find(
+                const restored = list.find(
                     (connection) =>
-                        connection.isActive &&
+                        connection._id === connectionIdRef.current &&
                         connection.tokenStatus === 'active'
                 );
-                if (first) selectConnection(first);
+                if (!restored) {
+                    const first = list.find(
+                        (connection) =>
+                            connection.isActive &&
+                            connection.tokenStatus === 'active'
+                    );
+                    if (first) selectConnection(first);
+                }
             } catch (err: any) {
                 setError(typeof err === 'string' ? err : 'Could not load connections');
             } finally {
@@ -49,6 +150,36 @@ export default function ComposerPage() {
         };
         void load();
     }, []);
+
+    useEffect(() => {
+        if (!draftKey || hydratedDraftKey !== draftKey || draftClearedRef.current) return;
+
+        const draft: ComposerDraft = {
+            connectionId,
+            caption,
+            topic,
+            imagePrompt,
+            media,
+            facebook,
+            instagram,
+        };
+
+        try {
+            window.localStorage.setItem(draftKey, JSON.stringify(draft));
+        } catch {
+            // Ignore storage failures (private mode, quota, etc.).
+        }
+    }, [
+        draftKey,
+        hydratedDraftKey,
+        connectionId,
+        caption,
+        topic,
+        imagePrompt,
+        media,
+        facebook,
+        instagram,
+    ]);
 
     const selectedConnection = useMemo(
         () => connections.find((connection) => connection._id === connectionId),
@@ -65,6 +196,7 @@ export default function ComposerPage() {
 
     function selectConnection(connection: SocialConnection) {
         setConnectionId(connection._id);
+        connectionIdRef.current = connection._id;
         setFacebook(connection.publishToFacebook);
         setInstagram(connection.publishToInstagram && Boolean(connection.instagram));
     }
@@ -90,6 +222,7 @@ export default function ComposerPage() {
             const data: any = await aiApi.caption({
                 ...(topic ? { topic } : {}),
                 platform: facebook && instagram ? 'both' : instagram ? 'instagram' : 'facebook',
+                ...(media?.publicId ? { mediaPublicId: media.publicId } : {}),
             });
             setCaption(data.caption || '');
         } catch (err: any) {
@@ -100,9 +233,9 @@ export default function ComposerPage() {
     };
 
     const generateImage = async () => {
-        const prompt = imagePrompt || topic;
+        const prompt = (imagePrompt || topic || caption).trim().slice(0, 1000);
         if (!prompt) {
-            setError('Describe the image you want, or enter a post topic first.');
+            setError('Describe the image you want, or write a caption/topic first.');
             return;
         }
         setGeneratingImage(true);
@@ -166,6 +299,11 @@ export default function ComposerPage() {
                 setError(data.post.lastError || 'Publishing failed. Check Activity.');
                 setSubmitting('');
                 return;
+            }
+
+            draftClearedRef.current = true;
+            if (draftKey) {
+                window.localStorage.removeItem(draftKey);
             }
 
             const partiallyPublished =
@@ -342,7 +480,8 @@ export default function ComposerPage() {
                                 </button>
                             </div>
                             <p className="text-xs text-slate-500 mt-2">
-                                AI uses the brand profile from{' '}
+                                AI uses the uploaded image when present, plus your
+                                brand profile from{' '}
                                 <Link href="/settings" className="text-indigo-400">
                                     Profile
                                 </Link>
@@ -377,6 +516,7 @@ export default function ComposerPage() {
                                     <input
                                         value={imagePrompt}
                                         onChange={(event) => setImagePrompt(event.target.value)}
+                                        maxLength={1000}
                                         placeholder="Describe an image..."
                                         className="w-full bg-transparent text-sm text-white placeholder:text-slate-600 focus:outline-none"
                                     />

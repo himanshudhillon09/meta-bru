@@ -1,0 +1,1293 @@
+import { Types, type PipelineStage, type QueryFilter } from 'mongoose';
+import { Post } from '../models/postModel.js';
+import type { IPost, Platform, PostStatus } from '../models/postModel.js';
+import {
+    PostMetricSnapshot,
+    type IAnalyticsMetrics,
+    type IPostMetricSnapshot,
+} from '../models/postMetricSnapshotModel.js';
+import { SocialConnection } from '../models/socialConnectionModel.js';
+import {
+    buildAnalyticsBuckets,
+    bucketKeyForDate,
+    istHourBlock,
+    istWeekday,
+    type AnalyticsRange,
+} from './analyticsDateService.js';
+
+export interface AnalyticsFilters {
+    connectionId?: string;
+    platform?: Platform;
+}
+
+export interface PublishedTarget {
+    postId: string;
+    connectionId: string;
+    pageId: string;
+    pageName: string;
+    platform: Platform;
+    externalId: string;
+    publishedAt: Date;
+    caption: string;
+    mediaUrl: string;
+    postStatus: PostStatus;
+    instagramUsername: string;
+}
+
+export interface AnalyticsSummary {
+    posts: number;
+    facebookPosts: number;
+    instagramPosts: number;
+    reach: number;
+    views: number;
+    interactions: number;
+    likes: number;
+    comments: number;
+    shares: number;
+    saves: number;
+    clicks: number;
+    engagementRate: number | null;
+}
+
+export interface ActivityBucket {
+    date: string;
+    label: string;
+    posts: number;
+    facebook: number;
+    instagram: number;
+    reach: number;
+    interactions: number;
+}
+
+export interface BestTimeBucket {
+    day: number;
+    dayLabel: string;
+    block: number;
+    label: string;
+    posts: number;
+    avgEngagementRate: number | null;
+}
+
+export interface MonitorPoint {
+    capturedAt: string;
+    reach: number;
+    views: number;
+    interactions: number;
+    engagementRate: number | null;
+}
+
+const MAX_POST_PAGE = 10_000;
+
+const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const BLOCK_LABELS = [
+    '00:00–03:00 IST',
+    '03:00–06:00 IST',
+    '06:00–09:00 IST',
+    '09:00–12:00 IST',
+    '12:00–15:00 IST',
+    '15:00–18:00 IST',
+    '18:00–21:00 IST',
+    '21:00–24:00 IST',
+];
+
+export function targetKey(postId: string, platform: Platform): string {
+    return `${postId}:${platform}`;
+}
+
+export function latestSnapshotsByTarget(
+    snapshots: IPostMetricSnapshot[]
+): Map<string, IPostMetricSnapshot> {
+    const latest = new Map<string, IPostMetricSnapshot>();
+    for (const snapshot of snapshots) {
+        const key = targetKey(String(snapshot.postId), snapshot.platform);
+        const current = latest.get(key);
+        if (!current || snapshot.capturedAt > current.capturedAt) {
+            latest.set(key, snapshot);
+        }
+    }
+    return latest;
+}
+
+function finiteOrNull(value: unknown): number | null {
+    return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function finiteOrZero(value: unknown): number {
+    return finiteOrNull(value) ?? 0;
+}
+
+/**
+ * The denominator for a target's engagement rate. Reach is preferred, but a
+ * target that only reports views uses views instead of contributing zero
+ * reach to a global total.
+ */
+function rateDenominator(metrics: IAnalyticsMetrics): number {
+    const reach = finiteOrNull(metrics.reach);
+    if (reach !== null && reach > 0) return reach;
+    const views = finiteOrNull(metrics.views);
+    if (views !== null && views > 0) return views;
+    return 0;
+}
+
+function rateFrom(interactions: number, denominator: number): number | null {
+    return Number.isFinite(interactions) &&
+        Number.isFinite(denominator) &&
+        denominator > 0
+        ? Math.round((interactions / denominator) * 1000) / 10
+        : null;
+}
+
+/**
+ * The interaction numerator for a target. Meta does not always return the
+ * aggregate `interactions` metric, so fall back to summing the components that
+ * are available. Returning null (rather than 0) keeps an unknown target out of
+ * the rate denominator instead of diluting the overall rate.
+ */
+function availableInteractions(metrics: IAnalyticsMetrics): number | null {
+    const aggregate = finiteOrNull(metrics.interactions);
+    if (aggregate !== null) return aggregate;
+    const values = [
+        metrics.likes,
+        metrics.comments,
+        metrics.shares,
+        metrics.saves,
+    ]
+        .map((value) => finiteOrNull(value))
+        .filter((value): value is number => value !== null);
+    return values.length > 0
+        ? values.reduce((sum, value) => sum + value, 0)
+        : null;
+}
+
+export function summarizeTargets(
+    targets: PublishedTarget[],
+    latest: Map<string, IPostMetricSnapshot>
+): AnalyticsSummary {
+    const postIds = new Set<string>();
+    let facebookPosts = 0;
+    let instagramPosts = 0;
+    let reach = 0;
+    let views = 0;
+    let interactions = 0;
+    let likes = 0;
+    let comments = 0;
+    let shares = 0;
+    let saves = 0;
+    let clicks = 0;
+    let rateInteractions = 0;
+    let rateDenominatorTotal = 0;
+
+    for (const target of targets) {
+        postIds.add(target.postId);
+        if (target.platform === 'facebook') facebookPosts += 1;
+        else instagramPosts += 1;
+
+        const metrics = latest.get(targetKey(target.postId, target.platform))?.metrics;
+        if (!metrics) continue;
+        const interactionsForTarget = availableInteractions(metrics);
+        reach += finiteOrZero(metrics.reach);
+        views += finiteOrZero(metrics.views);
+        interactions += interactionsForTarget ?? 0;
+        likes += finiteOrZero(metrics.likes);
+        comments += finiteOrZero(metrics.comments);
+        shares += finiteOrZero(metrics.shares);
+        saves += finiteOrZero(metrics.saves);
+        clicks += finiteOrZero(metrics.clicks);
+
+        const denominator = rateDenominator(metrics);
+        if (denominator > 0 && interactionsForTarget !== null) {
+            rateInteractions += interactionsForTarget;
+            rateDenominatorTotal += denominator;
+        }
+    }
+
+    return {
+        posts: postIds.size,
+        facebookPosts,
+        instagramPosts,
+        reach,
+        views,
+        interactions,
+        likes,
+        comments,
+        shares,
+        saves,
+        clicks,
+        engagementRate: rateFrom(rateInteractions, rateDenominatorTotal),
+    };
+}
+
+export function buildActivity(
+    targets: PublishedTarget[],
+    latest: Map<string, IPostMetricSnapshot>,
+    range: Pick<AnalyticsRange, 'fromKey' | 'toKey' | 'granularity'>
+): ActivityBucket[] {
+    const buckets = buildAnalyticsBuckets(range);
+    const byKey = new Map(
+        buckets.map((bucket) => [
+            bucket.key,
+            {
+                ...bucket,
+                postIds: new Set<string>(),
+                facebook: 0,
+                instagram: 0,
+                reach: 0,
+                interactions: 0,
+            },
+        ])
+    );
+
+    for (const target of targets) {
+        const key = bucketKeyForDate(target.publishedAt, range.granularity);
+        const bucket = byKey.get(key);
+        if (!bucket) continue;
+        bucket.postIds.add(target.postId);
+        if (target.platform === 'facebook') bucket.facebook += 1;
+        else bucket.instagram += 1;
+        const metrics = latest.get(targetKey(target.postId, target.platform))?.metrics;
+        if (metrics) {
+            bucket.reach += finiteOrZero(metrics.reach);
+            bucket.interactions += availableInteractions(metrics) ?? 0;
+        }
+    }
+
+    return buckets.map((bucket) => {
+        const value = byKey.get(bucket.key)!;
+        return {
+            date: bucket.key,
+            label: bucket.label,
+            posts: value.postIds.size,
+            facebook: value.facebook,
+            instagram: value.instagram,
+            reach: value.reach,
+            interactions: value.interactions,
+        };
+    });
+}
+
+export function buildBestTimes(
+    targets: PublishedTarget[],
+    latest: Map<string, IPostMetricSnapshot>
+): BestTimeBucket[] {
+    const buckets = new Map<
+        string,
+        {
+            postIds: Set<string>;
+            rateInteractions: number;
+            rateDenominator: number;
+        }
+    >();
+
+    for (const target of targets) {
+        const day = istWeekday(target.publishedAt);
+        const block = istHourBlock(target.publishedAt);
+        const key = `${day}:${block}`;
+        const value = buckets.get(key) ?? {
+            postIds: new Set<string>(),
+            rateInteractions: 0,
+            rateDenominator: 0,
+        };
+        value.postIds.add(target.postId);
+        const metrics = latest.get(targetKey(target.postId, target.platform))?.metrics;
+        if (metrics) {
+            const denominator = rateDenominator(metrics);
+            const interactions = availableInteractions(metrics);
+            if (denominator > 0 && interactions !== null) {
+                value.rateInteractions += interactions;
+                value.rateDenominator += denominator;
+            }
+        }
+        buckets.set(key, value);
+    }
+
+    const result: BestTimeBucket[] = [];
+    for (let day = 1; day <= 7; day += 1) {
+        for (let block = 0; block < 8; block += 1) {
+            const value = buckets.get(`${day}:${block}`) ?? {
+                postIds: new Set<string>(),
+                rateInteractions: 0,
+                rateDenominator: 0,
+            };
+            result.push({
+                day,
+                dayLabel: DAY_LABELS[day - 1] || '',
+                block,
+                label: BLOCK_LABELS[block] || '',
+                posts: value.postIds.size,
+                avgEngagementRate:
+                    value.postIds.size >= 2
+                        ? rateFrom(value.rateInteractions, value.rateDenominator)
+                        : null,
+            });
+        }
+    }
+    return result;
+}
+
+export function buildMonitorSeries(
+    snapshots: IPostMetricSnapshot[]
+): {
+    all: MonitorPoint[];
+    facebook: MonitorPoint[];
+    instagram: MonitorPoint[];
+} {
+    const bucket = (date: Date) =>
+        new Date(Math.floor(date.getTime() / 300_000) * 300_000).toISOString();
+
+    function build(platform?: Platform): MonitorPoint[] {
+        const grouped = new Map<
+            string,
+            { targets: Map<string, IPostMetricSnapshot> }
+        >();
+
+        for (const snapshot of snapshots) {
+            if (platform && snapshot.platform !== platform) continue;
+            const bucketKey = bucket(snapshot.capturedAt);
+            let value = grouped.get(bucketKey);
+            if (!value) {
+                value = { targets: new Map() };
+                grouped.set(bucketKey, value);
+            }
+            // Keep only the latest snapshot per target within the bucket so a
+            // retry or double-click cannot double-count the same target.
+            const key = targetKey(String(snapshot.postId), snapshot.platform);
+            const current = value.targets.get(key);
+            if (!current || snapshot.capturedAt > current.capturedAt) {
+                value.targets.set(key, snapshot);
+            }
+        }
+
+        return [...grouped.entries()]
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([capturedAt, value]) => {
+                let reach = 0;
+                let views = 0;
+                let interactions = 0;
+                let rateInteractions = 0;
+                let rateDenominatorTotal = 0;
+
+                for (const snapshot of value.targets.values()) {
+                    const metrics = snapshot.metrics;
+                    if (!metrics) continue;
+                    const interactionsForTarget = availableInteractions(metrics);
+                    reach += finiteOrZero(metrics.reach);
+                    views += finiteOrZero(metrics.views);
+                    interactions += interactionsForTarget ?? 0;
+                    const denominator = rateDenominator(metrics);
+                    if (denominator > 0 && interactionsForTarget !== null) {
+                        rateInteractions += interactionsForTarget;
+                        rateDenominatorTotal += denominator;
+                    }
+                }
+
+                return {
+                    capturedAt,
+                    reach,
+                    views,
+                    interactions,
+                    engagementRate: rateFrom(
+                        rateInteractions,
+                        rateDenominatorTotal
+                    ),
+                };
+            });
+    }
+
+    return { all: build(), facebook: build('facebook'), instagram: build('instagram') };
+}
+
+export function buildPublishedTargetsQuery(
+    userId: string,
+    range: Pick<AnalyticsRange, 'from' | 'to'>,
+    filters: AnalyticsFilters
+): Record<string, unknown> {
+    const query: Record<string, unknown> = {
+        userId,
+        status: { $in: ['published', 'partial'] },
+        // A post may have been published before the range while one of its
+        // targets was published inside it. Match both the post and target
+        // publish times, then filter precisely in loadPublishedTargets.
+        $or: [
+            { 'targets.publishedAt': { $gte: range.from, $lte: range.to } },
+            { publishedAt: { $gte: range.from, $lte: range.to } },
+        ],
+    };
+    if (filters.connectionId) query.connectionId = filters.connectionId;
+    return query;
+}
+
+interface PostLike {
+    _id?: { toString(): string };
+    connectionId?: unknown;
+    connection?: ConnectionLike | null;
+    populated?: (path: string) => unknown;
+    caption?: string;
+    mediaUrl?: string;
+    status?: PostStatus;
+    publishedAt?: Date | null;
+    targets?: Array<{
+        platform: Platform;
+        status: string;
+        externalId?: string;
+        publishedAt?: Date | null;
+    }>;
+}
+
+interface ConnectionLike {
+    _id?: { toString(): string };
+    userId?: unknown;
+    pageName?: string;
+    pageId?: string;
+    instagram?: { username?: string } | null;
+}
+
+function rawConnectionId(post: PostLike): unknown {
+    const populated =
+        typeof post.populated === 'function'
+            ? post.populated('connectionId')
+            : undefined;
+    return populated ?? post.connectionId;
+}
+
+function targetsFromPost(
+    post: PostLike,
+    connection: ConnectionLike | null,
+    filters: AnalyticsFilters,
+    range: Pick<AnalyticsRange, 'from' | 'to'>
+): PublishedTarget[] {
+    if (!post._id) return [];
+    const rawId = rawConnectionId(post);
+    const connectionId = connection?._id
+        ? String(connection._id)
+        : rawId
+          ? String(rawId)
+          : '';
+    if (!connectionId) return [];
+    const targets: PublishedTarget[] = [];
+    for (const target of post.targets ?? []) {
+        if (target.status !== 'published') continue;
+        if (filters.platform && target.platform !== filters.platform) continue;
+        const publishedAt = target.publishedAt || post.publishedAt;
+        if (!publishedAt || publishedAt < range.from || publishedAt > range.to) {
+            continue;
+        }
+        targets.push({
+            postId: String(post._id),
+            connectionId,
+            pageId: connection?.pageId || '',
+            pageName: connection?.pageName || 'Connected page',
+            platform: target.platform,
+            externalId: target.externalId || '',
+            publishedAt,
+            caption: post.caption || '',
+            mediaUrl: post.mediaUrl || '',
+            postStatus: post.status || 'published',
+            instagramUsername: connection?.instagram?.username || '',
+        });
+    }
+    return targets;
+}
+
+export async function loadPublishedTargets(
+    userId: string,
+    range: AnalyticsRange,
+    filters: AnalyticsFilters
+): Promise<PublishedTarget[]> {
+    const posts = await Post.find(
+        buildPublishedTargetsQuery(userId, range, filters) as QueryFilter<IPost>
+    )
+        .populate('connectionId', 'pageName pageId instagram userId')
+        .sort({ publishedAt: -1 });
+
+    const targets: PublishedTarget[] = [];
+    for (const post of posts) {
+        const raw = post as unknown as PostLike;
+        const connection = (post.connectionId as unknown as ConnectionLike | null) ?? null;
+        // A populated connection must belong to the requesting user before its
+        // Page details are trusted; otherwise fall back to the raw id only.
+        const ownedConnection =
+            connection && (!connection.userId || String(connection.userId) === userId)
+                ? connection
+                : null;
+        targets.push(...targetsFromPost(raw, ownedConnection, filters, range));
+    }
+    return targets;
+}
+
+export function buildPublishedTargetsPagePipeline(
+    userId: string,
+    range: AnalyticsRange,
+    filters: AnalyticsFilters,
+    page: number,
+    limit: number
+): PipelineStage[] {
+    const safePage = Math.min(MAX_POST_PAGE, Math.max(1, Math.floor(page) || 1));
+    const safeLimit = Math.min(100, Math.max(1, Math.floor(limit) || 25));
+    const match: Record<string, unknown> = {
+        userId: new Types.ObjectId(userId),
+        status: { $in: ['published', 'partial'] },
+        $or: [
+            { 'targets.publishedAt': { $gte: range.from, $lte: range.to } },
+            { publishedAt: { $gte: range.from, $lte: range.to } },
+        ],
+    };
+    if (filters.connectionId) {
+        match.connectionId = new Types.ObjectId(filters.connectionId);
+    }
+
+    const targetPublishedAt = { $ifNull: ['$$target.publishedAt', '$publishedAt'] };
+    const targetConditions: Record<string, unknown>[] = [
+        { $eq: ['$$target.status', 'published'] },
+        { $gte: [targetPublishedAt, range.from] },
+        { $lte: [targetPublishedAt, range.to] },
+    ];
+    if (filters.platform) {
+        targetConditions.push({ $eq: ['$$target.platform', filters.platform] });
+    }
+
+    return [
+        { $match: match },
+        {
+            $addFields: {
+                latestPublishedAt: {
+                    $max: {
+                        $map: {
+                            input: {
+                                $filter: {
+                                    input: '$targets',
+                                    as: 'target',
+                                    cond: { $and: targetConditions },
+                                },
+                            },
+                            as: 'target',
+                            in: targetPublishedAt,
+                        },
+                    },
+                },
+            },
+        },
+        { $match: { latestPublishedAt: { $ne: null } } },
+        {
+            $facet: {
+                metadata: [{ $count: 'total' }],
+                data: [
+                    { $sort: { latestPublishedAt: -1, _id: -1 } },
+                    { $skip: (safePage - 1) * safeLimit },
+                    { $limit: safeLimit },
+                    {
+                        $lookup: {
+                            from: SocialConnection.collection.name,
+                            let: { connectionId: '$connectionId' },
+                            pipeline: [
+                                {
+                                    $match: {
+                                        $expr: {
+                                            $and: [
+                                                { $eq: ['$_id', '$$connectionId'] },
+                                                {
+                                                    $eq: [
+                                                        '$userId',
+                                                        new Types.ObjectId(userId),
+                                                    ],
+                                                },
+                                            ],
+                                        },
+                                    },
+                                },
+                                {
+                                    $project: {
+                                        pageName: 1,
+                                        pageId: 1,
+                                        instagram: 1,
+                                        userId: 1,
+                                    },
+                                },
+                            ],
+                            as: 'connection',
+                        },
+                    },
+                    {
+                        $unwind: {
+                            path: '$connection',
+                            preserveNullAndEmptyArrays: true,
+                        },
+                    },
+                ],
+            },
+        },
+    ];
+}
+
+export async function loadPublishedTargetsPage(
+    userId: string,
+    range: AnalyticsRange,
+    filters: AnalyticsFilters,
+    page: number,
+    limit: number
+): Promise<{ targets: PublishedTarget[]; total: number }> {
+    const rows = await Post.aggregate<{
+        metadata: Array<{ total: number }>;
+        data: PostLike[];
+    }>(buildPublishedTargetsPagePipeline(userId, range, filters, page, limit));
+    const result = rows[0];
+    const total = result?.metadata[0]?.total ?? 0;
+    const targets = (result?.data ?? []).flatMap((post) => {
+        const connection = post.connection ?? null;
+        const ownedConnection =
+            connection && (!connection.userId || String(connection.userId) === userId)
+                ? connection
+                : null;
+        return targetsFromPost(post, ownedConnection, filters, range);
+    });
+    return { targets, total };
+}
+
+export function buildSnapshotQuery(
+    userId: string,
+    targets: PublishedTarget[],
+    range?: Pick<AnalyticsRange, 'from' | 'to'>
+): Record<string, unknown> | null {
+    const postIds = [...new Set(targets.map((target) => target.postId))];
+    if (postIds.length === 0) return null;
+
+    const query: Record<string, unknown> = {
+        userId,
+        postId: { $in: postIds },
+    };
+    if (range) {
+        query.publishedAt = { $gte: range.from, $lte: range.to };
+    }
+    return query;
+}
+
+export async function loadSnapshots(
+    userId: string,
+    targets: PublishedTarget[],
+    range?: Pick<AnalyticsRange, 'from' | 'to'>
+): Promise<IPostMetricSnapshot[]> {
+    const query = buildSnapshotQuery(userId, targets, range);
+    if (!query) return [];
+    return PostMetricSnapshot.find(query as QueryFilter<IPostMetricSnapshot>).sort({
+        capturedAt: -1,
+    });
+}
+
+/**
+ * Returns only the newest snapshot per post/platform, so overview and posts
+ * endpoints never load every historical snapshot for a target.
+ */
+export function buildLatestSnapshotsPipeline(
+    userId: string,
+    targets: PublishedTarget[],
+    range?: Pick<AnalyticsRange, 'from' | 'to'>
+): PipelineStage[] {
+    const postIds = [...new Set(targets.map((target) => target.postId))].map(
+        (postId) => new Types.ObjectId(postId)
+    );
+    const match: Record<string, unknown> = {
+        userId: new Types.ObjectId(userId),
+        postId: { $in: postIds },
+    };
+    if (range) {
+        match.publishedAt = { $gte: range.from, $lte: range.to };
+    }
+    return [
+        { $match: match },
+        { $sort: { postId: 1, platform: 1, capturedAt: -1 } },
+        {
+            $group: {
+                _id: { postId: '$postId', platform: '$platform' },
+                doc: { $first: '$$ROOT' },
+            },
+        },
+        { $replaceRoot: { newRoot: '$doc' } },
+    ];
+}
+
+export async function loadLatestSnapshots(
+    userId: string,
+    targets: PublishedTarget[],
+    range?: Pick<AnalyticsRange, 'from' | 'to'>
+): Promise<IPostMetricSnapshot[]> {
+    if (targets.length === 0) return [];
+    return PostMetricSnapshot.aggregate<IPostMetricSnapshot>(
+        buildLatestSnapshotsPipeline(userId, targets, range)
+    );
+}
+
+const MONITOR_HISTORY_DAYS = 90;
+const MONITOR_SNAPSHOT_LIMIT = 50_000;
+export const MONITOR_TARGET_LIMIT = 100;
+
+/**
+ * The live monitor is a recent-history view. The overview remains the
+ * full-range historical view, so this bounds the monitor to a rolling window
+ * and the most recent MONITOR_TARGET_LIMIT targets in the selected scope.
+ * Queries are issued per target so each one can use the
+ * (postId, platform, capturedAt) index, and the total row count stays bounded
+ * by MONITOR_SNAPSHOT_LIMIT.
+ */
+export async function loadMonitorSnapshots(
+    userId: string,
+    targets: PublishedTarget[],
+    range: AnalyticsRange
+): Promise<IPostMetricSnapshot[]> {
+    const uniqueTargets = new Map<string, PublishedTarget>();
+    for (const target of targets) {
+        uniqueTargets.set(targetKey(target.postId, target.platform), target);
+    }
+    const monitorTargets = [...uniqueTargets.values()]
+        .sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime())
+        .slice(0, MONITOR_TARGET_LIMIT);
+    if (monitorTargets.length === 0) return [];
+    const cutoff = new Date(Date.now() - MONITOR_HISTORY_DAYS * 86_400_000);
+    const capturedAt = { $gte: cutoff > range.from ? cutoff : range.from };
+    const perTargetLimit = Math.max(
+        1,
+        Math.floor(MONITOR_SNAPSHOT_LIMIT / monitorTargets.length)
+    );
+    const results = await Promise.all(
+        monitorTargets.map((target) =>
+            PostMetricSnapshot.find({
+                userId,
+                postId: target.postId,
+                platform: target.platform,
+                publishedAt: { $gte: range.from, $lte: range.to },
+                capturedAt,
+            } as QueryFilter<IPostMetricSnapshot>)
+                .sort({ capturedAt: -1 })
+                .limit(perTargetLimit)
+        )
+    );
+    return results.flat();
+}
+
+export function monitorSeriesTruncated(targets: PublishedTarget[]): boolean {
+    return (
+        new Set(targets.map((target) => targetKey(target.postId, target.platform)))
+            .size > MONITOR_TARGET_LIMIT
+    );
+}
+
+export function uniquePermissionErrors(
+    targets: PublishedTarget[],
+    latest: Map<string, IPostMetricSnapshot>
+): Array<{ connectionId: string; pageName: string; platform: Platform }> {
+    const targetKeys = new Set(
+        targets.map((target) => targetKey(target.postId, target.platform))
+    );
+    const seen = new Set<string>();
+    const errors: Array<{ connectionId: string; pageName: string; platform: Platform }> = [];
+    for (const [key, snapshot] of latest) {
+        if (!targetKeys.has(key)) continue;
+        if (snapshot.status !== 'permission_error') continue;
+        const connectionId = String(snapshot.connectionId);
+        // A Page shares one connection across Facebook and Instagram. Dedupe by
+        // connection so one reconnect action is surfaced once, keeping the first
+        // encountered snapshot's platform for that Page.
+        if (seen.has(connectionId)) continue;
+        seen.add(connectionId);
+        errors.push({
+            connectionId,
+            pageName: snapshot.pageName,
+            platform: snapshot.platform,
+        });
+    }
+    return errors;
+}
+
+export function lastSyncedAt(
+    targets: PublishedTarget[],
+    latest: Map<string, IPostMetricSnapshot>
+): string | null {
+    const targetKeys = new Set(
+        targets.map((target) => targetKey(target.postId, target.platform))
+    );
+    let newest: Date | null = null;
+    for (const [key, snapshot] of latest) {
+        if (!targetKeys.has(key)) continue;
+        if (!newest || snapshot.capturedAt > newest) newest = snapshot.capturedAt;
+    }
+    return newest ? newest.toISOString() : null;
+}
+
+function staleCount(
+    targets: PublishedTarget[],
+    latest: Map<string, IPostMetricSnapshot>,
+    minutes: number
+): number {
+    const before = Date.now() - minutes * 60_000;
+    return targets.filter((target) => {
+        const snapshot = latest.get(targetKey(target.postId, target.platform));
+        return !snapshot || snapshot.capturedAt.getTime() < before;
+    }).length;
+}
+
+function remainingTargets(
+    targets: PublishedTarget[],
+    latest: Map<string, IPostMetricSnapshot>
+): number {
+    return targets.filter(
+        (target) => !latest.has(targetKey(target.postId, target.platform))
+    ).length;
+}
+
+export function rangePreset(
+    range: Pick<AnalyticsRange, 'from' | 'to'>
+): '7d' | '30d' | '60d' | '90d' | 'custom' {
+    const days = Math.round(
+        (range.to.getTime() - range.from.getTime()) / 86_400_000
+    );
+    if (days === 7) return '7d';
+    if (days === 30) return '30d';
+    if (days === 60) return '60d';
+    if (days === 90) return '90d';
+    return 'custom';
+}
+
+export async function resolvePageName(
+    userId: string,
+    connectionId: string,
+    targets: PublishedTarget[]
+): Promise<string> {
+    const fromTargets = targets[0]?.pageName;
+    if (fromTargets) return fromTargets;
+    const connection = await SocialConnection.findOne(
+        { _id: connectionId, userId },
+        'pageName'
+    );
+    return connection?.pageName || 'Page';
+}
+
+export async function getAnalyticsOverview(
+    userId: string,
+    range: AnalyticsRange,
+    filters: AnalyticsFilters
+) {
+    const targets = await loadPublishedTargets(userId, range, filters);
+    const snapshots = await loadLatestSnapshots(userId, targets, range);
+    const latest = latestSnapshotsByTarget(snapshots);
+    const summary = summarizeTargets(targets, latest);
+
+    const byPlatform = {
+        facebook: summarizeTargets(
+            targets.filter((target) => target.platform === 'facebook'),
+            latest
+        ),
+        instagram: summarizeTargets(
+            targets.filter((target) => target.platform === 'instagram'),
+            latest
+        ),
+    };
+
+    return {
+        range: {
+            from: range.fromKey,
+            to: range.toKey,
+            preset: rangePreset(range),
+            timezone: 'Asia/Kolkata',
+        },
+        totals: summary,
+        byPlatform,
+        activity: buildActivity(targets, latest, range),
+        bestTimes: buildBestTimes(targets, latest),
+        sync: {
+            lastSyncedAt: lastSyncedAt(targets, latest),
+            staleTargets: staleCount(targets, latest, 15),
+            remainingTargets: remainingTargets(targets, latest),
+            permissionErrors: uniquePermissionErrors(targets, latest),
+        },
+    };
+}
+
+function nextSyncAt(now = Date.now()): string {
+    const interval = 5 * 60_000;
+    return new Date(Math.floor(now / interval) * interval + interval).toISOString();
+}
+
+export async function getAnalyticsMonitor(
+    userId: string,
+    range: AnalyticsRange,
+    filters: AnalyticsFilters
+) {
+    const targets = await loadPublishedTargets(userId, range, filters);
+    const [latestSnapshots, snapshots] = await Promise.all([
+        loadLatestSnapshots(userId, targets, range),
+        loadMonitorSnapshots(userId, targets, range),
+    ]);
+    const latest = latestSnapshotsByTarget(latestSnapshots);
+    const summary = summarizeTargets(targets, latest);
+    const targetKeys = new Set(
+        targets.map((target) => targetKey(target.postId, target.platform))
+    );
+    const series = buildMonitorSeries(
+        snapshots.filter((snapshot) =>
+            targetKeys.has(targetKey(String(snapshot.postId), snapshot.platform))
+        )
+    );
+
+    const recentPosts = [...targets]
+        .sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime())
+        .slice(0, 5)
+        .map((target) => ({
+            postId: target.postId,
+            caption: target.caption,
+            mediaUrl: target.mediaUrl,
+            pageName: target.pageName,
+            platform: target.platform,
+            publishedAt: target.publishedAt.toISOString(),
+            metrics: latest.get(targetKey(target.postId, target.platform))?.metrics ?? null,
+        }));
+
+    const pageName = filters.connectionId
+        ? await resolvePageName(userId, filters.connectionId, targets)
+        : 'All Pages';
+
+    return {
+        scope: {
+            connectionId: filters.connectionId || null,
+            pageName,
+        },
+        summary,
+        series,
+        seriesTruncated: monitorSeriesTruncated(targets),
+        recentPosts,
+        sync: {
+            lastSyncedAt: lastSyncedAt(targets, latest),
+            nextSyncAt: nextSyncAt(),
+            staleTargets: staleCount(targets, latest, 5),
+            permissionErrors: uniquePermissionErrors(targets, latest),
+        },
+    };
+}
+
+export async function getAnalyticsPosts(
+    userId: string,
+    range: AnalyticsRange,
+    filters: AnalyticsFilters,
+    page: number,
+    limit: number
+) {
+    const safePage = Math.min(MAX_POST_PAGE, Math.max(1, Math.floor(page) || 1));
+    const safeLimit = Math.min(100, Math.max(1, Math.floor(limit) || 25));
+    const { targets, total } = await loadPublishedTargetsPage(
+        userId,
+        range,
+        filters,
+        safePage,
+        safeLimit
+    );
+    const snapshots = await loadLatestSnapshots(userId, targets, range);
+    const latest = latestSnapshotsByTarget(snapshots);
+    const grouped = new Map<string, PublishedTarget[]>();
+
+    for (const target of targets) {
+        const list = grouped.get(target.postId) ?? [];
+        list.push(target);
+        grouped.set(target.postId, list);
+    }
+
+    const posts = [...grouped.entries()]
+        .map(([postId, postTargets]) => ({
+            postId,
+            caption: postTargets[0]?.caption || '',
+            mediaUrl: postTargets[0]?.mediaUrl || '',
+            status: postTargets[0]?.postStatus || 'published',
+            connection: {
+                id: postTargets[0]?.connectionId || '',
+                pageId: postTargets[0]?.pageId || '',
+                pageName: postTargets[0]?.pageName || '',
+                instagramUsername: postTargets[0]?.instagramUsername || '',
+            },
+            latestPublishedAt: Math.max(
+                ...postTargets.map((target) => target.publishedAt.getTime())
+            ),
+            targets: postTargets.map((target) => {
+                const snapshot = latest.get(targetKey(target.postId, target.platform));
+                return {
+                    platform: target.platform,
+                    externalId: target.externalId,
+                    publishedAt: target.publishedAt.toISOString(),
+                    metrics: snapshot?.metrics ?? null,
+                    availableMetrics: snapshot?.availableMetrics ?? [],
+                    snapshotAt: snapshot?.capturedAt.toISOString() || null,
+                    status: snapshot?.status || 'unavailable',
+                    error: snapshot?.error || '',
+                };
+            }),
+        }))
+        .sort((a, b) => b.latestPublishedAt - a.latestPublishedAt);
+
+    const start = (safePage - 1) * safeLimit;
+    const pagePosts = posts.map(({ latestPublishedAt, ...post }) => post);
+
+    return {
+        posts: pagePosts,
+        page: safePage,
+        limit: safeLimit,
+        total,
+        hasMore: start + safeLimit < total,
+    };
+}
+
+export interface RuleBasedTip {
+    id: string;
+    title: string;
+    body: string;
+    severity: 'info' | 'success' | 'warning';
+    actionLabel: string;
+    actionHref: string;
+}
+
+export function buildRuleBasedTips(input: {
+    summary: AnalyticsSummary;
+    byPlatform: { facebook: AnalyticsSummary; instagram: AnalyticsSummary };
+    bestTimes: BestTimeBucket[];
+    activity: ActivityBucket[];
+    permissionErrors: Array<{ pageName: string }>;
+    posts: Array<{ caption: string; engagementRate: number | null }>;
+    granularity: 'day' | 'week';
+}): RuleBasedTip[] {
+    const tips: RuleBasedTip[] = [];
+    const overallRate = input.summary.engagementRate;
+
+    if (input.summary.posts === 0) {
+        return [{
+            id: 'no-posts',
+            title: 'No published posts in this range',
+            body: 'Publish a post or widen the date range to start building analytics.',
+            severity: 'info',
+            actionLabel: 'Open composer',
+            actionHref: '/composer',
+        }];
+    }
+
+    const best = input.bestTimes
+        .filter((bucket) => bucket.posts >= 2 && bucket.avgEngagementRate !== null)
+        .sort((a, b) => (b.avgEngagementRate || 0) - (a.avgEngagementRate || 0))[0];
+
+    if (best && overallRate && best.avgEngagementRate) {
+        const multiplier = Math.round((best.avgEngagementRate / overallRate) * 10) / 10;
+        tips.push({
+            id: 'best-time',
+            title: `${best.dayLabel} ${best.label} works best`,
+            body: `Your ${best.dayLabel} ${best.label} posts average ${best.avgEngagementRate}% engagement, ${multiplier}× your overall average.`,
+            severity: multiplier >= 1.2 ? 'success' : 'info',
+            actionLabel: 'Open composer',
+            actionHref: '/composer',
+        });
+    }
+
+    const facebookRate = input.byPlatform.facebook.engagementRate;
+    const instagramRate = input.byPlatform.instagram.engagementRate;
+    if (
+        input.byPlatform.facebook.posts >= 2 &&
+        input.byPlatform.instagram.posts >= 2 &&
+        facebookRate !== null &&
+        instagramRate !== null
+    ) {
+        const winner = instagramRate >= facebookRate ? 'Instagram' : 'Facebook';
+        const winnerRate = Math.max(facebookRate, instagramRate);
+        const loserRate = Math.min(facebookRate, instagramRate);
+        const multiplier = loserRate > 0 ? Math.round((winnerRate / loserRate) * 10) / 10 : 0;
+        tips.push({
+            id: 'platform',
+            title: `${winner} is your stronger platform`,
+            body: `${winner} averages ${winnerRate}% engagement versus ${loserRate}% on the other platform${multiplier ? `, about ${multiplier}× better` : ''}.`,
+            severity: 'success',
+            actionLabel: 'Open composer',
+            actionHref: '/composer',
+        });
+    }
+
+    const daysWithPosts = input.activity.filter((bucket) => bucket.posts > 0);
+    if (daysWithPosts.length > 1) {
+        const span = input.granularity === 'week' ? 7 : 1;
+        let longestGap = 0;
+        for (let index = 1; index < daysWithPosts.length; index += 1) {
+            const previous = new Date(`${daysWithPosts[index - 1]?.date}T00:00:00+05:30`);
+            const current = new Date(`${daysWithPosts[index]?.date}T00:00:00+05:30`);
+            longestGap = Math.max(
+                longestGap,
+                Math.round((current.getTime() - previous.getTime()) / 86_400_000) -
+                    span
+            );
+        }
+        if (longestGap >= 7) {
+            tips.push({
+                id: 'gap',
+                title: 'You had a long posting gap',
+                body: `Your longest gap in this range was ${longestGap} days. A steady cadence can help reach stay consistent.`,
+                severity: 'warning',
+                actionLabel: 'Open queue',
+                actionHref: '/queue',
+            });
+        }
+    }
+
+    const topPost = [...input.posts]
+        .filter((post) => post.engagementRate !== null)
+        .sort((a, b) => (b.engagementRate || 0) - (a.engagementRate || 0))[0];
+    if (topPost && topPost.engagementRate !== null) {
+        tips.push({
+            id: 'top-post',
+            title: 'Your top post is worth repeating',
+            body: `Your best post earned ${topPost.engagementRate}% engagement. Reuse its angle or format in a future post.`,
+            severity: 'success',
+            actionLabel: 'Open composer',
+            actionHref: '/composer',
+        });
+    }
+
+    const pageNames = new Set(input.permissionErrors.map((error) => error.pageName));
+    if (pageNames.size > 0) {
+        const count = pageNames.size;
+        tips.push({
+            id: 'permissions',
+            title: 'Reconnect to unlock reach data',
+            body: `${count} Page${count === 1 ? '' : 's'} ${count === 1 ? 'needs' : 'need'} insight permission. Reconnect to load complete engagement data.`,
+            severity: 'warning',
+            actionLabel: 'Open connections',
+            actionHref: '/connections',
+        });
+    }
+
+    return tips.slice(0, 6);
+}
+
+function publishingFrequency(activity: ActivityBucket[], uniquePosts: number) {
+    const posts = uniquePosts;
+    const activeBuckets = activity.filter((bucket) => bucket.posts > 0).length;
+    const round1 = (value: number) => Math.round(value * 10) / 10;
+    return {
+        posts,
+        activeBuckets,
+        buckets: activity.length,
+        postsPerBucket: activity.length > 0 ? round1(posts / activity.length) : 0,
+        postsPerActiveBucket:
+            activeBuckets > 0 ? round1(posts / activeBuckets) : 0,
+    };
+}
+
+function longestGapDays(
+    activity: ActivityBucket[],
+    granularity: 'day' | 'week'
+): number {
+    const active = activity.filter((bucket) => bucket.posts > 0);
+    if (active.length < 2) return 0;
+    const span = granularity === 'week' ? 7 : 1;
+    let longest = 0;
+    for (let index = 1; index < active.length; index += 1) {
+        const previous = new Date(`${active[index - 1]?.date}T00:00:00+05:30`);
+        const current = new Date(`${active[index]?.date}T00:00:00+05:30`);
+        longest = Math.max(
+            longest,
+            Math.round((current.getTime() - previous.getTime()) / 86_400_000) -
+                span
+        );
+    }
+    return longest;
+}
+
+export function buildAnalyticsAiPayload(input: {
+    range: AnalyticsRange;
+    scopeName: string;
+    summary: AnalyticsSummary;
+    byPlatform: { facebook: AnalyticsSummary; instagram: AnalyticsSummary };
+    activity: ActivityBucket[];
+    bestTimes: BestTimeBucket[];
+    permissionErrors: Array<{ pageName: string }>;
+    topPosts: Array<{
+        postId: string;
+        caption: string;
+        reach: number;
+        views: number | null;
+        interactions: number | null;
+    }>;
+    brandProfile: Record<string, string | undefined>;
+}) {
+    // A cross-posted post appears once per platform. Collapse those entries so
+    // the AI sees one row per post with combined reach and interactions. The
+    // rate keeps its own numerator/denominator so a target that reports only
+    // views contributes views rather than a zero reach.
+    const dedupedTopPosts = new Map<
+        string,
+        {
+            caption: string;
+            reach: number;
+            views: number;
+            interactions: number;
+            rateInteractions: number;
+            rateDenominator: number;
+        }
+    >();
+    for (const post of input.topPosts) {
+        const current = dedupedTopPosts.get(post.postId) ?? {
+            caption: post.caption,
+            reach: 0,
+            views: 0,
+            interactions: 0,
+            rateInteractions: 0,
+            rateDenominator: 0,
+        };
+        const reach = finiteOrZero(post.reach);
+        const views = finiteOrZero(post.views);
+        const interactionValue = finiteOrNull(post.interactions);
+        const interactions = interactionValue ?? 0;
+        current.caption = current.caption || post.caption;
+        current.reach += reach;
+        current.views += views;
+        current.interactions += interactions;
+        const denominator = reach > 0 ? reach : views > 0 ? views : 0;
+        if (denominator > 0 && interactionValue !== null) {
+            current.rateInteractions += interactionValue;
+            current.rateDenominator += denominator;
+        }
+        dedupedTopPosts.set(post.postId, current);
+    }
+    const topPosts = [...dedupedTopPosts.values()].map((post) => ({
+        caption: post.caption,
+        reach: post.reach,
+        interactions: post.interactions,
+        engagementRate: rateFrom(post.rateInteractions, post.rateDenominator),
+    }));
+
+    const permissionPages = new Set(
+        input.permissionErrors.map((error) => error.pageName)
+    );
+
+    return {
+        range: { from: input.range.fromKey, to: input.range.toKey, timezone: 'Asia/Kolkata' },
+        scopeName: input.scopeName,
+        summary: input.summary,
+        byPlatform: input.byPlatform,
+        activity: input.activity,
+        publishingFrequency: publishingFrequency(input.activity, input.summary.posts),
+        longestGapDays: longestGapDays(input.activity, input.range.granularity),
+        bestTimes: input.bestTimes.filter((bucket) => bucket.posts > 0),
+        permissionErrors: [...permissionPages].map((pageName) => ({ pageName })),
+        topPosts: [...topPosts]
+            .sort((a, b) => b.reach - a.reach)
+            .slice(0, 5)
+            .map((post) => ({
+                caption: post.caption.slice(0, 120),
+                reach: post.reach,
+                interactions: post.interactions,
+                engagementRate: post.engagementRate,
+            })),
+        topEngagementPosts: [...topPosts]
+            .filter((post) => post.engagementRate !== null)
+            .sort(
+                (a, b) =>
+                    (b.engagementRate || 0) - (a.engagementRate || 0)
+            )
+            .slice(0, 5)
+            .map((post) => ({
+                caption: post.caption.slice(0, 120),
+                reach: post.reach,
+                interactions: post.interactions,
+                engagementRate: post.engagementRate,
+            })),
+        brandProfile: input.brandProfile,
+    };
+}
