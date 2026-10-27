@@ -195,8 +195,7 @@ export const authApi = {
 
 export const connectionsApi = {
     list: () => api.get('/connections'),
-    start: (timezone?: string) =>
-        api.get(`/connections/meta/start${timezone ? `?timezone=${encodeURIComponent(timezone)}` : ''}`),
+    start: () => api.get('/connections/meta/start'),
     complete: (data: { code: string; state: string }) =>
         api.post<{ success: boolean } & MetaLoginResult>(
             '/connections/meta/complete',

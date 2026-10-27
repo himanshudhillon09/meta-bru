@@ -58,7 +58,8 @@ export interface SocialConnection {
     pageName: string;
     tokenStatus: TokenStatus;
     instagram: InstagramAccount | null;
-    dailyTime: string;
+    /** Sorted daily posting times (HH:mm) in `timezone`. */
+    dailyTimes: string[];
     timezone: string;
     publishToFacebook: boolean;
     publishToInstagram: boolean;

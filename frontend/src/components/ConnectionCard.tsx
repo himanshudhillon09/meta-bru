@@ -1,16 +1,19 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { Modal } from '@/components/Modal';
 import { connectionsApi } from '@/lib/apiClient';
+import {
+    MAX_DAILY_SLOTS,
+    addSlot,
+    suggestDailyTimes,
+    validateDailyTimes,
+} from '@/lib/schedule';
 import {
     formatDate,
     type SocialConnection,
 } from '@/lib/types';
-import {
-    getInitialTimezoneOptions,
-    getTimezoneOptions,
-} from '@/lib/timezones';
 
 interface ConnectionCardProps {
     connection: SocialConnection;
@@ -26,14 +29,10 @@ export function ConnectionCard({
     onDisconnected,
     onReconnect,
 }: ConnectionCardProps) {
-    const [dailyTime, setDailyTime] = useState(connection.dailyTime);
-    const [timezone, setTimezone] = useState(connection.timezone);
+    const [times, setTimes] = useState<string[]>(connection.dailyTimes);
     const [facebook, setFacebook] = useState(connection.publishToFacebook);
     const [instagram, setInstagram] = useState(connection.publishToInstagram);
     const [active, setActive] = useState(connection.isActive);
-    const [timezones, setTimezones] = useState(() =>
-        getInitialTimezoneOptions(connection.timezone)
-    );
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
     const [confirmOpen, setConfirmOpen] = useState(false);
@@ -47,26 +46,21 @@ export function ConnectionCard({
                   queuedCount === 1 ? 'post' : 'posts'
               } waiting for this Page`
             : 'No posts waiting';
+    const scheduleError = validateDailyTimes(times);
 
     useEffect(() => {
-        setDailyTime(connection.dailyTime);
-        setTimezone(connection.timezone);
+        setTimes(connection.dailyTimes);
         setFacebook(connection.publishToFacebook);
         setInstagram(connection.publishToInstagram);
         setActive(connection.isActive);
     }, [connection]);
-
-    useEffect(() => {
-        setTimezones(getTimezoneOptions(connection.timezone));
-    }, [connection.timezone]);
 
     const save = async () => {
         setSaving(true);
         setError('');
         try {
             const data: any = await connectionsApi.update(connection._id, {
-                dailyTime,
-                timezone,
+                dailyTimes: times,
                 publishToFacebook: facebook,
                 publishToInstagram: instagram,
                 isActive: active,
@@ -200,33 +194,103 @@ export function ConnectionCard({
             ) : null}
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 mt-7">
-                <div>
-                    <label className="text-xs font-bold uppercase tracking-widest text-slate-500">
-                        Daily time
-                    </label>
-                    <input
-                        type="time"
-                        value={dailyTime}
-                        onChange={(event) => setDailyTime(event.target.value)}
-                        className="mt-2 w-full bg-slate-950/80 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
-                    />
-                </div>
+                <div className="sm:col-span-2">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                        <label
+                            htmlFor={`posts-per-day-${connection._id}`}
+                            className="text-xs font-bold uppercase tracking-widest text-slate-500"
+                        >
+                            Posting schedule
+                        </label>
+                        <div className="flex items-center gap-2 text-xs text-slate-400">
+                            <select
+                                id={`posts-per-day-${connection._id}`}
+                                value={times.length}
+                                onChange={(event) =>
+                                    setTimes(
+                                        suggestDailyTimes(Number(event.target.value))
+                                    )
+                                }
+                                className="bg-slate-950/80 border border-white/10 rounded-lg px-2 py-1.5 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                            >
+                                {Array.from(
+                                    { length: MAX_DAILY_SLOTS },
+                                    (_, index) => index + 1
+                                ).map((count) => (
+                                    <option key={count} value={count}>
+                                        {count}
+                                    </option>
+                                ))}
+                            </select>
+                            <span>
+                                {times.length === 1 ? 'post a day' : 'posts a day'}
+                            </span>
+                        </div>
+                    </div>
 
-                <div>
-                    <label className="text-xs font-bold uppercase tracking-widest text-slate-500">
-                        Timezone
-                    </label>
-                    <select
-                        value={timezone}
-                        onChange={(event) => setTimezone(event.target.value)}
-                        className="mt-2 w-full bg-slate-950/80 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
-                    >
-                        {timezones.map((zone) => (
-                            <option key={zone} value={zone}>
-                                {zone}
-                            </option>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                        {times.map((time, index) => (
+                            <div
+                                key={index}
+                                className="flex items-center rounded-xl border border-white/10 bg-slate-950/80 focus-within:ring-2 focus-within:ring-indigo-500/50"
+                            >
+                                <input
+                                    type="time"
+                                    aria-label={`Posting time ${index + 1}`}
+                                    value={time}
+                                    onChange={(event) =>
+                                        setTimes((current) =>
+                                            current.map((value, position) =>
+                                                position === index
+                                                    ? event.target.value
+                                                    : value
+                                            )
+                                        )
+                                    }
+                                    className="bg-transparent pl-3 py-2.5 text-white focus:outline-none"
+                                />
+                                <button
+                                    type="button"
+                                    aria-label={`Remove posting time ${index + 1}`}
+                                    disabled={times.length === 1}
+                                    onClick={() =>
+                                        setTimes((current) =>
+                                            current.filter(
+                                                (_, position) => position !== index
+                                            )
+                                        )
+                                    }
+                                    className="px-3 py-2.5 text-slate-500 hover:text-rose-300 disabled:opacity-30 disabled:cursor-not-allowed"
+                                >
+                                    ×
+                                </button>
+                            </div>
                         ))}
-                    </select>
+                        {times.length < MAX_DAILY_SLOTS ? (
+                            <button
+                                type="button"
+                                onClick={() => setTimes(addSlot)}
+                                className="rounded-xl border border-dashed border-white/15 px-3 py-2.5 text-xs font-bold text-indigo-300 hover:bg-indigo-500/10"
+                            >
+                                + Add time
+                            </button>
+                        ) : null}
+                    </div>
+
+                    {scheduleError ? (
+                        <div className="mt-2 text-xs text-rose-400">
+                            {scheduleError}
+                        </div>
+                    ) : null}
+                    <p className="mt-2 text-xs text-slate-500">
+                        Times use your Profile timezone ({connection.timezone}).{' '}
+                        <Link
+                            href="/settings"
+                            className="font-bold text-indigo-300 hover:text-indigo-200"
+                        >
+                            Change it in Profile
+                        </Link>
+                    </p>
                 </div>
 
                 <div>
@@ -283,7 +347,7 @@ export function ConnectionCard({
 
                 <button
                     onClick={save}
-                    disabled={saving}
+                    disabled={saving || Boolean(scheduleError)}
                     className="ml-auto bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white px-5 py-2.5 rounded-xl text-xs font-black transition-all"
                 >
                     {saving ? 'Saving...' : 'Save changes'}

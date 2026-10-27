@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { AppShell } from '@/components/AppShell';
 import { ConnectionCard } from '@/components/ConnectionCard';
 import { Modal } from '@/components/Modal';
-import { useAuth } from '@/context/AuthContext';
 import { connectionsApi } from '@/lib/apiClient';
 import type { MetaLoginResult, SocialConnection } from '@/lib/types';
 
@@ -87,7 +86,6 @@ function loginSummary(result: MetaLoginResult): {
 }
 
 export default function ConnectionsPage() {
-    const { user } = useAuth();
     const [connections, setConnections] = useState<SocialConnection[]>([]);
     const [loading, setLoading] = useState(true);
     const [connecting, setConnecting] = useState(false);
@@ -181,11 +179,8 @@ export default function ConnectionsPage() {
         setConnecting(true);
         setError('');
         try {
-            const timezone =
-                user?.timezone ||
-                Intl.DateTimeFormat().resolvedOptions().timeZone ||
-                'Asia/Kolkata';
-            const data: any = await connectionsApi.start(timezone);
+            // The server schedules every Page in the Profile timezone.
+            const data: any = await connectionsApi.start();
             if (data.url) {
                 window.location.href = data.url;
                 return;
