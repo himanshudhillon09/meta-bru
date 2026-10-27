@@ -1,4 +1,9 @@
 import mongoose from 'mongoose';
+import {
+    DAILY_TIME_PATTERN,
+    DEFAULT_DAILY_TIME,
+    MAX_DAILY_SLOTS,
+} from '../services/scheduleService.js';
 
 export interface IInstagramAccount {
     id: string;
@@ -15,7 +20,10 @@ export interface ISocialConnection extends mongoose.Document {
     pageAccessTokenEnc: string;
     tokenStatus: ConnectionTokenStatus;
     instagram: IInstagramAccount | null;
+    /** Legacy single posting time. Removed after the schedule migration. */
     dailyTime: string;
+    /** Sorted daily posting times (HH:mm) in `timezone`. */
+    dailyTimes: string[];
     timezone: string;
     publishToFacebook: boolean;
     publishToInstagram: boolean;
@@ -62,6 +70,20 @@ const socialConnectionSchema = new mongoose.Schema<ISocialConnection>(
             type: String,
             default: '09:00',
             match: [/^([01]\d|2[0-3]):[0-5]\d$/, 'dailyTime must be HH:mm'],
+        },
+        dailyTimes: {
+            type: [
+                {
+                    type: String,
+                    match: [DAILY_TIME_PATTERN, 'Posting times must be HH:mm'],
+                },
+            ],
+            default: () => [DEFAULT_DAILY_TIME],
+            validate: {
+                validator: (times: string[]) =>
+                    times.length >= 1 && times.length <= MAX_DAILY_SLOTS,
+                message: `A Page needs 1 to ${MAX_DAILY_SLOTS} posting times`,
+            },
         },
         timezone: { type: String, default: 'Asia/Kolkata' },
         publishToFacebook: { type: Boolean, default: true },

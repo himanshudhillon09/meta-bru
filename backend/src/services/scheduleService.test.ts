@@ -156,5 +156,6 @@ test('every suggestion is a valid schedule and counts are clamped', () => {
         assert.deepEqual(normalizeDailyTimes(times), times);
     }
     assert.deepEqual(suggestDailyTimes(0), ['09:00']);
+    assert.deepEqual(suggestDailyTimes(Number.NaN), ['09:00']);
     assert.equal(suggestDailyTimes(99).length, MAX_DAILY_SLOTS);
 });

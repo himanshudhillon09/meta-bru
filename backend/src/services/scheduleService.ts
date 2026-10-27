@@ -120,7 +120,9 @@ export function nextSlotOrFallback(
 
 /** Evenly spaced times from 09:00 to 21:00, rounded to 5 minutes. */
 export function suggestDailyTimes(count: number): string[] {
-    const total = Math.min(MAX_DAILY_SLOTS, Math.max(1, Math.floor(count)));
+    const total = Number.isFinite(count)
+        ? Math.min(MAX_DAILY_SLOTS, Math.max(1, Math.floor(count)))
+        : 1;
     if (total === 1) return [DEFAULT_DAILY_TIME];
     const step = (SUGGESTION_END - SUGGESTION_START) / (total - 1);
     return Array.from({ length: total }, (_, index) =>
