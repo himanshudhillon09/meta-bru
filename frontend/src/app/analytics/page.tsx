@@ -25,6 +25,7 @@ import {
     formatIstDateTime,
     type AnalyticsMonitor as AnalyticsMonitorData,
     type AnalyticsOverview,
+    type AnalyticsPermissionError,
     type AnalyticsPost,
     type AnalyticsTipsResponse,
     type SocialConnection,
@@ -69,13 +70,20 @@ function formatNumber(value: number | null | undefined): string {
         : value.toLocaleString('en-IN');
 }
 
-function syncNotice(result: {
-    synced?: number;
-    failed?: number;
-    remaining?: number;
-}): string {
+const RECONNECT_HREF = '/connections?returnTo=/analytics';
+
+function syncNotice(
+    result: {
+        synced?: number;
+        failed?: number;
+        skipped?: number;
+        remaining?: number;
+    },
+    automatic = false
+): string {
     const synced = Number(result.synced) || 0;
     const failed = Number(result.failed) || 0;
+    const skipped = Number(result.skipped) || 0;
     const remaining = Number(result.remaining) || 0;
     const parts: string[] = [];
     if (synced > 0) {
@@ -86,12 +94,33 @@ function syncNotice(result: {
     if (failed > 0) {
         parts.push(`${failed} could not be updated`);
     }
+    if (skipped > 0) {
+        parts.push(
+            skipped === 1
+                ? '1 skipped because its Page is disconnected or needs reconnecting'
+                : `${skipped} skipped because their Pages are disconnected or need reconnecting`
+        );
+    }
     if (remaining > 0) {
         parts.push(`${remaining} remaining; refresh again`);
     }
-    return parts.length
-        ? `${parts.join('. ')}.`
-        : 'Analytics are already up to date.';
+    if (parts.length > 0) return `${parts.join('. ')}.`;
+    return automatic ? '' : 'Analytics are already up to date.';
+}
+
+/** Merges overview and monitor permission errors into one entry per Page. */
+function mergePermissionErrors(
+    ...lists: Array<AnalyticsPermissionError[] | undefined>
+): AnalyticsPermissionError[] {
+    const merged = new Map<string, AnalyticsPermissionError>();
+    for (const list of lists) {
+        for (const error of list ?? []) {
+            if (!merged.has(error.connectionId)) {
+                merged.set(error.connectionId, error);
+            }
+        }
+    }
+    return [...merged.values()];
 }
 
 export default function AnalyticsPage() {
@@ -103,6 +132,8 @@ export default function AnalyticsPage() {
     const [platform, setPlatform] = useState('');
     const [connections, setConnections] = useState<SocialConnection[]>([]);
     const [overview, setOverview] = useState<AnalyticsOverview | null>(null);
+    // The filter selection the loaded overview belongs to.
+    const [overviewKey, setOverviewKey] = useState('');
     const [monitor, setMonitor] = useState<AnalyticsMonitorData | null>(null);
     const [posts, setPosts] = useState<AnalyticsPost[]>([]);
     const [tips, setTips] = useState<AnalyticsTipsResponse | null>(null);
@@ -128,6 +159,7 @@ export default function AnalyticsPage() {
     const [now, setNow] = useState(0);
     const syncingRef = useRef(false);
     const loadingMoreRef = useRef(false);
+    const autoSyncedKeyRef = useRef('');
 
     const loadConnections = useCallback(async () => {
         try {
@@ -190,6 +222,7 @@ export default function AnalyticsPage() {
                     analyticsApi.tips(params).catch(() => null),
                 ]);
                 setOverview(overviewData);
+                setOverviewKey(JSON.stringify(params));
                 setPosts(postsData.posts);
                 setPage(1);
                 setHasMore(postsData.hasMore);
@@ -326,37 +359,58 @@ export default function AnalyticsPage() {
         }
     };
 
-    const refresh = async () => {
-        if (syncingRef.current) return;
-        syncingRef.current = true;
-        setSyncing(true);
-        setNotice('');
-        setError('');
-        try {
-            const result: any = await analyticsApi.sync({
-                ...params,
-                mode: 'stale',
-            });
-            setNotice(syncNotice(result));
-            if (tab === 'monitor') {
-                await loadMonitor();
-            } else if (tab === 'tracker') {
-                await loadTracker();
-                void loadConnections();
-            } else {
-                await loadAll();
+    const refresh = useCallback(
+        async (automatic = false) => {
+            if (syncingRef.current) return;
+            syncingRef.current = true;
+            setSyncing(true);
+            if (!automatic) {
+                setNotice('');
+                setError('');
             }
-        } catch (err: any) {
-            setError(
-                typeof err === 'string'
-                    ? err
-                    : 'Could not refresh insights'
-            );
-        } finally {
-            syncingRef.current = false;
-            setSyncing(false);
-        }
-    };
+            try {
+                const result: any = await analyticsApi.sync({
+                    ...params,
+                    mode: 'stale',
+                });
+                const message = syncNotice(result, automatic);
+                if (message) setNotice(message);
+                if (tab === 'monitor') {
+                    await loadMonitor();
+                } else if (tab === 'tracker') {
+                    await loadTracker();
+                    void loadConnections();
+                } else {
+                    await loadAll();
+                }
+            } catch (err: any) {
+                // A background refresh keeps the stored insights on screen;
+                // only a refresh the user asked for reports a failure.
+                if (!automatic) {
+                    setError(
+                        typeof err === 'string'
+                            ? err
+                            : 'Could not refresh insights'
+                    );
+                }
+            } finally {
+                syncingRef.current = false;
+                setSyncing(false);
+            }
+        },
+        [params, tab, loadMonitor, loadTracker, loadConnections, loadAll]
+    );
+
+    // Fetch fresh insights from Meta once per filter selection when the stored
+    // ones are stale, including right after a Page was reconnected.
+    const staleTargets = overview?.sync.staleTargets ?? 0;
+    useEffect(() => {
+        const key = JSON.stringify(params);
+        if (loading || syncing || overviewKey !== key) return;
+        if (autoSyncedKeyRef.current === key) return;
+        autoSyncedKeyRef.current = key;
+        if (staleTargets > 0) void refresh(true);
+    }, [loading, syncing, overviewKey, staleTargets, params, refresh]);
 
     const refreshMonitor = async () => {
         if (syncingRef.current) return;
@@ -413,9 +467,25 @@ export default function AnalyticsPage() {
     const selectedConnection = connectionId
         ? connections.find((item) => item._id === connectionId) ?? null
         : null;
-    const reconnectCount = Math.max(
-        overview?.sync.permissionErrors.length ?? 0,
-        monitor?.sync.permissionErrors.length ?? 0
+    const permissionErrors = mergePermissionErrors(
+        overview?.sync.permissionErrors,
+        monitor?.sync.permissionErrors
+    );
+    const reconnectPages = [
+        ...new Set([
+            ...permissionErrors
+                .filter((item) => item.reconnectRequired !== false)
+                .map((item) => item.pageName),
+            ...connections
+                .filter((item) => item.tokenStatus === 'needs_reauth')
+                .map((item) => item.pageName),
+        ]),
+    ];
+    const missingScopes = [
+        ...new Set(permissionErrors.flatMap((item) => item.missingScopes ?? [])),
+    ];
+    const blockedErrors = permissionErrors.filter(
+        (item) => item.reconnectRequired === false
     );
 
     return (
@@ -424,7 +494,7 @@ export default function AnalyticsPage() {
             subtitle="Published-post performance, engagement history, and posting timing. All times are IST."
             actions={
                 <button
-                    onClick={refresh}
+                    onClick={() => void refresh()}
                     disabled={syncing}
                     className="rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-bold text-white transition-all hover:bg-indigo-500 disabled:opacity-50"
                 >
@@ -442,18 +512,81 @@ export default function AnalyticsPage() {
                     {error}
                 </div>
             ) : null}
-            {reconnectCount > 0 ? (
+            {reconnectPages.length > 0 ? (
                 <div className="mb-5 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
-                    {reconnectCount} Page{reconnectCount === 1 ? '' : 's'}{' '}
-                    need reconnecting to load engagement insights.{' '}
-                    <Link
-                        href="/connections"
-                        className="font-bold underline"
-                    >
-                        Open connections
+                    {reconnectPages.join(', ')}{' '}
+                    {reconnectPages.length === 1 ? 'needs' : 'need'}{' '}
+                    reconnecting to load engagement insights.
+                    {missingScopes.length > 0
+                        ? ` Facebook did not grant ${missingScopes.join(', ')}; allow ${
+                              missingScopes.length === 1 ? 'it' : 'them'
+                          } when you reconnect.`
+                        : ''}{' '}
+                    <Link href={RECONNECT_HREF} className="font-bold underline">
+                        Reconnect now
                     </Link>
                 </div>
             ) : null}
+            {blockedErrors.map((item) => {
+                const instagram = (item.platforms ?? [item.platform]).includes(
+                    'instagram'
+                );
+                return (
+                    <div
+                        key={item.connectionId}
+                        className="mb-5 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-200"
+                    >
+                        <div>
+                            Meta still blocks insights for{' '}
+                            <strong>{item.pageName}</strong> (
+                            {(item.platforms ?? [item.platform]).join(' and ')}
+                            ) even though the Page was reconnected, so
+                            reconnecting again will not help.
+                            {item.error ? (
+                                <>
+                                    {' '}
+                                    Meta says: <q>{item.error}</q>
+                                </>
+                            ) : null}
+                        </div>
+                        <details className="mt-2 text-xs text-amber-100/80">
+                            <summary className="cursor-pointer font-bold text-amber-200">
+                                What to check in Meta
+                            </summary>
+                            <ul className="mt-2 list-disc space-y-1 pl-5">
+                                <li>
+                                    Your Facebook account needs full control of
+                                    the Page, or partial access that includes
+                                    Insights. Business portfolio access without
+                                    Insights cannot read them.
+                                </li>
+                                <li>
+                                    In your Meta app, under App Review →
+                                    Permissions and Features, read_insights,
+                                    pages_read_engagement
+                                    {instagram
+                                        ? ' and instagram_manage_insights'
+                                        : ''}{' '}
+                                    must be available. They need Advanced
+                                    Access for anyone without a role on the
+                                    app.
+                                </li>
+                                {instagram ? (
+                                    <li>
+                                        If the Page belongs to a Business
+                                        portfolio, Meta also requires ads_read
+                                        and ads_management for Instagram
+                                        insights. Add both to your Meta app,
+                                        append them to META_SCOPES on the API
+                                        service (the default list is in
+                                        backend/.env.example), then reconnect.
+                                    </li>
+                                ) : null}
+                            </ul>
+                        </details>
+                    </div>
+                );
+            })}
 
             <div className="mb-6 flex flex-wrap items-center gap-2">
                 {(['7', '30', '60', '90'] as RangeKey[]).map((value) => (

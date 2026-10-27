@@ -58,7 +58,8 @@ export interface SocialConnection {
     pageName: string;
     tokenStatus: TokenStatus;
     instagram: InstagramAccount | null;
-    dailyTime: string;
+    /** Sorted daily posting times (HH:mm) in `timezone`. */
+    dailyTimes: string[];
     timezone: string;
     publishToFacebook: boolean;
     publishToInstagram: boolean;
@@ -67,8 +68,20 @@ export interface SocialConnection {
     lastRunAt: string | null;
     lastError: string;
     queuedCount?: number;
+    tokenUpdatedAt?: string | null;
+    grantedScopes?: string[];
     createdAt: string;
     updatedAt: string;
+}
+
+export interface MetaLoginResult {
+    connected: number;
+    added?: string[];
+    reconnected?: string[];
+    /** Connected Pages that Meta left out of this login. */
+    notIncluded?: string[];
+    /** Requested permissions that were not granted in this login. */
+    notGranted?: string[];
 }
 
 export type Platform = 'facebook' | 'instagram';
@@ -301,6 +314,12 @@ export interface AnalyticsPermissionError {
     connectionId: string;
     pageName: string;
     platform: Platform;
+    platforms?: Platform[];
+    /** Meta's own error message. */
+    error?: string;
+    missingScopes?: string[];
+    /** False when Meta still refuses after a full reconnect. */
+    reconnectRequired?: boolean;
 }
 
 export interface AnalyticsSyncState {
@@ -356,8 +375,11 @@ export interface AnalyticsPostTarget {
     metrics: AnalyticsMetrics | null;
     availableMetrics: string[];
     snapshotAt: string | null;
+    /** When Meta reported these metrics; older than snapshotAt if kept. */
+    metricsAt?: string | null;
     status: 'ok' | 'partial' | 'unavailable' | 'permission_error';
     error: string;
+    reconnectRequired?: boolean;
 }
 
 export interface AnalyticsPost {

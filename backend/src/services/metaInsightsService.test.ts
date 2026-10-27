@@ -952,3 +952,107 @@ test('sanitizes JSON-style secrets', () => {
         "{'fb_exchange_token':'[redacted]'}"
     );
 });
+
+test('keeps the Meta message on Facebook and Instagram permission errors', async () => {
+    const message = '(#10) Application does not have permission for this action';
+    const request = async () => {
+        throw new MetaApiError(message, 403, 10);
+    };
+
+    const facebook = await fetchFacebookMetrics('post-1', 'token', request);
+    assert.equal(facebook.status, 'permission_error');
+    assert.equal(facebook.error, message);
+
+    const instagram = await fetchInstagramMetrics('media-1', 'token', request);
+    assert.equal(instagram.status, 'permission_error');
+    assert.equal(instagram.error, message);
+});
+
+test('reads Facebook engagement from insights when the fields request is blocked', async () => {
+    const insightMetrics: string[] = [];
+    const request = async (
+        path: string,
+        options?: { params?: { metric?: string } }
+    ) => {
+        if (!path.endsWith('/insights')) {
+            throw new MetaApiError(
+                '(#10) This endpoint requires the pages_read_user_content permission',
+                403,
+                10
+            );
+        }
+        const metric = options?.params?.metric ?? '';
+        insightMetrics.push(metric);
+        if (metric.startsWith('post_reactions_by_type_total')) {
+            return {
+                data: [
+                    {
+                        name: 'post_reactions_by_type_total',
+                        values: [{ value: { like: 7, love: 2 } }],
+                    },
+                    {
+                        name: 'post_activity_by_action_type',
+                        values: [{ value: { comment: 3, like: 9 } }],
+                    },
+                ],
+            };
+        }
+        return {
+            data: [
+                { name: 'post_media_view', values: [{ value: 400 }] },
+                { name: 'post_total_media_view_unique', values: [{ value: 250 }] },
+                { name: 'post_clicks', values: [{ value: 6 }] },
+            ],
+        };
+    };
+
+    const result = await fetchFacebookMetrics('post-1', 'token', request);
+    assert.deepEqual(insightMetrics, [
+        'post_media_view,post_total_media_view_unique,post_clicks',
+        'post_reactions_by_type_total,post_activity_by_action_type',
+    ]);
+    assert.equal(result.metrics.likes, 9);
+    assert.equal(result.metrics.comments, 3);
+    // Meta omits zero keys from the activity breakdown.
+    assert.equal(result.metrics.shares, 0);
+    assert.equal(result.metrics.reach, 250);
+    assert.equal(result.status, 'ok');
+    assert.equal(result.error, '');
+});
+
+test('reports a blocked Facebook fields request when insights cannot recover it', async () => {
+    const request = async (
+        path: string,
+        options?: { params?: { metric?: string } }
+    ) => {
+        if (!path.endsWith('/insights')) {
+            throw new MetaApiError('(#10) fields blocked', 403, 10);
+        }
+        if (options?.params?.metric?.startsWith('post_reactions')) {
+            throw new MetaApiError('invalid metric', 400, 100);
+        }
+        return { data: [{ name: 'post_media_view', values: [{ value: 40 }] }] };
+    };
+
+    const result = await fetchFacebookMetrics('post-1', 'token', request);
+    assert.equal(result.metrics.views, 40);
+    assert.equal(result.status, 'permission_error');
+    assert.equal(result.error, '(#10) fields blocked');
+});
+
+test('does not call the engagement fallback when the fields request succeeds', async () => {
+    const insightMetrics: string[] = [];
+    const request = async (
+        path: string,
+        options?: { params?: { metric?: string } }
+    ) => {
+        if (path.endsWith('/insights')) {
+            insightMetrics.push(options?.params?.metric ?? '');
+            return { data: [{ name: 'post_media_view', values: [{ value: 5 }] }] };
+        }
+        return { reactions: { summary: { total_count: 1 } } };
+    };
+
+    await fetchFacebookMetrics('post-1', 'token', request);
+    assert.equal(insightMetrics.length, 1);
+});

@@ -4,7 +4,7 @@ import { SocialConnection } from '../models/socialConnectionModel.js';
 import { User } from '../models/userModel.js';
 import { STALE_LOCK_MS } from './connectionLifecycleService.js';
 import { publishPost } from './publishService.js';
-import { computeNextRunAt } from './timeService.js';
+import { nextSlotOrFallback } from './scheduleService.js';
 
 let running = false;
 let timer: NodeJS.Timeout | null = null;
@@ -18,10 +18,12 @@ async function ensureSchedules(): Promise<void> {
 
     for (const connection of missing) {
         try {
-            connection.nextRunAt = computeNextRunAt(
-                connection.dailyTime,
+            const slot = nextSlotOrFallback(
+                connection.dailyTimes,
                 connection.timezone
             );
+            connection.nextRunAt = slot.nextRunAt;
+            if (slot.error) connection.lastError = slot.error;
             await connection.save();
         } catch (error) {
             console.error(
@@ -32,12 +34,18 @@ async function ensureSchedules(): Promise<void> {
     }
 }
 
-async function advance(connection: {
-    dailyTime: string;
-    timezone: string;
-    nextRunAt: Date | null;
-}, now: Date): Promise<void> {
-    connection.nextRunAt = computeNextRunAt(connection.dailyTime, connection.timezone, now);
+/**
+ * Moves the connection to its first slot after `now`. Missed slots collapse
+ * into this one move. Returns an error message when the stored schedule was
+ * unusable and a fallback slot was used.
+ */
+function advance(
+    connection: { dailyTimes: string[]; timezone: string; nextRunAt: Date | null },
+    now: Date
+): string {
+    const slot = nextSlotOrFallback(connection.dailyTimes, connection.timezone, now);
+    connection.nextRunAt = slot.nextRunAt;
+    return slot.error;
 }
 
 async function processConnection(connectionId: string, now: Date): Promise<void> {
@@ -56,6 +64,7 @@ async function processConnection(connectionId: string, now: Date): Promise<void>
     ).select('+pageAccessTokenEnc');
 
     if (!connection) return;
+    let scheduleError = '';
 
     try {
         const dueAt = connection.nextRunAt;
@@ -71,7 +80,7 @@ async function processConnection(connectionId: string, now: Date): Promise<void>
             console.warn(
                 `[scheduler] Skipping stale slot for connection ${connection._id} (due ${dueAt.toISOString()})`
             );
-            await advance(connection, now);
+            scheduleError = advance(connection, now);
             return;
         }
 
@@ -81,7 +90,7 @@ async function processConnection(connectionId: string, now: Date): Promise<void>
                 `[scheduler] Skipping connection ${connection._id}: the owning account is inactive`
             );
             connection.lastError = 'The owning account is inactive';
-            await advance(connection, now);
+            scheduleError = advance(connection, now);
             return;
         }
 
@@ -90,7 +99,7 @@ async function processConnection(connectionId: string, now: Date): Promise<void>
         // Claim the daily slot before publishing. If the process crashes after
         // Meta accepts a post but before the post/connection saves, this prevents
         // the next tick from publishing a second post on the same day.
-        await advance(connection, now);
+        scheduleError = advance(connection, now);
         await connection.save();
 
         // Claim the oldest queued post atomically so a manual "Post now"
@@ -123,7 +132,7 @@ async function processConnection(connectionId: string, now: Date): Promise<void>
         // when the failure happened before that point.
         if (connection.nextRunAt && connection.nextRunAt <= now) {
             try {
-                await advance(connection, now);
+                scheduleError = advance(connection, now);
             } catch {
                 connection.nextRunAt = new Date(now.getTime() + 24 * 60 * 60 * 1000);
             }
@@ -141,7 +150,8 @@ async function processConnection(connectionId: string, now: Date): Promise<void>
                         lockedAt: null,
                         nextRunAt: connection.nextRunAt,
                         lastRunAt: connection.lastRunAt,
-                        lastError: connection.lastError,
+                        // A publish error is more useful than a schedule error.
+                        lastError: connection.lastError || scheduleError,
                     },
                 }
             );

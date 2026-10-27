@@ -10,6 +10,7 @@ import {
     latestSnapshotsByTarget,
     loadLatestSnapshots,
     loadPublishedTargets,
+    snapshotPredatesToken,
     targetKey,
     type AnalyticsFilters,
     type PublishedTarget,
@@ -70,7 +71,12 @@ export function selectStaleTargets(
     return targets
         .filter((target) => {
             const snapshot = latest.get(targetKey(target.postId, target.platform));
-            return !snapshot || snapshot.capturedAt.getTime() < before;
+            return (
+                !snapshot ||
+                snapshot.capturedAt.getTime() < before ||
+                // A reconnect replaces the token, so re-check right away.
+                snapshotPredatesToken(snapshot, target)
+            );
         })
         .sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime());
 }
@@ -100,6 +106,7 @@ async function upsertSnapshot(
     userId: string,
     target: PublishedTarget,
     result: NormalizedInsightMetrics,
+    previous: IPostMetricSnapshot | undefined,
     now: Date
 ): Promise<void> {
     // The dedupe lookup is scoped to the owner so a snapshot can never be
@@ -111,6 +118,14 @@ async function upsertSnapshot(
         capturedAt: { $gt: new Date(now.getTime() - DEDUPE_WINDOW_MS) },
     } as QueryFilter<IPostMetricSnapshot>);
 
+    // A sync that returns no metrics (permission, network, or token trouble)
+    // must not wipe the last numbers Meta reported. Keep them, with their
+    // original capture time; status and error still describe this attempt.
+    const keepPrevious =
+        result.availableMetrics.length === 0 &&
+        previous !== undefined &&
+        (previous.availableMetrics?.length ?? 0) > 0;
+
     const data = {
         userId,
         connectionId: target.connectionId,
@@ -121,8 +136,13 @@ async function upsertSnapshot(
         externalId: target.externalId,
         publishedAt: target.publishedAt,
         capturedAt: now,
-        metrics: result.metrics,
-        availableMetrics: result.availableMetrics,
+        metricsCapturedAt: keepPrevious
+            ? (previous.metricsCapturedAt ?? previous.capturedAt)
+            : now,
+        metrics: keepPrevious ? previous.metrics : result.metrics,
+        availableMetrics: keepPrevious
+            ? previous.availableMetrics
+            : result.availableMetrics,
         status: result.status,
         error: sanitizeErrorMessage(result.error),
     };
@@ -249,7 +269,13 @@ export async function syncAnalytics(
                 target.platform === 'facebook'
                     ? await fetchFacebook(target.externalId, token)
                     : await fetchInstagram(target.externalId, token);
-            await upsertSnapshot(userId, target, result, clock());
+            await upsertSnapshot(
+                userId,
+                target,
+                result,
+                latest.get(targetKey(target.postId, target.platform)),
+                clock()
+            );
             synced += 1;
 
             if (result.status === 'permission_error') {
