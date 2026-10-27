@@ -69,6 +69,31 @@ function formatNumber(value: number | null | undefined): string {
         : value.toLocaleString('en-IN');
 }
 
+function syncNotice(result: {
+    synced?: number;
+    failed?: number;
+    remaining?: number;
+}): string {
+    const synced = Number(result.synced) || 0;
+    const failed = Number(result.failed) || 0;
+    const remaining = Number(result.remaining) || 0;
+    const parts: string[] = [];
+    if (synced > 0) {
+        parts.push(
+            `Updated ${synced} insight${synced === 1 ? '' : 's'}`
+        );
+    }
+    if (failed > 0) {
+        parts.push(`${failed} could not be updated`);
+    }
+    if (remaining > 0) {
+        parts.push(`${remaining} remaining; refresh again`);
+    }
+    return parts.length
+        ? `${parts.join('. ')}.`
+        : 'Analytics are already up to date.';
+}
+
 export default function AnalyticsPage() {
     const [tab, setTab] = useState<TabKey>('overview');
     const [range, setRange] = useState<RangeKey>('30');
@@ -96,11 +121,22 @@ export default function AnalyticsPage() {
     const [page, setPage] = useState(1);
     const [hasMore, setHasMore] = useState(false);
     const [loading, setLoading] = useState(true);
+    const [loadingMore, setLoadingMore] = useState(false);
     const [syncing, setSyncing] = useState(false);
     const [error, setError] = useState('');
     const [notice, setNotice] = useState('');
     const [now, setNow] = useState(0);
     const syncingRef = useRef(false);
+    const loadingMoreRef = useRef(false);
+
+    const loadConnections = useCallback(async () => {
+        try {
+            const data: any = await connectionsApi.list();
+            setConnections(data.connections || []);
+        } catch {
+            // Keep the current list when a background refresh fails.
+        }
+    }, []);
 
     useEffect(() => {
         const requested = new URLSearchParams(window.location.search).get(
@@ -109,11 +145,8 @@ export default function AnalyticsPage() {
         if (TABS.some((item) => item.key === requested)) {
             setTab(requested as TabKey);
         }
-        void connectionsApi
-            .list()
-            .then((data: any) => setConnections(data.connections || []))
-            .catch(() => setConnections([]));
-    }, []);
+        void loadConnections();
+    }, [loadConnections]);
 
     useEffect(() => {
         const tick = () => setNow(Date.now());
@@ -137,11 +170,17 @@ export default function AnalyticsPage() {
 
     useEffect(() => {
         setAiError('');
+        setMonitor(null);
+        setTrackerPosts([]);
+        setNotice('');
     }, [params]);
 
     const loadAll = useCallback(
         async (showSpinner = false) => {
-            if (showSpinner) setLoading(true);
+            if (showSpinner) {
+                setLoading(true);
+                setTips(null);
+            }
             setError('');
             setAiError('');
             try {
@@ -174,6 +213,7 @@ export default function AnalyticsPage() {
 
     const loadMonitor = useCallback(async () => {
         setMonitorLoading(true);
+        setError('');
         try {
             const data = await analyticsApi.monitor(params);
             setMonitor(data);
@@ -229,6 +269,8 @@ export default function AnalyticsPage() {
 
     const loadTracker = useCallback(async () => {
         setTrackerLoading(true);
+        setTrackerPosts([]);
+        setError('');
         try {
             const [year, monthNumber] = trackerMonth.split('-').map(Number);
             const lastDay = new Date(
@@ -254,7 +296,14 @@ export default function AnalyticsPage() {
         if (tab === 'tracker') void loadTracker();
     }, [tab, loadTracker]);
 
+    useEffect(() => {
+        if (tab === 'tracker') void loadConnections();
+    }, [tab, loadConnections]);
+
     const loadMore = async () => {
+        if (loadingMoreRef.current) return;
+        loadingMoreRef.current = true;
+        setLoadingMore(true);
         const next = page + 1;
         try {
             const data = await analyticsApi.posts({
@@ -271,6 +320,9 @@ export default function AnalyticsPage() {
                     ? err
                     : 'Could not load more posts'
             );
+        } finally {
+            loadingMoreRef.current = false;
+            setLoadingMore(false);
         }
     };
 
@@ -285,15 +337,12 @@ export default function AnalyticsPage() {
                 ...params,
                 mode: 'stale',
             });
-            setNotice(
-                result.synced
-                    ? `Updated ${result.synced} insight${result.synced === 1 ? '' : 's'}.`
-                    : 'Analytics are already up to date.'
-            );
+            setNotice(syncNotice(result));
             if (tab === 'monitor') {
                 await loadMonitor();
             } else if (tab === 'tracker') {
                 await loadTracker();
+                void loadConnections();
             } else {
                 await loadAll();
             }
@@ -320,11 +369,7 @@ export default function AnalyticsPage() {
                 ...params,
                 mode: 'stale',
             });
-            setNotice(
-                result.synced
-                    ? `Updated ${result.synced} insight${result.synced === 1 ? '' : 's'}.`
-                    : 'Analytics are already up to date.'
-            );
+            setNotice(syncNotice(result));
             await loadMonitor();
         } catch (err: any) {
             setError(
@@ -365,7 +410,13 @@ export default function AnalyticsPage() {
     };
 
     const aiNotConfigured = /gemini api key is not configured/i.test(aiError);
-    const reconnectCount = overview?.sync.permissionErrors.length || 0;
+    const selectedConnection = connectionId
+        ? connections.find((item) => item._id === connectionId) ?? null
+        : null;
+    const reconnectCount = Math.max(
+        overview?.sync.permissionErrors.length ?? 0,
+        monitor?.sync.permissionErrors.length ?? 0
+    );
 
     return (
         <AppShell
@@ -432,6 +483,7 @@ export default function AnalyticsPage() {
                     <>
                         <input
                             type="date"
+                            aria-label="From date"
                             value={customFrom}
                             onChange={(event) =>
                                 setCustomFrom(event.target.value)
@@ -440,6 +492,7 @@ export default function AnalyticsPage() {
                         />
                         <input
                             type="date"
+                            aria-label="To date"
                             value={customTo}
                             onChange={(event) =>
                                 setCustomTo(event.target.value)
@@ -449,6 +502,7 @@ export default function AnalyticsPage() {
                     </>
                 ) : null}
                 <select
+                    aria-label="Page filter"
                     value={connectionId}
                     onChange={(event) => setConnectionId(event.target.value)}
                     className="rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 text-xs text-white"
@@ -461,6 +515,7 @@ export default function AnalyticsPage() {
                     ))}
                 </select>
                 <select
+                    aria-label="Platform filter"
                     value={platform}
                     onChange={(event) => setPlatform(event.target.value)}
                     className="rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 text-xs text-white"
@@ -471,10 +526,12 @@ export default function AnalyticsPage() {
                 </select>
                 <span className="ml-auto text-xs text-slate-500">
                     {overview?.sync.lastSyncedAt
-                        ? `Last synced ${formatElapsed(
-                              overview.sync.lastSyncedAt,
-                              now
-                          )}`
+                        ? `Last synced ${
+                              formatElapsed(
+                                  overview.sync.lastSyncedAt,
+                                  now
+                              ) || 'recently'
+                          }`
                         : 'Not synced yet'}
                 </span>
             </div>
@@ -530,6 +587,83 @@ export default function AnalyticsPage() {
                             tone="amber"
                         />
                     </div>
+                    <section className="rounded-3xl border border-white/5 bg-slate-900/40 p-5">
+                        <h2 className="mb-4 text-sm font-bold text-white">
+                            Facebook vs Instagram
+                        </h2>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                            {[
+                                {
+                                    label: 'Facebook',
+                                    dot: 'bg-sky-400',
+                                    summary: overview.byPlatform.facebook,
+                                },
+                                {
+                                    label: 'Instagram',
+                                    dot: 'bg-pink-400',
+                                    summary: overview.byPlatform.instagram,
+                                },
+                            ].map((platform) => (
+                                <div
+                                    key={platform.label}
+                                    className="rounded-2xl border border-white/5 bg-slate-950/40 p-4"
+                                >
+                                    <div className="flex items-center gap-2">
+                                        <span
+                                            className={`h-2 w-2 rounded-full ${platform.dot}`}
+                                        />
+                                        <span className="text-xs font-bold text-white">
+                                            {platform.label}
+                                        </span>
+                                    </div>
+                                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+                                        <div>
+                                            <span className="text-slate-500">
+                                                Posts
+                                            </span>
+                                            <div className="font-bold text-white">
+                                                {formatNumber(
+                                                    platform.summary.posts
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <span className="text-slate-500">
+                                                Reach
+                                            </span>
+                                            <div className="font-bold text-white">
+                                                {formatNumber(
+                                                    platform.summary.reach
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <span className="text-slate-500">
+                                                Interactions
+                                            </span>
+                                            <div className="font-bold text-white">
+                                                {formatNumber(
+                                                    platform.summary.interactions
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <span className="text-slate-500">
+                                                Rate
+                                            </span>
+                                            <div className="font-bold text-emerald-300">
+                                                {formatMetric(
+                                                    platform.summary
+                                                        .engagementRate,
+                                                    '%'
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </section>
                     <div className="grid gap-5 lg:grid-cols-2">
                         <section className="rounded-3xl border border-white/5 bg-slate-900/40 p-5">
                             <h2 className="mb-4 text-sm font-bold text-white">
@@ -637,11 +771,17 @@ export default function AnalyticsPage() {
                     {hasMore ? (
                         <button
                             onClick={loadMore}
-                            className="w-full rounded-xl border border-white/10 bg-slate-900/40 px-4 py-3 text-sm font-bold text-slate-300"
+                            disabled={loadingMore}
+                            className="w-full rounded-xl border border-white/10 bg-slate-900/40 px-4 py-3 text-sm font-bold text-slate-300 disabled:opacity-50"
                         >
-                            Load more
+                            {loadingMore ? 'Loading...' : 'Load more'}
                         </button>
                     ) : null}
+                </div>
+            ) : tab === 'overview' ? (
+                <div className="rounded-3xl border border-dashed border-white/10 bg-slate-900/30 p-12 text-center text-sm text-slate-400">
+                    Could not load the overview. Use Refresh insights to try
+                    again.
                 </div>
             ) : tab === 'monitor' ? (
                 monitor ? (
@@ -667,11 +807,15 @@ export default function AnalyticsPage() {
                     selectedDay={selectedDay}
                     onSelectDay={setSelectedDay}
                     onMonthChange={(next) => {
-                        setTrackerMonth(next);
                         setSelectedDay(null);
+                        if (next === trackerMonth) return;
+                        setTrackerLoading(true);
+                        setTrackerPosts([]);
+                        setTrackerMonth(next);
                     }}
                     loading={trackerLoading}
                     now={now}
+                    connection={selectedConnection}
                 />
             ) : (
                 <div className="space-y-6">

@@ -1,18 +1,32 @@
 'use client';
 
 import React, { useMemo } from 'react';
+import Link from 'next/link';
 import {
     formatElapsed,
     formatIstDateTime,
     type AnalyticsPost,
+    type SocialConnection,
 } from '@/lib/types';
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const IST_DAY = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+});
+const IST_MONTH = new Intl.DateTimeFormat('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    month: 'long',
+    year: 'numeric',
+});
+const IST_DAY_LABEL = new Intl.DateTimeFormat('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+});
 
 function dayKey(value: string): string {
-    return new Intl.DateTimeFormat('en-CA', {
-        timeZone: 'Asia/Kolkata',
-    }).format(new Date(value));
+    return IST_DAY.format(new Date(value));
 }
 
 function shiftMonth(month: string, delta: number): string {
@@ -29,6 +43,7 @@ export function PostTrackerCalendar({
     onMonthChange,
     loading,
     now,
+    connection,
 }: {
     month: string;
     posts: AnalyticsPost[];
@@ -37,46 +52,44 @@ export function PostTrackerCalendar({
     onMonthChange: (month: string) => void;
     loading: boolean;
     now: number;
+    connection?: SocialConnection | null;
 }) {
     const [year, monthNumber] = month.split('-').map(Number);
     const daysInMonth = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
     const firstWeekday =
         (new Date(`${month}-01T12:00:00+05:30`).getUTCDay() + 6) % 7;
-    const monthLabel = new Intl.DateTimeFormat('en-IN', {
-        timeZone: 'Asia/Kolkata',
-        month: 'long',
-        year: 'numeric',
-    }).format(new Date(`${month}-15T12:00:00+05:30`));
-    const today =
-        now > 0
-            ? new Intl.DateTimeFormat('en-CA', {
-                  timeZone: 'Asia/Kolkata',
-              }).format(new Date(now))
-            : '';
+    const monthLabel = IST_MONTH.format(
+        new Date(`${month}-15T12:00:00+05:30`)
+    );
+    const today = now > 0 ? IST_DAY.format(new Date(now)) : '';
 
-    const byDay = useMemo(() => {
-        const map = new Map<string, AnalyticsPost[]>();
+    const { byDay, platformsByDay } = useMemo(() => {
+        const postsByDay = new Map<string, AnalyticsPost[]>();
+        const platformsByDay = new Map<
+            string,
+            Set<'facebook' | 'instagram'>
+        >();
         for (const post of posts) {
             for (const target of post.targets) {
                 const key = dayKey(target.publishedAt);
-                const list = map.get(key) ?? [];
+                const list = postsByDay.get(key) ?? [];
                 if (!list.some((item) => item.postId === post.postId)) {
                     list.push(post);
                 }
-                map.set(key, list);
+                postsByDay.set(key, list);
+                const platforms =
+                    platformsByDay.get(key) ??
+                    new Set<'facebook' | 'instagram'>();
+                platforms.add(target.platform);
+                platformsByDay.set(key, platforms);
             }
         }
-        return map;
+        return { byDay: postsByDay, platformsByDay };
     }, [posts]);
 
     const selectedPosts = selectedDay ? byDay.get(selectedDay) ?? [] : [];
     const selectedLabel = selectedDay
-        ? new Intl.DateTimeFormat('en-IN', {
-              timeZone: 'Asia/Kolkata',
-              day: '2-digit',
-              month: 'short',
-              year: 'numeric',
-          }).format(new Date(`${selectedDay}T12:00:00+05:30`))
+        ? IST_DAY_LABEL.format(new Date(`${selectedDay}T12:00:00+05:30`))
         : '';
 
     return (
@@ -90,6 +103,7 @@ export function PostTrackerCalendar({
                     <div className="ml-auto flex items-center gap-2">
                         <button
                             type="button"
+                            aria-label="Previous month"
                             onClick={() => onMonthChange(shiftMonth(month, -1))}
                             className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-slate-300"
                         >
@@ -100,6 +114,7 @@ export function PostTrackerCalendar({
                         </span>
                         <button
                             type="button"
+                            aria-label="Next month"
                             onClick={() => onMonthChange(shiftMonth(month, 1))}
                             className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-slate-300"
                         >
@@ -118,6 +133,34 @@ export function PostTrackerCalendar({
                         </button>
                     </div>
                 </div>
+
+                {connection ? (
+                    <div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-white/5 bg-slate-950/40 px-3 py-2 text-[11px] text-slate-500">
+                        <span className="font-bold text-white">
+                            {connection.pageName}
+                        </span>
+                        <span>
+                            Next slot:{' '}
+                            {!connection.isActive
+                                ? 'Paused'
+                                : connection.nextRunAt
+                                  ? formatIstDateTime(connection.nextRunAt)
+                                  : 'Not scheduled'}
+                        </span>
+                        <span>
+                            Queued:{' '}
+                            <strong className="text-white">
+                                {connection.queuedCount ?? 0}
+                            </strong>
+                        </span>
+                        <Link
+                            href="/queue"
+                            className="ml-auto font-bold text-indigo-300"
+                        >
+                            Open Queue
+                        </Link>
+                    </div>
+                ) : null}
 
                 <div className="mb-3 flex flex-wrap items-center gap-4 text-[10px] text-slate-500">
                     <span className="flex items-center gap-1.5">
@@ -151,6 +194,7 @@ export function PostTrackerCalendar({
                             const dayNumber = index + 1;
                             const key = `${month}-${String(dayNumber).padStart(2, '0')}`;
                             const dayPosts = byDay.get(key) ?? [];
+                            const platforms = platformsByDay.get(key);
                             const isSelected = selectedDay === key;
                             const isToday = today !== '' && today === key;
                             return (
@@ -175,22 +219,10 @@ export function PostTrackerCalendar({
                                             <span className="rounded-full bg-indigo-500/15 px-1.5 py-0.5 text-[9px] font-bold text-indigo-300">
                                                 {dayPosts.length}
                                             </span>
-                                            {dayPosts.some((post) =>
-                                                post.targets.some(
-                                                    (target) =>
-                                                        target.platform ===
-                                                        'facebook'
-                                                )
-                                            ) ? (
+                                            {platforms?.has('facebook') ? (
                                                 <span className="h-1.5 w-1.5 rounded-full bg-sky-400" />
                                             ) : null}
-                                            {dayPosts.some((post) =>
-                                                post.targets.some(
-                                                    (target) =>
-                                                        target.platform ===
-                                                        'instagram'
-                                                )
-                                            ) ? (
+                                            {platforms?.has('instagram') ? (
                                                 <span className="h-1.5 w-1.5 rounded-full bg-pink-400" />
                                             ) : null}
                                         </div>

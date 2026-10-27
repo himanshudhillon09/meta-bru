@@ -18,6 +18,15 @@ function number(value: number | null | undefined): string {
         : value.toLocaleString('en-IN');
 }
 
+function untilLabel(value: string | null | undefined, now: number): string {
+    if (!value || now <= 0) return '—';
+    const diff = new Date(value).getTime() - now;
+    if (!Number.isFinite(diff)) return '—';
+    if (diff <= 0) return 'now';
+    const minutes = Math.ceil(diff / 60_000);
+    return `${minutes}m`;
+}
+
 export function AnalyticsMonitor({
     data,
     live,
@@ -37,20 +46,27 @@ export function AnalyticsMonitor({
         'reach' | 'interactions' | 'engagementRate'
     >('reach');
 
-    const points = data.series.all.map((point) => ({
-        label: new Intl.DateTimeFormat('en-IN', {
-            timeZone: 'Asia/Kolkata',
-            hour: '2-digit',
-            minute: '2-digit',
-            hourCycle: 'h23',
-        }).format(new Date(point.capturedAt)),
-        value:
-            seriesKey === 'reach'
-                ? point.reach
-                : seriesKey === 'interactions'
-                  ? point.interactions
-                  : point.engagementRate ?? 0,
-    }));
+    const points = data.series.all
+        .map((point) => ({
+            label: new Intl.DateTimeFormat('en-IN', {
+                timeZone: 'Asia/Kolkata',
+                day: '2-digit',
+                month: 'short',
+                hour: '2-digit',
+                minute: '2-digit',
+                hourCycle: 'h23',
+            }).format(new Date(point.capturedAt)),
+            value:
+                seriesKey === 'reach'
+                    ? point.reach
+                    : seriesKey === 'interactions'
+                      ? point.interactions
+                      : point.engagementRate,
+        }))
+        .filter(
+            (point): point is { label: string; value: number } =>
+                point.value !== null
+        );
 
     const facebook = last(data.series.facebook);
     const instagram = last(data.series.instagram);
@@ -69,11 +85,18 @@ export function AnalyticsMonitor({
                     </div>
                     <div className="text-xs text-slate-500">
                         {data.sync.lastSyncedAt
-                            ? `Last synced ${formatElapsed(
-                                  data.sync.lastSyncedAt,
-                                  now
-                              )}`
+                            ? `Last synced ${
+                                  formatElapsed(data.sync.lastSyncedAt, now) ||
+                                  'recently'
+                              }`
                             : 'Not synced yet'}
+                        {data.sync.nextSyncAt ? (
+                            <span>
+                                {' '}
+                                · Next sync in{' '}
+                                {untilLabel(data.sync.nextSyncAt, now)}
+                            </span>
+                        ) : null}
                     </div>
                 </div>
                 <div className="ml-auto flex items-center gap-2">
@@ -186,16 +209,29 @@ export function AnalyticsMonitor({
                     </h2>
                     <div className="space-y-4">
                         {[
-                            ['Facebook', facebook?.reach ?? 0],
-                            ['Instagram', instagram?.reach ?? 0],
-                        ].map(([label, reach]) => (
-                            <div key={String(label)}>
+                            {
+                                label: 'Facebook',
+                                reach: facebook?.reach ?? null,
+                                dot: 'bg-sky-400',
+                            },
+                            {
+                                label: 'Instagram',
+                                reach: instagram?.reach ?? null,
+                                dot: 'bg-pink-400',
+                            },
+                        ].map((platform) => (
+                            <div key={platform.label}>
                                 <div className="mb-1 flex justify-between text-xs">
-                                    <span className="text-slate-400">
-                                        {label}
+                                    <span className="flex items-center gap-1.5 text-slate-400">
+                                        <span
+                                            className={`h-1.5 w-1.5 rounded-full ${platform.dot}`}
+                                        />
+                                        {platform.label}
                                     </span>
                                     <span className="font-bold text-white">
-                                        {number(Number(reach))}
+                                        {platform.reach === null
+                                            ? '—'
+                                            : number(platform.reach)}
                                     </span>
                                 </div>
                                 <div className="h-2 overflow-hidden rounded-full bg-slate-950">
@@ -203,7 +239,11 @@ export function AnalyticsMonitor({
                                         className="h-full rounded-full bg-indigo-500"
                                         style={{
                                             width: `${
-                                                (Number(reach) / maxReach) * 100
+                                                platform.reach === null
+                                                    ? 0
+                                                    : (platform.reach /
+                                                          maxReach) *
+                                                      100
                                             }%`,
                                         }}
                                     />
@@ -228,12 +268,16 @@ export function AnalyticsMonitor({
                                     key={`${post.postId}-${post.platform}`}
                                     className="flex items-center gap-3 rounded-xl border border-white/5 bg-slate-950/40 p-2"
                                 >
-                                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                                    <img
-                                        src={post.mediaUrl}
-                                        alt=""
-                                        className="h-10 w-10 rounded-lg object-cover"
-                                    />
+                                    {post.mediaUrl ? (
+                                        // eslint-disable-next-line @next/next/no-img-element
+                                        <img
+                                            src={post.mediaUrl}
+                                            alt=""
+                                            className="h-10 w-10 rounded-lg object-cover"
+                                        />
+                                    ) : (
+                                        <div className="h-10 w-10 rounded-lg bg-slate-800" />
+                                    )}
                                     <div className="min-w-0 flex-1">
                                         <div className="truncate text-xs font-bold text-white">
                                             {post.pageName} · {post.platform}
@@ -241,12 +285,26 @@ export function AnalyticsMonitor({
                                         <div className="text-[10px] text-slate-500">
                                             {formatIstDateTime(
                                                 post.publishedAt
-                                            )}{' '}
-                                            ·{' '}
+                                            )}
                                             {formatElapsed(
                                                 post.publishedAt,
                                                 now
-                                            )}
+                                            ) ? (
+                                                <>
+                                                    {' '}
+                                                    ·{' '}
+                                                    {formatElapsed(
+                                                        post.publishedAt,
+                                                        now
+                                                    )}
+                                                </>
+                                            ) : null}
+                                        </div>
+                                        <div className="text-[10px] text-slate-600">
+                                            Reach{' '}
+                                            {number(post.metrics?.reach)} ·
+                                            Interactions{' '}
+                                            {number(post.metrics?.interactions)}
                                         </div>
                                     </div>
                                     <div className="text-right text-xs font-bold text-emerald-300">

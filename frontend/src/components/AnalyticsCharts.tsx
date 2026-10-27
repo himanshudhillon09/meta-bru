@@ -59,17 +59,17 @@ export function AnalyticsBarChart({
     return (
         <div className="w-full">
             <div
-                className="flex items-end gap-1 overflow-x-auto pb-2"
+                className="flex items-stretch gap-1 overflow-x-auto pb-2"
                 style={{ height }}
             >
                 {data.map((item, index) => (
                     <div
                         key={`${item.label}-${index}`}
-                        className="flex min-w-2 flex-1 flex-col items-center justify-end gap-1"
+                        className="flex h-full min-w-2 flex-1 flex-col items-center justify-end gap-1"
                     >
-                        <div className="relative flex h-full w-full items-end justify-center gap-0.5">
+                        <div className="relative flex w-full flex-1 items-end justify-center gap-0.5">
                             <div
-                                className="w-2 rounded-t bg-indigo-500/80"
+                                className="max-w-2 flex-1 rounded-t bg-indigo-500/80"
                                 style={{
                                     height: `${(item.value / max) * 100}%`,
                                 }}
@@ -77,7 +77,7 @@ export function AnalyticsBarChart({
                             />
                             {item.secondary !== undefined ? (
                                 <div
-                                    className="w-2 rounded-t bg-emerald-500/70"
+                                    className="max-w-2 flex-1 rounded-t bg-emerald-500/70"
                                     style={{
                                         height: `${(item.secondary / max) * 100}%`,
                                     }}
@@ -134,7 +134,7 @@ export function AnalyticsLineChart({
         );
     }
     const width = 600;
-    const max = Math.max(1, ...points.map((point) => point.value));
+    const max = Math.max(1, ...points.map((point) => point.value)) * 1.1;
     const step = width / (points.length - 1);
     const path = points
         .map((point, index) => {
@@ -149,10 +149,11 @@ export function AnalyticsLineChart({
         <div className="w-full">
             <svg
                 viewBox={`0 0 ${width} ${height}`}
-                className="w-full"
+                preserveAspectRatio="none"
+                className="w-full overflow-visible"
                 style={{ height }}
                 role="img"
-                aria-label="Engagement over time"
+                aria-label="Analytics series over time"
             >
                 {[0.25, 0.5, 0.75].map((fraction) => (
                     <line
@@ -172,6 +173,7 @@ export function AnalyticsLineChart({
                     strokeWidth="3"
                     strokeLinejoin="round"
                     strokeLinecap="round"
+                    vectorEffect="non-scaling-stroke"
                 />
                 <path
                     d={`${path} L ${width} ${height} L 0 ${height} Z`}
@@ -189,10 +191,10 @@ export function AnalyticsLineChart({
                     fill={color}
                 />
             </svg>
-            <div className="mt-1 flex justify-between text-[10px] text-slate-600">
+            <div className="mt-1 flex flex-wrap justify-between gap-1 text-[10px] text-slate-600">
                 <span>{points[0]?.label}</span>
                 <span>
-                    Latest: {lastPoint.value}
+                    Latest: {lastPoint.value.toLocaleString('en-IN')}
                     {valueSuffix}
                 </span>
                 <span>{lastPoint.label}</span>
