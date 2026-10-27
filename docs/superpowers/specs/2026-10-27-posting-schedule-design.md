@@ -118,7 +118,7 @@ The frontend has its own copy of `suggestDailyTimes` and the validation checks f
 ### Scheduler
 
 - `ensureSchedules` and `advance` call `computeNextSlot(connection.dailyTimes, connection.timezone, now)`.
-- If a stored schedule or timezone is invalid, the scheduler does not stop. That Page falls back to `computeNextSlot(['09:00'], 'Asia/Kolkata', now)`, logs the problem, and stores a `lastError` such as `Saved posting schedule is invalid. Open Connections and save it again.`
+- If a stored schedule or timezone is invalid, the scheduler does not stop. That Page falls back to `09:00` in the app default timezone (`APP_DEFAULT_TIMEZONE`, `Asia/Kolkata` by default) and stores the `lastError` `Saved posting schedule is invalid. Open Connections and save it again.`
 - The existing 24-hour fallback for unexpected errors stays.
 
 ### Connection controller
@@ -152,11 +152,13 @@ When `PATCH /api/auth/profile` changes `timezone`:
 
 The profile response includes how many Pages were rescheduled. If the connection update fails after the user saved, return an error stating that the Profile saved but Pages were not rescheduled. The next scheduler start realigns them through the migration.
 
-Put the sync logic in `scheduleService` (`syncConnectionTimezones(userId, timezone, now)`) so the profile controller stays thin and the logic is testable.
+Put the sync logic in `scheduleSyncService` (`syncConnectionTimezones(userId, timezone, now)`) so the profile controller stays thin and the logic is testable. `scheduleService` stays free of database access so the connection model can import its rules.
+
+The sync only touches connections whose `timezone` differs from the new one. Saving the same timezone again is a no-op and never pushes a due slot back. The profile controller therefore runs it whenever a profile save includes `timezone`, which also retries a sync that failed earlier.
 
 ### Startup migration
 
-`migrateConnectionSchedules()` runs after the database connects and before `startScheduler()`. It is idempotent.
+`migrateConnectionSchedules()` lives in `scheduleSyncService`. It runs after the database connects and before `startScheduler()`, and it is idempotent. A migration failure stops server start, like a database connection failure.
 
 1. Copy legacy schedules. For connections without `dailyTimes` or with an empty array, use the native collection with an update pipeline:
    - `dailyTimes` = `[dailyTime]`, or `['09:00']` when `dailyTime` is missing.
