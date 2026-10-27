@@ -4,7 +4,10 @@ import assert from 'node:assert/strict';
 process.env.JWT_SECRET = 'test-jwt-secret-that-is-at-least-32-chars';
 process.env.TOKEN_ENCRYPTION_KEY = '0123456789abcdef'.repeat(4);
 
-const { syncConnectionTimezones } = await import('./scheduleSyncService.js');
+const { migrateConnectionSchedules, syncConnectionTimezones } = await import(
+    './scheduleSyncService.js'
+);
+const { User } = await import('../models/userModel.js');
 const { SocialConnection } = await import('../models/socialConnectionModel.js');
 
 type MockableModel = Record<string, (...args: unknown[]) => unknown>;
@@ -91,5 +94,56 @@ test('does nothing when every Page already uses the timezone', async () => {
     const rescheduled = await syncConnectionTimezones(USER_ID, 'Asia/Kolkata', NOW);
 
     assert.equal(rescheduled, 0);
+    assert.equal(updates.length, 0);
+});
+
+function mockMigration(options: { copied: number; pages: unknown[] }) {
+    const collectionCalls: Array<{ filter: unknown; update: unknown }> = [];
+    mock.method(
+        SocialConnection.collection as unknown as MockableModel,
+        'updateMany',
+        async (filter: unknown, update: unknown) => {
+            collectionCalls.push({ filter, update });
+            return { modifiedCount: collectionCalls.length === 1 ? options.copied : 0 };
+        }
+    );
+    mock.method(User as unknown as MockableModel, 'find', () => ({
+        select: async () => [{ _id: USER_ID, timezone: 'Asia/Kolkata' }],
+    }));
+    const { updates } = mockConnections(options.pages);
+    return { collectionCalls, updates };
+}
+
+test('migration copies legacy times and aligns timezones', async () => {
+    const { collectionCalls, updates } = mockMigration({ copied: 2, pages: [page()] });
+
+    const result = await migrateConnectionSchedules(NOW);
+
+    assert.deepEqual(result, { copied: 2, rescheduled: 1 });
+    assert.deepEqual(collectionCalls[0], {
+        filter: {
+            $or: [
+                { dailyTimes: { $exists: false } },
+                { dailyTimes: { $size: 0 } },
+            ],
+        },
+        update: [
+            { $set: { dailyTimes: [{ $ifNull: ['$dailyTime', '09:00'] }] } },
+            { $unset: 'dailyTime' },
+        ],
+    });
+    assert.deepEqual(collectionCalls[1], {
+        filter: { dailyTime: { $exists: true } },
+        update: { $unset: { dailyTime: '' } },
+    });
+    assert.equal(updates[0]?.set.timezone, 'Asia/Kolkata');
+});
+
+test('running the migration again changes nothing', async () => {
+    const { updates } = mockMigration({ copied: 0, pages: [] });
+
+    const result = await migrateConnectionSchedules(NOW);
+
+    assert.deepEqual(result, { copied: 0, rescheduled: 0 });
     assert.equal(updates.length, 0);
 });

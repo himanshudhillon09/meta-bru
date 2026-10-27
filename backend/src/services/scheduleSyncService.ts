@@ -1,6 +1,11 @@
 import { SocialConnection } from '../models/socialConnectionModel.js';
+import { User } from '../models/userModel.js';
 import { STALE_LOCK_MS } from './connectionLifecycleService.js';
-import { nextSlotOrFallback } from './scheduleService.js';
+import {
+    DEFAULT_DAILY_TIME,
+    DEFAULT_TIMEZONE,
+    nextSlotOrFallback,
+} from './scheduleService.js';
 
 /**
  * Moves every Page the user owns onto their Profile timezone and returns how
@@ -38,4 +43,46 @@ export async function syncConnectionTimezones(
         );
     }
     return rescheduled;
+}
+
+/**
+ * One-time upgrade from a single `dailyTime` to `dailyTimes`, plus aligning
+ * every Page with its owner's Profile timezone. Safe to run on every start.
+ */
+export async function migrateConnectionSchedules(
+    now: Date = new Date()
+): Promise<{ copied: number; rescheduled: number }> {
+    // Uses the native collection because `dailyTime` is no longer in the schema.
+    const copied = await SocialConnection.collection.updateMany(
+        {
+            $or: [
+                { dailyTimes: { $exists: false } },
+                { dailyTimes: { $size: 0 } },
+            ],
+        },
+        [
+            {
+                $set: {
+                    dailyTimes: [{ $ifNull: ['$dailyTime', DEFAULT_DAILY_TIME] }],
+                },
+            },
+            { $unset: 'dailyTime' },
+        ]
+    );
+    await SocialConnection.collection.updateMany(
+        { dailyTime: { $exists: true } },
+        { $unset: { dailyTime: '' } }
+    );
+
+    let rescheduled = 0;
+    const users = await User.find({}).select('timezone');
+    for (const user of users) {
+        rescheduled += await syncConnectionTimezones(
+            String(user._id),
+            user.timezone || DEFAULT_TIMEZONE,
+            now
+        );
+    }
+
+    return { copied: copied.modifiedCount, rescheduled };
 }

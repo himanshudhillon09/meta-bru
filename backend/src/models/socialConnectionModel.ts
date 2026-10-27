@@ -20,8 +20,6 @@ export interface ISocialConnection extends mongoose.Document {
     pageAccessTokenEnc: string;
     tokenStatus: ConnectionTokenStatus;
     instagram: IInstagramAccount | null;
-    /** Legacy single posting time. Removed after the schedule migration. */
-    dailyTime: string;
     /** Sorted daily posting times (HH:mm) in `timezone`. */
     dailyTimes: string[];
     timezone: string;
@@ -66,11 +64,6 @@ const socialConnectionSchema = new mongoose.Schema<ISocialConnection>(
             default: 'active',
         },
         instagram: { type: instagramSchema, default: null },
-        dailyTime: {
-            type: String,
-            default: '09:00',
-            match: [/^([01]\d|2[0-3]):[0-5]\d$/, 'dailyTime must be HH:mm'],
-        },
         dailyTimes: {
             type: [
                 {
