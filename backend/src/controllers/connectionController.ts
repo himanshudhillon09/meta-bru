@@ -24,7 +24,13 @@ import {
     type MetaPageAccount,
     type MetaPermissionStatus,
 } from '../services/metaService.js';
-import { computeNextRunAt, isValidTimezone } from '../services/timeService.js';
+import {
+    DEFAULT_DAILY_TIME,
+    computeNextSlot,
+    nextSlotOrFallback,
+    normalizeDailyTimes,
+} from '../services/scheduleService.js';
+import { isValidTimezone } from '../services/timeService.js';
 import { AppError } from '../utils/errors.js';
 import { parseBody } from '../utils/validation.js';
 
@@ -37,11 +43,9 @@ const completeOAuthSchema = z.object({
 });
 
 const updateConnectionSchema = z.object({
-    dailyTime: z
-        .string()
-        .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'dailyTime must be HH:mm')
-        .optional(),
-    timezone: z.string().min(1).max(64).optional(),
+    // normalizeDailyTimes enforces the 1–10 limit with a clear message; the
+    // caps here only bound the request size.
+    dailyTimes: z.array(z.string().max(16)).max(50).optional(),
     publishToFacebook: z.boolean().optional(),
     publishToInstagram: z.boolean().optional(),
     isActive: z.boolean().optional(),
@@ -95,17 +99,10 @@ export async function startMetaOAuth(req: Request, res: Response): Promise<void>
     const meta = await getMetaCredentials(req.user.id);
     const redirectUri = resolveMetaRedirectUri(req);
 
-    const requestedTimezone = req.query.timezone;
-    const timezone =
-        typeof requestedTimezone === 'string' && isValidTimezone(requestedTimezone)
-            ? requestedTimezone
-            : env.defaultTimezone;
-
     const state = jwt.sign(
         {
             id: req.user.id,
             purpose: 'meta_oauth',
-            timezone,
             appId: meta.appId,
             redirectUri,
         },
@@ -157,12 +154,15 @@ export async function upsertPagesForUser(
         if (existing) {
             const hadInstagram = Boolean(existing.instagram?.id);
             const previousStatus = existing.tokenStatus;
+            const timezoneChanged = existing.timezone !== timezone;
 
             existing.pageName = page.name;
             existing.pageAccessTokenEnc = encryptSecret(page.access_token);
             existing.tokenStatus = 'active';
             existing.tokenUpdatedAt = now;
             existing.grantedScopes = grantedScopes ?? [];
+            // Pages always post in the owner's Profile timezone.
+            existing.timezone = timezone;
             existing.instagram = instagram;
             existing.lastError = '';
 
@@ -179,17 +179,17 @@ export async function upsertPagesForUser(
                 shouldRecomputeScheduleOnReconnect(
                     previousStatus,
                     existing.isActive
-                )
+                ) ||
+                timezoneChanged ||
+                !existing.nextRunAt
             ) {
-                existing.nextRunAt = computeNextRunAt(
-                    existing.dailyTime,
-                    existing.timezone
+                const slot = nextSlotOrFallback(
+                    existing.dailyTimes,
+                    timezone,
+                    now
                 );
-            } else if (!existing.nextRunAt) {
-                existing.nextRunAt = computeNextRunAt(
-                    existing.dailyTime,
-                    existing.timezone
-                );
+                existing.nextRunAt = slot.nextRunAt;
+                existing.lastError = slot.error;
             }
 
             await existing.save();
@@ -204,11 +204,11 @@ export async function upsertPagesForUser(
                 tokenUpdatedAt: now,
                 grantedScopes: grantedScopes ?? [],
                 instagram,
-                dailyTime: '09:00',
+                dailyTimes: [DEFAULT_DAILY_TIME],
                 timezone,
                 publishToFacebook: true,
                 publishToInstagram: Boolean(instagram),
-                nextRunAt: computeNextRunAt('09:00', timezone),
+                nextRunAt: computeNextSlot([DEFAULT_DAILY_TIME], timezone, now),
             });
             summary.added.push(page.name);
         }
@@ -283,7 +283,6 @@ export async function completeMetaOAuth(req: Request, res: Response): Promise<vo
     let decoded: {
         id?: string;
         purpose?: string;
-        timezone?: string;
         appId?: string;
         redirectUri?: string;
     };
@@ -308,7 +307,7 @@ export async function completeMetaOAuth(req: Request, res: Response): Promise<vo
         );
     }
 
-    const user = await User.findById(req.user.id).select('isActive');
+    const user = await User.findById(req.user.id).select('isActive timezone');
     if (!user?.isActive) {
         throw new AppError(403, 'Your account is inactive', 'ACCOUNT_INACTIVE');
     }
@@ -394,9 +393,10 @@ export async function completeMetaOAuth(req: Request, res: Response): Promise<vo
             );
         }
 
+        // Pages always post in the owner's Profile timezone.
         const timezone =
-            decoded.timezone && isValidTimezone(decoded.timezone)
-                ? decoded.timezone
+            user.timezone && isValidTimezone(user.timezone)
+                ? user.timezone
                 : env.defaultTimezone;
 
         const summary = await upsertPagesForUser(
@@ -431,13 +431,15 @@ export async function completeMetaOAuth(req: Request, res: Response): Promise<vo
 export async function updateConnection(req: Request, res: Response): Promise<void> {
     const parsed = parseBody(updateConnectionSchema, req);
     const connection = await findOwnedConnection(String(req.params.id), req.user.id);
+    const wasActive = connection.isActive;
 
-    if (parsed.timezone && !isValidTimezone(parsed.timezone)) {
-        throw new AppError(400, 'Invalid IANA timezone', 'INVALID_TIMEZONE');
+    let scheduleChanged = false;
+    if (parsed.dailyTimes !== undefined) {
+        const dailyTimes = normalizeDailyTimes(parsed.dailyTimes);
+        scheduleChanged =
+            dailyTimes.join(',') !== [...(connection.dailyTimes ?? [])].join(',');
+        connection.dailyTimes = dailyTimes;
     }
-
-    if (parsed.dailyTime !== undefined) connection.dailyTime = parsed.dailyTime;
-    if (parsed.timezone !== undefined) connection.timezone = parsed.timezone;
     if (parsed.publishToFacebook !== undefined) {
         connection.publishToFacebook = parsed.publishToFacebook;
     }
@@ -463,16 +465,12 @@ export async function updateConnection(req: Request, res: Response): Promise<voi
 
     if (!connection.isActive || connection.tokenStatus !== 'active') {
         connection.nextRunAt = null;
-    } else if (
-        parsed.dailyTime !== undefined ||
-        parsed.timezone !== undefined ||
-        parsed.isActive === true ||
-        !connection.nextRunAt
-    ) {
-        connection.nextRunAt = computeNextRunAt(
-            connection.dailyTime,
-            connection.timezone
-        );
+    } else if (scheduleChanged || !wasActive || !connection.nextRunAt) {
+        // Recompute only when something changed. Recomputing an unchanged
+        // schedule could push a slot that is due right now to the next one.
+        const slot = nextSlotOrFallback(connection.dailyTimes, connection.timezone);
+        connection.nextRunAt = slot.nextRunAt;
+        if (slot.error) connection.lastError = slot.error;
     }
 
     await connection.save();

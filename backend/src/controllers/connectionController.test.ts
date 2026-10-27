@@ -331,7 +331,7 @@ test('listConnections includes queued counts and redacts the token', async () =>
 test('updateConnection clears the schedule when paused', async () => {
     const connection = connectionDoc({
         isActive: true,
-        dailyTime: '09:00',
+        dailyTimes: ['09:00'],
         timezone: 'UTC',
         nextRunAt: new Date('2026-10-24T09:00:00.000Z'),
         publishToFacebook: true,
@@ -363,7 +363,7 @@ test('upsertPagesForUser keeps existing Pages and reports what the login covered
         pageName: 'Old Name',
         tokenStatus: 'needs_reauth',
         isActive: true,
-        dailyTime: '10:30',
+        dailyTimes: ['10:30'],
         timezone: 'Asia/Kolkata',
         publishToFacebook: true,
         publishToInstagram: true,
@@ -417,13 +417,17 @@ test('upsertPagesForUser keeps existing Pages and reports what the login covered
     assert.equal(save.mock.callCount(), 1);
     assert.equal(existing.tokenStatus, 'active');
     assert.equal(existing.lastError, '');
-    assert.equal(existing.dailyTime, '10:30');
+    assert.deepEqual(existing.dailyTimes, ['10:30']);
+    // Reconnected after needs_reauth: next slot is 10:30 IST tomorrow.
+    assert.deepEqual(existing.nextRunAt, new Date('2026-10-28T05:00:00.000Z'));
     assert.equal(existing.publishToInstagram, true);
     assert.deepEqual(existing.tokenUpdatedAt, now);
     assert.deepEqual(existing.grantedScopes, scopes);
 
     assert.equal(created.length, 1);
     assert.equal(created[0]?.pageId, 'page-new');
+    assert.deepEqual(created[0]?.dailyTimes, ['09:00']);
+    assert.equal(created[0]?.timezone, 'Asia/Kolkata');
     assert.deepEqual(created[0]?.tokenUpdatedAt, now);
     assert.deepEqual(created[0]?.grantedScopes, scopes);
 
@@ -452,4 +456,109 @@ test('upsertPagesForUser stores unknown scopes as empty', async () => {
 
     assert.deepEqual(created[0]?.grantedScopes, []);
     assert.deepEqual(summary.notIncluded, []);
+});
+
+function scheduledConnection(overrides: Record<string, unknown> = {}) {
+    const connection = connectionDoc({
+        isActive: true,
+        dailyTimes: ['09:00'],
+        timezone: 'Asia/Kolkata',
+        nextRunAt: new Date('2026-10-28T03:30:00.000Z'),
+        publishToFacebook: true,
+        publishToInstagram: false,
+        instagram: null,
+        lastError: '',
+        ...overrides,
+    });
+    const save = mock.fn(async () => connection);
+    connection.save = save;
+    mock.method(socialConnection, 'findOne', async () => connection);
+    mock.method(post, 'countDocuments', async () => 0);
+    return { connection, save };
+}
+
+function istClock(date: Date): string {
+    return new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Asia/Kolkata',
+        hour: '2-digit',
+        minute: '2-digit',
+        hourCycle: 'h23',
+    }).format(date);
+}
+
+test('updateConnection saves sorted times and moves the next slot', async () => {
+    const { connection } = scheduledConnection();
+    const previous = connection.nextRunAt;
+
+    const { res } = response();
+    await updateConnection(
+        requestWithBody({ dailyTimes: ['21:00', '15:00'] }),
+        res
+    );
+
+    assert.deepEqual(connection.dailyTimes, ['15:00', '21:00']);
+    assert.ok(connection.nextRunAt instanceof Date);
+    assert.notEqual(connection.nextRunAt, previous);
+    assert.ok(['15:00', '21:00'].includes(istClock(connection.nextRunAt as Date)));
+});
+
+test('updateConnection rejects an invalid schedule without saving', async () => {
+    const { save } = scheduledConnection();
+
+    await assert.rejects(
+        updateConnection(
+            requestWithBody({ dailyTimes: ['14:00', '14:10'] }),
+            response().res
+        ),
+        (error: unknown) =>
+            (error as AppError).code === 'INVALID_SCHEDULE' &&
+            (error as AppError).message ===
+                'Times must be at least 15 minutes apart (14:00 and 14:10).'
+    );
+    assert.equal(save.mock.callCount(), 0);
+});
+
+test('updateConnection keeps the next slot when the schedule is unchanged', async () => {
+    const { connection } = scheduledConnection();
+    const previous = connection.nextRunAt;
+
+    await updateConnection(
+        requestWithBody({ dailyTimes: ['09:00'], isActive: true }),
+        response().res
+    );
+
+    assert.equal(connection.nextRunAt, previous);
+});
+
+test('upsertPagesForUser moves a reconnected Page to the Profile timezone', async () => {
+    // 01:00 UTC is 06:30 in Asia/Kolkata.
+    const now = new Date('2026-10-27T01:00:00.000Z');
+    const existing = connectionDoc({
+        pageId: 'page-old',
+        pageName: 'Byte Horizon',
+        tokenStatus: 'active',
+        isActive: true,
+        dailyTimes: ['09:00'],
+        timezone: 'UTC',
+        publishToFacebook: true,
+        publishToInstagram: false,
+        instagram: null,
+        nextRunAt: new Date('2026-10-27T09:00:00.000Z'),
+        lastError: '',
+    });
+    existing.save = async () => existing;
+
+    mock.method(socialConnection, 'findOne', async () => existing);
+    mock.method(socialConnection, 'find', () => ({ select: async () => [] }));
+
+    await upsertPagesForUser(
+        USER_ID,
+        [{ id: 'page-old', name: 'Byte Horizon', access_token: 'token' }],
+        'Asia/Kolkata',
+        [],
+        now
+    );
+
+    assert.equal(existing.timezone, 'Asia/Kolkata');
+    assert.deepEqual(existing.nextRunAt, new Date('2026-10-27T03:30:00.000Z'));
 });
