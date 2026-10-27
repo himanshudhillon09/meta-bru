@@ -1,19 +1,101 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { AppShell } from '@/components/AppShell';
 import { ConnectionCard } from '@/components/ConnectionCard';
+import { Modal } from '@/components/Modal';
 import { useAuth } from '@/context/AuthContext';
 import { connectionsApi } from '@/lib/apiClient';
-import type { SocialConnection } from '@/lib/types';
+import type { MetaLoginResult, SocialConnection } from '@/lib/types';
+
+// The Meta login leaves the app, so remember where the user came from in
+// session storage. Only known in-app pages are accepted.
+const RETURN_TO_KEY = 'metaBru.connections.returnTo';
+const RETURN_LABELS: Record<string, string> = {
+    '/analytics': 'Back to Analytics',
+    '/composer': 'Back to Composer',
+    '/queue': 'Back to Queue',
+};
+
+function safeReturnTo(value: string | null): string | null {
+    return value && RETURN_LABELS[value] ? value : null;
+}
+
+function readReturnTo(): string | null {
+    try {
+        return safeReturnTo(window.sessionStorage.getItem(RETURN_TO_KEY));
+    } catch {
+        return null;
+    }
+}
+
+function writeReturnTo(value: string | null): void {
+    try {
+        if (value) window.sessionStorage.setItem(RETURN_TO_KEY, value);
+        else window.sessionStorage.removeItem(RETURN_TO_KEY);
+    } catch {
+        // Storage can be unavailable; the link back is only a convenience.
+    }
+}
+
+function loginSummary(result: MetaLoginResult): {
+    notice: string;
+    warnings: string[];
+} {
+    const added = result.added ?? [];
+    const reconnected = result.reconnected ?? [];
+    const parts: string[] = [];
+    if (added.length > 0) parts.push(`Added ${added.join(', ')}.`);
+    if (reconnected.length > 0) {
+        parts.push(`Refreshed access for ${reconnected.join(', ')}.`);
+    }
+    if (parts.length === 0) {
+        const count = Number(result.connected || 0);
+        parts.push(`${count} Page${count === 1 ? '' : 's'} connected.`);
+    }
+    parts.push(
+        reconnected.length > 0
+            ? 'Schedules, queued posts, and analytics history were kept.'
+            : 'Set the daily time and targets below.'
+    );
+
+    const warnings: string[] = [];
+    const notIncluded = result.notIncluded ?? [];
+    if (notIncluded.length > 0) {
+        const one = notIncluded.length === 1;
+        warnings.push(
+            `Facebook left ${notIncluded.join(', ')} out of this login. If you unticked ${
+                one ? 'it' : 'them'
+            }, Facebook removed Meta-Bru's access, so scheduled posts and insights for ${
+                one ? 'that Page' : 'those Pages'
+            } will fail. Connect again and keep every Page selected. ${
+                one ? 'Its' : 'Their'
+            } settings and history are still saved here.`
+        );
+    }
+    const notGranted = result.notGranted ?? [];
+    if (notGranted.length > 0) {
+        warnings.push(
+            `Facebook did not grant ${notGranted.join(', ')}. Publishing or insights that need ${
+                notGranted.length === 1 ? 'it' : 'them'
+            } will fail until you connect again and allow every permission.`
+        );
+    }
+
+    return { notice: parts.join(' '), warnings };
+}
 
 export default function ConnectionsPage() {
     const { user } = useAuth();
     const [connections, setConnections] = useState<SocialConnection[]>([]);
     const [loading, setLoading] = useState(true);
     const [connecting, setConnecting] = useState(false);
+    const [guideOpen, setGuideOpen] = useState(false);
     const [error, setError] = useState('');
     const [notice, setNotice] = useState('');
+    const [warnings, setWarnings] = useState<string[]>([]);
+    const [returnTo, setReturnTo] = useState<string | null>(null);
     const completionStarted = useRef(false);
 
     useEffect(() => {
@@ -23,8 +105,12 @@ export default function ConnectionsPage() {
         );
         const connected = params.get('connected');
         const oauthError = params.get('error');
+        const requestedReturn = safeReturnTo(params.get('returnTo'));
         const code = hashParams.get('code');
         const state = hashParams.get('state');
+
+        if (requestedReturn) writeReturnTo(requestedReturn);
+        setReturnTo(readReturnTo());
 
         if (connected) {
             setNotice(
@@ -37,7 +123,7 @@ export default function ConnectionsPage() {
         }
 
         // Remove the one-time OAuth code from the address bar and history.
-        if (connected || oauthError || code || state) {
+        if (connected || oauthError || code || state || requestedReturn) {
             window.history.replaceState({}, '', '/connections');
         }
 
@@ -63,14 +149,13 @@ export default function ConnectionsPage() {
 
             void (async () => {
                 try {
-                    const data: any = await connectionsApi.complete({
+                    const data = await connectionsApi.complete({
                         code,
                         state,
                     });
-                    const count = Number(data.connected || 0);
-                    setNotice(
-                        `${count} Page${count === 1 ? '' : 's'} connected. Set the daily time and targets below.`
-                    );
+                    const summary = loginSummary(data);
+                    setNotice(summary.notice);
+                    setWarnings(summary.warnings);
                 } catch (err: any) {
                     setNotice('');
                     setError(
@@ -139,25 +224,88 @@ export default function ConnectionsPage() {
         );
     };
 
+    const leave = () => {
+        writeReturnTo(null);
+    };
+
+    const connectedPageNames = connections
+        .filter((connection) => connection.tokenStatus !== 'disconnected')
+        .map((connection) => connection.pageName);
+
     return (
         <AppShell
             title="Connections"
             subtitle="Connect the Facebook Pages and Instagram accounts this workspace can publish to."
             actions={
                 <button
-                    onClick={connect}
+                    onClick={() => setGuideOpen(true)}
                     disabled={connecting}
                     className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all"
                 >
-                    {connecting ? 'Connecting...' : 'Connect Facebook Page'}
+                    {connecting
+                        ? 'Connecting...'
+                        : connections.length > 0
+                          ? 'Add or reconnect Pages'
+                          : 'Connect Facebook Page'}
                 </button>
             }
         >
+            <Modal
+                isOpen={guideOpen}
+                onClose={() => setGuideOpen(false)}
+                onConfirm={() => void connect()}
+                title="Before you continue to Facebook"
+                message="Facebook will ask which Pages and Instagram accounts Meta-Bru can use, then which permissions to allow."
+                confirmText="Continue to Facebook"
+            >
+                <ul className="space-y-2 text-sm text-slate-300 list-disc pl-5">
+                    {connectedPageNames.length > 0 ? (
+                        <li>
+                            Keep every Page you already use selected (
+                            {connectedPageNames.join(', ')}), or choose{' '}
+                            <strong className="text-white">
+                                all current and future Pages
+                            </strong>
+                            . Facebook removes Meta-Bru&apos;s access to any
+                            Page you untick.
+                        </li>
+                    ) : null}
+                    <li>Select any new Page and its Instagram account.</li>
+                    <li>
+                        Leave every permission switched on, including
+                        insights, so analytics can load.
+                    </li>
+                    {connectedPageNames.length > 0 ? (
+                        <li>
+                            Existing Pages are updated in place. Schedules,
+                            queued posts, and analytics history stay saved.
+                        </li>
+                    ) : null}
+                </ul>
+            </Modal>
+
             {notice ? (
-                <div className="mb-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
-                    {notice}
+                <div className="mb-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <span>{notice}</span>
+                    {returnTo && !connecting ? (
+                        <Link
+                            href={returnTo}
+                            onClick={leave}
+                            className="self-start sm:self-auto shrink-0 rounded-xl bg-emerald-500/15 px-4 py-2 text-xs font-bold text-emerald-200 hover:bg-emerald-500/25"
+                        >
+                            {RETURN_LABELS[returnTo]}
+                        </Link>
+                    ) : null}
                 </div>
             ) : null}
+            {warnings.map((warning) => (
+                <div
+                    key={warning}
+                    className="mb-6 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-200"
+                >
+                    {warning}
+                </div>
+            ))}
             {error ? (
                 <div className="mb-6 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
                     {error}
@@ -179,7 +327,7 @@ export default function ConnectionsPage() {
                         it automatically.
                     </p>
                     <button
-                        onClick={connect}
+                        onClick={() => setGuideOpen(true)}
                         disabled={connecting}
                         className="mt-6 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white px-6 py-3 rounded-xl text-sm font-bold transition-all"
                     >
@@ -194,6 +342,7 @@ export default function ConnectionsPage() {
                             connection={connection}
                             onUpdated={updateConnection}
                             onDisconnected={disconnectConnection}
+                            onReconnect={() => setGuideOpen(true)}
                         />
                     ))}
                 </div>

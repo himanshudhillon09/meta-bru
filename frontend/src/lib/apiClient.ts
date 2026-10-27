@@ -4,6 +4,7 @@ import type {
     AnalyticsPostsResponse,
     AnalyticsTipsResponse,
     DeleteMediaResult,
+    MetaLoginResult,
     StorageOverview,
 } from './types';
 
@@ -197,7 +198,10 @@ export const connectionsApi = {
     start: (timezone?: string) =>
         api.get(`/connections/meta/start${timezone ? `?timezone=${encodeURIComponent(timezone)}` : ''}`),
     complete: (data: { code: string; state: string }) =>
-        api.post('/connections/meta/complete', data),
+        api.post<{ success: boolean } & MetaLoginResult>(
+            '/connections/meta/complete',
+            data
+        ),
     update: (connectionId: string, data: any) =>
         api.patch(`/connections/${connectionId}`, data),
     disconnect: (connectionId: string) =>

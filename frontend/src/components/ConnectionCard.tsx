@@ -16,12 +16,15 @@ interface ConnectionCardProps {
     connection: SocialConnection;
     onUpdated: (connection: SocialConnection) => void;
     onDisconnected: (connection: SocialConnection) => void;
+    /** Opens the shared Meta login guide; one login refreshes every Page. */
+    onReconnect: () => void;
 }
 
 export function ConnectionCard({
     connection,
     onUpdated,
     onDisconnected,
+    onReconnect,
 }: ConnectionCardProps) {
     const [dailyTime, setDailyTime] = useState(connection.dailyTime);
     const [timezone, setTimezone] = useState(connection.timezone);
@@ -73,15 +76,6 @@ export function ConnectionCard({
             setError(typeof err === 'string' ? err : 'Could not save changes');
         } finally {
             setSaving(false);
-        }
-    };
-
-    const reconnect = async () => {
-        try {
-            const data: any = await connectionsApi.start(timezone);
-            if (data.url) window.location.href = data.url;
-        } catch (err: any) {
-            setError(typeof err === 'string' ? err : 'Could not start Meta login');
         }
     };
 
@@ -154,7 +148,7 @@ export function ConnectionCard({
 
                 {isDisconnected ? (
                     <button
-                        onClick={reconnect}
+                        onClick={onReconnect}
                         className="self-start text-xs font-bold text-indigo-300 hover:text-indigo-200 px-3 py-2 rounded-lg hover:bg-indigo-500/10 transition-all"
                     >
                         Reconnect
@@ -176,7 +170,7 @@ export function ConnectionCard({
                         account that manages it to resume.
                     </span>
                     <button
-                        onClick={reconnect}
+                        onClick={onReconnect}
                         className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl text-xs font-black"
                     >
                         Reconnect
@@ -191,7 +185,7 @@ export function ConnectionCard({
                         scheduled posting.
                     </span>
                     <button
-                        onClick={reconnect}
+                        onClick={onReconnect}
                         className="bg-amber-500 hover:bg-amber-400 text-slate-950 px-4 py-2 rounded-xl text-xs font-black"
                     >
                         Reconnect
