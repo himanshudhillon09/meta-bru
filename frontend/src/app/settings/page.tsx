@@ -306,10 +306,14 @@ export default function SettingsPage() {
             if (data.success) {
                 updateUser(data.user);
                 setCurrentPassword('');
+                const rescheduled = Number(data.rescheduledPages) || 0;
                 setNotice(
-                    emailChanged
+                    (emailChanged
                         ? 'Profile saved. Use your new email next time you sign in.'
-                        : 'Profile saved.'
+                        : 'Profile saved.') +
+                        (rescheduled > 0
+                            ? ` Rescheduled ${rescheduled} Page${rescheduled === 1 ? '' : 's'}.`
+                            : '')
                 );
             }
         } catch (err: any) {
@@ -603,8 +607,8 @@ export default function SettingsPage() {
                                 ))}
                             </select>
                             <p className="text-xs text-slate-500 mt-2">
-                                Used for new Pages. Each connection can override
-                                its own timezone.
+                                Every Page posts at its scheduled times in this
+                                timezone. Changing it reschedules all Pages.
                             </p>
                         </div>
                     </div>
