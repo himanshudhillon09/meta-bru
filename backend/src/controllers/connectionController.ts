@@ -119,11 +119,26 @@ export async function startMetaOAuth(req: Request, res: Response): Promise<void>
     });
 }
 
-async function upsertPagesForUser(
+export interface MetaLoginSummary {
+    added: string[];
+    reconnected: string[];
+    /** Connected Pages that Meta did not return for this login. */
+    notIncluded: string[];
+}
+
+export async function upsertPagesForUser(
     userId: string,
     pages: MetaPageAccount[],
-    timezone: string
-): Promise<void> {
+    timezone: string,
+    grantedScopes: string[] | null,
+    now: Date = new Date()
+): Promise<MetaLoginSummary> {
+    const summary: MetaLoginSummary = {
+        added: [],
+        reconnected: [],
+        notIncluded: [],
+    };
+
     for (const page of pages) {
         const instagram = page.instagram_business_account
             ? {
@@ -146,6 +161,8 @@ async function upsertPagesForUser(
             existing.pageName = page.name;
             existing.pageAccessTokenEnc = encryptSecret(page.access_token);
             existing.tokenStatus = 'active';
+            existing.tokenUpdatedAt = now;
+            existing.grantedScopes = grantedScopes ?? [];
             existing.instagram = instagram;
             existing.lastError = '';
 
@@ -176,6 +193,7 @@ async function upsertPagesForUser(
             }
 
             await existing.save();
+            summary.reconnected.push(page.name);
         } else {
             await SocialConnection.create({
                 userId,
@@ -183,6 +201,8 @@ async function upsertPagesForUser(
                 pageName: page.name,
                 pageAccessTokenEnc: encryptSecret(page.access_token),
                 tokenStatus: 'active',
+                tokenUpdatedAt: now,
+                grantedScopes: grantedScopes ?? [],
                 instagram,
                 dailyTime: '09:00',
                 timezone,
@@ -190,8 +210,21 @@ async function upsertPagesForUser(
                 publishToInstagram: Boolean(instagram),
                 nextRunAt: computeNextRunAt('09:00', timezone),
             });
+            summary.added.push(page.name);
         }
     }
+
+    // Meta only returns the Pages picked in the consent dialog. Pages left out
+    // keep their settings, queue, and history here, but Meta may have removed
+    // the app's access to them, so the user needs to know which ones.
+    const notIncluded = await SocialConnection.find({
+        userId,
+        pageId: { $nin: pages.map((page) => page.id) },
+        tokenStatus: { $ne: 'disconnected' },
+    }).select('pageName');
+    summary.notIncluded = notIncluded.map((connection) => connection.pageName);
+
+    return summary;
 }
 
 export async function metaOAuthCallback(req: Request, res: Response): Promise<void> {
@@ -366,8 +399,24 @@ export async function completeMetaOAuth(req: Request, res: Response): Promise<vo
                 ? decoded.timezone
                 : env.defaultTimezone;
 
-        await upsertPagesForUser(req.user.id, pages, timezone);
-        res.json({ success: true, connected: pages.length });
+        const summary = await upsertPagesForUser(
+            req.user.id,
+            pages,
+            timezone,
+            permissions?.granted ?? null
+        );
+        res.json({
+            success: true,
+            connected: pages.length,
+            ...summary,
+            // Requested permissions the user did not grant in this login.
+            // Empty when Meta did not report permission status.
+            notGranted: permissions
+                ? env.meta.scopes.filter(
+                      (scope) => !permissions.granted.includes(scope)
+                  )
+                : [],
+        });
     } catch (error) {
         if (error instanceof AppError) throw error;
         console.error('[meta-oauth] Completion failed:', error);

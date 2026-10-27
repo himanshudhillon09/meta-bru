@@ -32,6 +32,29 @@ export interface PublishedTarget {
     mediaUrl: string;
     postStatus: PostStatus;
     instagramUsername: string;
+    /** When the Page token was last stored by a Meta login, if known. */
+    tokenUpdatedAt: Date | null;
+    /** Permissions Meta granted at that login. Empty when unknown. */
+    grantedScopes: string[];
+}
+
+export interface PermissionErrorSummary {
+    connectionId: string;
+    pageName: string;
+    /** The first platform that reported the error for this Page. */
+    platform: Platform;
+    platforms: Platform[];
+    /** Meta's own error message, sanitized. */
+    error: string;
+    /** Insight permissions the last Meta login did not grant. */
+    missingScopes: string[];
+    /**
+     * True when reconnecting is expected to fix the error: the Page has not
+     * been reconnected since insights were added, or a permission is missing.
+     * False when Meta still refuses after a full reconnect, which needs a Meta
+     * app or Page-role fix instead.
+     */
+    reconnectRequired: boolean;
 }
 
 export interface AnalyticsSummary {
@@ -78,6 +101,16 @@ export interface MonitorPoint {
 
 const MAX_POST_PAGE = 10_000;
 
+/** Permissions Meta requires to read insights for each platform. */
+export const INSIGHT_SCOPES: Record<Platform, string[]> = {
+    facebook: ['pages_read_engagement', 'read_insights'],
+    instagram: [
+        'instagram_basic',
+        'instagram_manage_insights',
+        'pages_read_engagement',
+    ],
+};
+
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const BLOCK_LABELS = [
     '00:00–03:00 IST',
@@ -92,6 +125,29 @@ const BLOCK_LABELS = [
 
 export function targetKey(postId: string, platform: Platform): string {
     return `${postId}:${platform}`;
+}
+
+/**
+ * A snapshot captured before the Page's latest Meta login describes the old
+ * token. Its errors no longer apply and it should be refreshed.
+ */
+export function snapshotPredatesToken(
+    snapshot: { capturedAt: Date },
+    target: Pick<PublishedTarget, 'tokenUpdatedAt'>
+): boolean {
+    return Boolean(
+        target.tokenUpdatedAt && snapshot.capturedAt < target.tokenUpdatedAt
+    );
+}
+
+export function missingInsightScopes(
+    target: Pick<PublishedTarget, 'grantedScopes' | 'platform'>
+): string[] {
+    const granted = target.grantedScopes ?? [];
+    if (granted.length === 0) return [];
+    return INSIGHT_SCOPES[target.platform].filter(
+        (scope) => !granted.includes(scope)
+    );
 }
 
 export function latestSnapshotsByTarget(
@@ -439,6 +495,8 @@ interface ConnectionLike {
     pageName?: string;
     pageId?: string;
     instagram?: { username?: string } | null;
+    tokenUpdatedAt?: Date | null;
+    grantedScopes?: string[];
 }
 
 function rawConnectionId(post: PostLike): unknown {
@@ -483,6 +541,8 @@ function targetsFromPost(
             mediaUrl: post.mediaUrl || '',
             postStatus: post.status || 'published',
             instagramUsername: connection?.instagram?.username || '',
+            tokenUpdatedAt: connection?.tokenUpdatedAt ?? null,
+            grantedScopes: connection?.grantedScopes ?? [],
         });
     }
     return targets;
@@ -496,7 +556,10 @@ export async function loadPublishedTargets(
     const posts = await Post.find(
         buildPublishedTargetsQuery(userId, range, filters) as QueryFilter<IPost>
     )
-        .populate('connectionId', 'pageName pageId instagram userId')
+        .populate(
+            'connectionId',
+            'pageName pageId instagram userId tokenUpdatedAt grantedScopes'
+        )
         .sort({ publishedAt: -1 });
 
     const targets: PublishedTarget[] = [];
@@ -600,6 +663,8 @@ export function buildPublishedTargetsPagePipeline(
                                         pageId: 1,
                                         instagram: 1,
                                         userId: 1,
+                                        tokenUpdatedAt: 1,
+                                        grantedScopes: 1,
                                     },
                                 },
                             ],
@@ -772,28 +837,50 @@ export function monitorSeriesTruncated(targets: PublishedTarget[]): boolean {
 export function uniquePermissionErrors(
     targets: PublishedTarget[],
     latest: Map<string, IPostMetricSnapshot>
-): Array<{ connectionId: string; pageName: string; platform: Platform }> {
-    const targetKeys = new Set(
-        targets.map((target) => targetKey(target.postId, target.platform))
+): PermissionErrorSummary[] {
+    const targetsByKey = new Map(
+        targets.map((target) => [targetKey(target.postId, target.platform), target])
     );
-    const seen = new Set<string>();
-    const errors: Array<{ connectionId: string; pageName: string; platform: Platform }> = [];
+    const byConnection = new Map<string, PermissionErrorSummary>();
     for (const [key, snapshot] of latest) {
-        if (!targetKeys.has(key)) continue;
+        const target = targetsByKey.get(key);
+        if (!target) continue;
         if (snapshot.status !== 'permission_error') continue;
+        // The Page was reconnected after this error was recorded, so the error
+        // belongs to the old token. The next sync re-checks it.
+        if (snapshotPredatesToken(snapshot, target)) continue;
+
         const connectionId = String(snapshot.connectionId);
-        // A Page shares one connection across Facebook and Instagram. Dedupe by
-        // connection so one reconnect action is surfaced once, keeping the first
-        // encountered snapshot's platform for that Page.
-        if (seen.has(connectionId)) continue;
-        seen.add(connectionId);
-        errors.push({
+        const missingScopes = missingInsightScopes(target);
+        const existing = byConnection.get(connectionId);
+        // A Page shares one connection across Facebook and Instagram. Report
+        // it once, keeping the first encountered snapshot's platform.
+        if (existing) {
+            if (!existing.platforms.includes(snapshot.platform)) {
+                existing.platforms.push(snapshot.platform);
+            }
+            existing.error = existing.error || snapshot.error || '';
+            for (const scope of missingScopes) {
+                if (!existing.missingScopes.includes(scope)) {
+                    existing.missingScopes.push(scope);
+                }
+            }
+            existing.reconnectRequired =
+                !target.tokenUpdatedAt || existing.missingScopes.length > 0;
+            continue;
+        }
+        byConnection.set(connectionId, {
             connectionId,
             pageName: snapshot.pageName,
             platform: snapshot.platform,
+            platforms: [snapshot.platform],
+            error: snapshot.error || '',
+            missingScopes,
+            reconnectRequired:
+                !target.tokenUpdatedAt || missingScopes.length > 0,
         });
     }
-    return errors;
+    return [...byConnection.values()];
 }
 
 export function lastSyncedAt(
@@ -819,7 +906,11 @@ function staleCount(
     const before = Date.now() - minutes * 60_000;
     return targets.filter((target) => {
         const snapshot = latest.get(targetKey(target.postId, target.platform));
-        return !snapshot || snapshot.capturedAt.getTime() < before;
+        return (
+            !snapshot ||
+            snapshot.capturedAt.getTime() < before ||
+            snapshotPredatesToken(snapshot, target)
+        );
     }).length;
 }
 
@@ -1004,6 +1095,13 @@ export async function getAnalyticsPosts(
             ),
             targets: postTargets.map((target) => {
                 const snapshot = latest.get(targetKey(target.postId, target.platform));
+                const outdatedError =
+                    snapshot !== undefined &&
+                    snapshot.status === 'permission_error' &&
+                    snapshotPredatesToken(snapshot, target);
+                const status = outdatedError
+                    ? 'unavailable'
+                    : snapshot?.status || 'unavailable';
                 return {
                     platform: target.platform,
                     externalId: target.externalId,
@@ -1011,8 +1109,17 @@ export async function getAnalyticsPosts(
                     metrics: snapshot?.metrics ?? null,
                     availableMetrics: snapshot?.availableMetrics ?? [],
                     snapshotAt: snapshot?.capturedAt.toISOString() || null,
-                    status: snapshot?.status || 'unavailable',
-                    error: snapshot?.error || '',
+                    metricsAt: snapshot
+                        ? (snapshot.metricsCapturedAt ?? snapshot.capturedAt).toISOString()
+                        : null,
+                    status,
+                    error: outdatedError
+                        ? 'Page reconnected. Insights refresh on the next sync.'
+                        : snapshot?.error || '',
+                    reconnectRequired:
+                        status === 'permission_error' &&
+                        (!target.tokenUpdatedAt ||
+                            missingInsightScopes(target).length > 0),
                 };
             }),
         }))
@@ -1044,7 +1151,7 @@ export function buildRuleBasedTips(input: {
     byPlatform: { facebook: AnalyticsSummary; instagram: AnalyticsSummary };
     bestTimes: BestTimeBucket[];
     activity: ActivityBucket[];
-    permissionErrors: Array<{ pageName: string }>;
+    permissionErrors: Array<{ pageName: string; reconnectRequired?: boolean }>;
     posts: Array<{ caption: string; engagementRate: number | null }>;
     granularity: 'day' | 'week';
 }): RuleBasedTip[] {
@@ -1139,13 +1246,32 @@ export function buildRuleBasedTips(input: {
         });
     }
 
-    const pageNames = new Set(input.permissionErrors.map((error) => error.pageName));
-    if (pageNames.size > 0) {
-        const count = pageNames.size;
+    const reconnectPages = new Set(
+        input.permissionErrors
+            .filter((error) => error.reconnectRequired !== false)
+            .map((error) => error.pageName)
+    );
+    const blockedPages = new Set(
+        input.permissionErrors
+            .filter((error) => error.reconnectRequired === false)
+            .map((error) => error.pageName)
+    );
+    if (reconnectPages.size > 0) {
+        const count = reconnectPages.size;
         tips.push({
             id: 'permissions',
             title: 'Reconnect to unlock reach data',
             body: `${count} Page${count === 1 ? '' : 's'} ${count === 1 ? 'needs' : 'need'} insight permission. Reconnect to load complete engagement data.`,
+            severity: 'warning',
+            actionLabel: 'Open connections',
+            actionHref: '/connections',
+        });
+    } else if (blockedPages.size > 0) {
+        const count = blockedPages.size;
+        tips.push({
+            id: 'permissions',
+            title: 'Meta is still blocking insights',
+            body: `${count} Page${count === 1 ? ' was' : 's were'} reconnected, but Meta still refuses insights. Check the Meta app permissions and your Page access; the banner above shows Meta's exact message.`,
             severity: 'warning',
             actionLabel: 'Open connections',
             actionHref: '/connections',

@@ -326,8 +326,13 @@ export function PostTrackerCalendar({
                                                 {target.status ===
                                                 'permission_error' ? (
                                                     <div className="mt-2 text-[10px] text-amber-300">
-                                                        Reconnect this Page to
-                                                        load insights.
+                                                        {target.reconnectRequired !==
+                                                        false
+                                                            ? 'Reconnect this Page to load insights.'
+                                                            : 'Meta is blocking insights for this post.'}
+                                                        {target.error
+                                                            ? ` Meta says: ${target.error}`
+                                                            : ''}
                                                     </div>
                                                 ) : null}
                                             </div>

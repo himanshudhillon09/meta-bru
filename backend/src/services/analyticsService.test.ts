@@ -480,6 +480,8 @@ test('builds a paginated published-targets pipeline scoped by user', () => {
         pageId: 1,
         instagram: 1,
         userId: 1,
+        tokenUpdatedAt: 1,
+        grantedScopes: 1,
     });
 });
 
@@ -1474,4 +1476,176 @@ test('uses the unique post count for publishing frequency', () => {
         postsPerBucket: 0.5,
         postsPerActiveBucket: 0.5,
     });
+});
+
+test('ignores permission errors recorded before the Page was reconnected', () => {
+    const targets = [
+        target({ tokenUpdatedAt: new Date('2026-10-24T10:00:00.000Z') }),
+    ] as never[];
+    const latest = new Map([
+        [
+            'post-1:facebook',
+            snapshot({
+                status: 'permission_error',
+                capturedAt: new Date('2026-10-24T09:00:00.000Z'),
+            }),
+        ],
+    ]) as never;
+
+    assert.deepEqual(uniquePermissionErrors(targets, latest), []);
+});
+
+test('only asks for a reconnect when reconnecting can fix the permission error', () => {
+    const errorSnapshot = (platform: string) =>
+        snapshot({
+            platform,
+            status: 'permission_error',
+            error: '(#10) Application does not have permission for this action',
+            capturedAt: new Date('2026-10-24T11:00:00.000Z'),
+        });
+    const allScopes = [
+        'pages_read_engagement',
+        'read_insights',
+        'instagram_basic',
+        'instagram_manage_insights',
+    ];
+    const reconnectedAt = new Date('2026-10-24T10:00:00.000Z');
+
+    const never = uniquePermissionErrors(
+        [target()] as never[],
+        new Map([['post-1:facebook', errorSnapshot('facebook')]]) as never
+    );
+    assert.equal(never[0]?.reconnectRequired, true);
+
+    const missing = uniquePermissionErrors(
+        [
+            target({
+                tokenUpdatedAt: reconnectedAt,
+                grantedScopes: ['pages_read_engagement'],
+            }),
+        ] as never[],
+        new Map([['post-1:facebook', errorSnapshot('facebook')]]) as never
+    );
+    assert.equal(missing[0]?.reconnectRequired, true);
+    assert.deepEqual(missing[0]?.missingScopes, ['read_insights']);
+
+    const blocked = uniquePermissionErrors(
+        [
+            target({ tokenUpdatedAt: reconnectedAt, grantedScopes: allScopes }),
+            target({
+                platform: 'instagram',
+                tokenUpdatedAt: reconnectedAt,
+                grantedScopes: allScopes,
+            }),
+        ] as never[],
+        new Map([
+            ['post-1:facebook', errorSnapshot('facebook')],
+            ['post-1:instagram', errorSnapshot('instagram')],
+        ]) as never
+    );
+    assert.equal(blocked.length, 1);
+    assert.equal(blocked[0]?.reconnectRequired, false);
+    assert.deepEqual(blocked[0]?.platforms, ['facebook', 'instagram']);
+    assert.equal(
+        blocked[0]?.error,
+        '(#10) Application does not have permission for this action'
+    );
+});
+
+test('marks outdated permission errors on posts as waiting for a sync', async (t) => {
+    t.after(() => mock.restoreAll());
+    const range = analyticsRange('2026-10-01', '2026-10-31');
+    const reconnectedAt = new Date('2026-10-12T09:00:00.000Z');
+    const connection = {
+        _id: CONNECTION_ID,
+        pageName: 'Page One',
+        pageId: 'page-1',
+        instagram: { username: 'pageone' },
+        tokenUpdatedAt: reconnectedAt,
+        grantedScopes: [],
+    };
+    mockPostAggregate(() => [
+        {
+            metadata: [{ total: 1 }],
+            data: [
+                post({
+                    _id: POST_1,
+                    connection,
+                    publishedAt: new Date('2026-10-10T09:00:00.000Z'),
+                    targets: [
+                        {
+                            platform: 'facebook',
+                            status: 'published',
+                            externalId: 'external-1',
+                            publishedAt: new Date('2026-10-10T09:00:00.000Z'),
+                        },
+                        {
+                            platform: 'instagram',
+                            status: 'published',
+                            externalId: 'external-2',
+                            publishedAt: new Date('2026-10-10T09:00:00.000Z'),
+                        },
+                    ],
+                }),
+            ],
+        },
+    ]);
+    mockSnapshotAggregate([
+        snapshot({
+            postId: POST_1,
+            platform: 'facebook',
+            status: 'permission_error',
+            error: '(#10) old token',
+            capturedAt: new Date('2026-10-11T09:00:00.000Z'),
+        }),
+        snapshot({
+            postId: POST_1,
+            platform: 'instagram',
+            status: 'permission_error',
+            error: '(#10) still blocked',
+            capturedAt: new Date('2026-10-13T09:00:00.000Z'),
+            metricsCapturedAt: new Date('2026-10-09T09:00:00.000Z'),
+        }),
+    ]);
+
+    const result = await getAnalyticsPosts(USER_ID, range, {}, 1, 25);
+    const [facebook, instagram] = result.posts[0]?.targets ?? [];
+    assert.equal(facebook?.status, 'unavailable');
+    assert.match(facebook?.error || '', /reconnected/i);
+    assert.equal(facebook?.reconnectRequired, false);
+    assert.equal(facebook?.metricsAt, '2026-10-11T09:00:00.000Z');
+
+    assert.equal(instagram?.status, 'permission_error');
+    assert.equal(instagram?.error, '(#10) still blocked');
+    // Reconnected with unknown scopes: reconnecting again will not help.
+    assert.equal(instagram?.reconnectRequired, false);
+    assert.equal(instagram?.metricsAt, '2026-10-09T09:00:00.000Z');
+});
+
+test('separates reconnect tips from permission errors a reconnect cannot fix', () => {
+    const base = {
+        summary: summary({ posts: 1, facebookPosts: 1 }),
+        byPlatform: { facebook: summary({ posts: 1 }), instagram: summary() },
+        bestTimes: [],
+        activity: [],
+        posts: [],
+        granularity: 'day' as const,
+    };
+
+    const blocked = buildRuleBasedTips({
+        ...base,
+        permissionErrors: [{ pageName: 'Page One', reconnectRequired: false }],
+    });
+    assert.equal(blocked[0]?.id, 'permissions');
+    assert.equal(blocked[0]?.title, 'Meta is still blocking insights');
+
+    const reconnect = buildRuleBasedTips({
+        ...base,
+        permissionErrors: [
+            { pageName: 'Page One', reconnectRequired: false },
+            { pageName: 'Page Two', reconnectRequired: true },
+        ],
+    });
+    assert.equal(reconnect[0]?.title, 'Reconnect to unlock reach data');
+    assert.match(reconnect[0]?.body || '', /1 Page needs/);
 });

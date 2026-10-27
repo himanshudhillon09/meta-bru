@@ -962,3 +962,101 @@ test('runs Meta fetches with concurrency 3', async (t) => {
     assert.equal(result.failed, 0);
     assert.equal(maxInFlight, 3);
 });
+
+test('re-selects fresh snapshots taken before the Page was reconnected', () => {
+    const reconnectedAt = new Date(FIXED_NOW.getTime() - 2 * 60_000);
+    const targets = [
+        staleTarget('reconnected', '2026-10-20T09:00:00.000Z', {
+            tokenUpdatedAt: reconnectedAt,
+        }),
+        staleTarget('untouched', '2026-10-21T09:00:00.000Z'),
+    ];
+    // Both snapshots are only five minutes old, inside the stale window.
+    const capturedAt = new Date(FIXED_NOW.getTime() - 5 * 60_000);
+    const latest = new Map([
+        ['reconnected:facebook', { capturedAt }],
+        ['untouched:facebook', { capturedAt }],
+    ]);
+
+    assert.deepEqual(
+        selectStaleTargets(targets, latest, 'stale', FIXED_NOW).map(
+            (target) => target.postId
+        ),
+        ['reconnected']
+    );
+});
+
+test('keeps the last reported metrics when a sync returns none', async (t) => {
+    t.after(() => mock.restoreAll());
+
+    const previousCapturedAt = new Date('2026-10-22T09:00:00.000Z');
+    mockTargets([facebookOnlyPost()]);
+    mockLatestSnapshots([
+        {
+            postId: POST_ID,
+            platform: 'facebook',
+            capturedAt: previousCapturedAt,
+            metricsCapturedAt: null,
+            metrics: metrics({ likes: 42 }),
+            availableMetrics: ['likes', 'reach'],
+            status: 'ok',
+        },
+    ]);
+    mockConnections([connection()]);
+    const writes = mockSnapshotWrites(null);
+
+    await syncAnalytics(
+        USER_ID,
+        analyticsRange('2026-10-01', '2026-10-31'),
+        {},
+        'stale',
+        {
+            fetchFacebook: async () =>
+                insight({
+                    metrics: metrics({
+                        likes: null,
+                        comments: null,
+                        shares: null,
+                        saves: null,
+                        reach: null,
+                        views: null,
+                        clicks: null,
+                        interactions: null,
+                        engagementRate: null,
+                    }),
+                    availableMetrics: [],
+                    status: 'permission_error',
+                    error: '(#10) blocked',
+                }),
+            now: () => FIXED_NOW,
+        }
+    );
+
+    const write = writes.create[0];
+    assert.ok(write);
+    assert.equal(write.status, 'permission_error');
+    assert.equal(write.error, '(#10) blocked');
+    assert.equal((write.metrics as { likes: number }).likes, 42);
+    assert.deepEqual(write.availableMetrics, ['likes', 'reach']);
+    assert.deepEqual(write.capturedAt, FIXED_NOW);
+    assert.deepEqual(write.metricsCapturedAt, previousCapturedAt);
+});
+
+test('stamps fresh metrics with the capture time', async (t) => {
+    t.after(() => mock.restoreAll());
+
+    mockTargets([facebookOnlyPost()]);
+    mockLatestSnapshots([]);
+    mockConnections([connection()]);
+    const writes = mockSnapshotWrites(null);
+
+    await syncAnalytics(
+        USER_ID,
+        analyticsRange('2026-10-01', '2026-10-31'),
+        {},
+        'stale',
+        { fetchFacebook: async () => insight(), now: () => FIXED_NOW }
+    );
+
+    assert.deepEqual(writes.create[0]?.metricsCapturedAt, FIXED_NOW);
+});

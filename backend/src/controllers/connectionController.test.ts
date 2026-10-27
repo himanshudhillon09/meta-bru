@@ -6,9 +6,12 @@ import type { AppError } from '../utils/errors.js';
 process.env.JWT_SECRET = 'test-jwt-secret-that-is-at-least-32-chars';
 process.env.TOKEN_ENCRYPTION_KEY = '0123456789abcdef'.repeat(4);
 
-const { disconnectConnection, listConnections, updateConnection } = await import(
-    './connectionController.js'
-);
+const {
+    disconnectConnection,
+    listConnections,
+    updateConnection,
+    upsertPagesForUser,
+} = await import('./connectionController.js');
 const { SocialConnection } = await import('../models/socialConnectionModel.js');
 const { Post } = await import('../models/postModel.js');
 
@@ -351,4 +354,102 @@ test('updateConnection clears the schedule when paused', async () => {
     const returned = body.connection as Record<string, unknown>;
     assert.equal(returned.queuedCount, 1);
     assert.equal('pageAccessTokenEnc' in returned, false);
+});
+
+test('upsertPagesForUser keeps existing Pages and reports what the login covered', async () => {
+    const now = new Date('2026-10-27T07:00:00.000Z');
+    const existing = connectionDoc({
+        pageId: 'page-old',
+        pageName: 'Old Name',
+        tokenStatus: 'needs_reauth',
+        isActive: true,
+        dailyTime: '10:30',
+        timezone: 'Asia/Kolkata',
+        publishToFacebook: true,
+        publishToInstagram: true,
+        instagram: { id: 'ig-1', username: 'old', profilePictureUrl: '' },
+        nextRunAt: null,
+        lastError: 'Meta access token is invalid',
+        grantedScopes: [],
+        tokenUpdatedAt: null,
+    });
+    const save = mock.fn(async () => existing);
+    existing.save = save;
+
+    const created: Array<Record<string, unknown>> = [];
+    const findQueries: Array<Record<string, unknown>> = [];
+    mock.method(socialConnection, 'findOne', async (query: unknown) =>
+        (query as { pageId: string }).pageId === 'page-old' ? existing : null
+    );
+    mock.method(socialConnection, 'create', async (data: unknown) => {
+        created.push(data as Record<string, unknown>);
+        return data;
+    });
+    mock.method(socialConnection, 'find', (query: unknown) => {
+        findQueries.push(query as Record<string, unknown>);
+        return { select: async () => [{ pageName: 'Left Out Page' }] };
+    });
+
+    const scopes = ['pages_show_list', 'read_insights'];
+    const summary = await upsertPagesForUser(
+        USER_ID,
+        [
+            {
+                id: 'page-old',
+                name: 'Byte Horizon',
+                access_token: 'new-token',
+                instagram_business_account: { id: 'ig-1', username: 'byte' },
+            },
+            { id: 'page-new', name: 'New Page', access_token: 'other-token' },
+        ],
+        'Asia/Kolkata',
+        scopes,
+        now
+    );
+
+    assert.deepEqual(summary, {
+        added: ['New Page'],
+        reconnected: ['Byte Horizon'],
+        notIncluded: ['Left Out Page'],
+    });
+
+    // The reconnected Page keeps its schedule and settings.
+    assert.equal(save.mock.callCount(), 1);
+    assert.equal(existing.tokenStatus, 'active');
+    assert.equal(existing.lastError, '');
+    assert.equal(existing.dailyTime, '10:30');
+    assert.equal(existing.publishToInstagram, true);
+    assert.deepEqual(existing.tokenUpdatedAt, now);
+    assert.deepEqual(existing.grantedScopes, scopes);
+
+    assert.equal(created.length, 1);
+    assert.equal(created[0]?.pageId, 'page-new');
+    assert.deepEqual(created[0]?.tokenUpdatedAt, now);
+    assert.deepEqual(created[0]?.grantedScopes, scopes);
+
+    assert.deepEqual(findQueries[0], {
+        userId: USER_ID,
+        pageId: { $nin: ['page-old', 'page-new'] },
+        tokenStatus: { $ne: 'disconnected' },
+    });
+});
+
+test('upsertPagesForUser stores unknown scopes as empty', async () => {
+    const created: Array<Record<string, unknown>> = [];
+    mock.method(socialConnection, 'findOne', async () => null);
+    mock.method(socialConnection, 'create', async (data: unknown) => {
+        created.push(data as Record<string, unknown>);
+        return data;
+    });
+    mock.method(socialConnection, 'find', () => ({ select: async () => [] }));
+
+    const summary = await upsertPagesForUser(
+        USER_ID,
+        [{ id: 'page-new', name: 'New Page', access_token: 'token' }],
+        'Asia/Kolkata',
+        null
+    );
+
+    assert.deepEqual(created[0]?.grantedScopes, []);
+    assert.deepEqual(summary.notIncluded, []);
 });

@@ -25,6 +25,11 @@ export interface IPostMetricSnapshot extends mongoose.Document {
     externalId: string;
     publishedAt: Date;
     capturedAt: Date;
+    /**
+     * When `metrics` were reported by Meta. Older than `capturedAt` when a
+     * failed sync kept the last known values. Null on legacy snapshots.
+     */
+    metricsCapturedAt: Date | null;
     metrics: IAnalyticsMetrics;
     availableMetrics: string[];
     status: SnapshotStatus;
@@ -75,6 +80,7 @@ const snapshotSchema = new mongoose.Schema<IPostMetricSnapshot>(
         externalId: { type: String, default: '' },
         publishedAt: { type: Date, required: true },
         capturedAt: { type: Date, required: true },
+        metricsCapturedAt: { type: Date, default: null },
         metrics: { type: metricsSchema, required: true, default: emptyAnalyticsMetrics },
         availableMetrics: { type: [String], required: true, default: [] },
         status: {

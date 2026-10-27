@@ -46,7 +46,7 @@ function numberOrNull(value: unknown): number | null {
     return null;
 }
 
-function metricValue(data: unknown, name: string): number | null {
+function insightEntry(data: unknown, name: string): InsightEntry | null {
     if (typeof data !== 'object' || data === null) return null;
     const entries = (data as { data?: unknown }).data;
     if (!Array.isArray(entries)) return null;
@@ -57,15 +57,58 @@ function metricValue(data: unknown, name: string): number | null {
             item !== null &&
             (item as InsightEntry).name === name
     );
+    return entry ?? null;
+}
+
+function firstInsightValue(entry: InsightEntry): unknown {
+    if (!Array.isArray(entry.values)) return undefined;
+    const firstValue = entry.values[0];
+    if (typeof firstValue !== 'object' || firstValue === null) return undefined;
+    return (firstValue as { value?: unknown }).value;
+}
+
+function metricValue(data: unknown, name: string): number | null {
+    const entry = insightEntry(data, name);
     if (!entry) return null;
 
     const total = numberOrNull(entry.total_value?.value);
     if (total !== null) return total;
+    return numberOrNull(firstInsightValue(entry));
+}
 
-    if (!Array.isArray(entry.values)) return null;
-    const firstValue = entry.values[0];
-    if (typeof firstValue !== 'object' || firstValue === null) return null;
-    return numberOrNull((firstValue as { value?: unknown }).value);
+/**
+ * Reads a metric whose value is a breakdown object, such as
+ * `{ like: 10, love: 2 }`. Meta omits zero keys, so a present object with a
+ * missing key means zero.
+ */
+function metricBreakdown(
+    data: unknown,
+    name: string
+): Record<string, number> | null {
+    const entry = insightEntry(data, name);
+    if (!entry) return null;
+
+    for (const candidate of [entry.total_value?.value, firstInsightValue(entry)]) {
+        if (
+            typeof candidate !== 'object' ||
+            candidate === null ||
+            Array.isArray(candidate)
+        ) {
+            continue;
+        }
+        const breakdown: Record<string, number> = {};
+        for (const [key, value] of Object.entries(candidate)) {
+            const number = numberOrNull(value);
+            if (number !== null) breakdown[key] = number;
+        }
+        return breakdown;
+    }
+    return null;
+}
+
+function breakdownTotal(breakdown: Record<string, number>): number | null {
+    const total = Object.values(breakdown).reduce((sum, value) => sum + value, 0);
+    return Number.isSafeInteger(total) ? total : null;
 }
 
 function isInvalidMetricError(error: unknown): boolean {
@@ -236,8 +279,12 @@ export async function fetchFacebookMetrics(
     request: GraphRequestFn = graphRequest
 ): Promise<NormalizedInsightMetrics> {
     const metrics = emptyAnalyticsMetrics();
-    let permissionError = false;
+    let fieldsFailed = false;
+    let fieldsPermissionError = false;
+    let insightsPermissionError = false;
+    let insightsSucceeded = false;
     let networkError = false;
+    let permissionMessage = '';
     let lastError = '';
 
     try {
@@ -245,7 +292,7 @@ export async function fetchFacebookMetrics(
             accessToken: pageToken,
             params: {
                 fields:
-                    'reactions.summary(total_count),comments.summary(total_count),shares',
+                    'reactions.limit(0).summary(total_count),comments.limit(0).summary(total_count),shares',
             },
         })) as {
             reactions?: { summary?: { total_count?: number | null } };
@@ -260,8 +307,11 @@ export async function fetchFacebookMetrics(
     } catch (error) {
         if (!(error instanceof MetaApiError)) throw error;
         if (isTokenError(error)) throw error;
-        if (isPermissionError(error)) permissionError = true;
-        else {
+        fieldsFailed = true;
+        if (isPermissionError(error)) {
+            fieldsPermissionError = true;
+            permissionMessage = errorMessage(error);
+        } else {
             if (isNetworkError(error)) networkError = true;
             lastError = errorMessage(error);
         }
@@ -282,12 +332,14 @@ export async function fetchFacebookMetrics(
             metrics.views = metricValue(data, 'post_media_view');
             metrics.reach = metricValue(data, 'post_total_media_view_unique');
             metrics.clicks = metricValue(data, 'post_clicks');
+            insightsSucceeded = true;
             break;
         } catch (error) {
             if (!(error instanceof MetaApiError)) throw error;
             if (isTokenError(error)) throw error;
             if (isPermissionError(error)) {
-                permissionError = true;
+                insightsPermissionError = true;
+                permissionMessage = permissionMessage || errorMessage(error);
                 break;
             }
             if (isMetricUnavailableError(error)) break;
@@ -299,6 +351,54 @@ export async function fetchFacebookMetrics(
         }
     }
 
+    // Reactions, comments, and shares on the post object can be blocked by
+    // Page permissions that insights do not need. When that request failed but
+    // insights work, read the same counts from post insights instead.
+    if (fieldsFailed && insightsSucceeded) {
+        const engagementLadders = [
+            'post_reactions_by_type_total,post_activity_by_action_type',
+            'post_reactions_by_type_total',
+        ];
+        for (const metric of engagementLadders) {
+            try {
+                const data = await request(`${postId}/insights`, {
+                    accessToken: pageToken,
+                    params: { metric, period: 'lifetime' },
+                });
+                const reactions = metricBreakdown(
+                    data,
+                    'post_reactions_by_type_total'
+                );
+                const activity = metricBreakdown(
+                    data,
+                    'post_activity_by_action_type'
+                );
+                if (reactions) metrics.likes = breakdownTotal(reactions);
+                else if (activity) metrics.likes = activity.like ?? 0;
+                if (activity) {
+                    metrics.comments = activity.comment ?? 0;
+                    metrics.shares = activity.share ?? 0;
+                }
+                break;
+            } catch (error) {
+                if (!(error instanceof MetaApiError)) throw error;
+                if (isTokenError(error)) throw error;
+                if (isMetricDataUnavailableError(error)) continue;
+                if (isInvalidMetricError(error)) continue;
+                break;
+            }
+        }
+    }
+
+    // A blocked fields request only counts as a permission failure when the
+    // insights fallback could not recover any engagement counts.
+    const engagementMissing =
+        metrics.likes === null &&
+        metrics.comments === null &&
+        metrics.shares === null;
+    const permissionError =
+        insightsPermissionError || (fieldsPermissionError && engagementMissing);
+
     return finalize(
         metrics,
         permissionError
@@ -306,7 +406,7 @@ export async function fetchFacebookMetrics(
             : networkError
               ? 'unavailable'
               : 'partial',
-        lastError,
+        permissionError ? permissionMessage : lastError,
         ['likes', 'comments', 'shares', 'reach', 'views', 'clicks']
     );
 }
@@ -319,6 +419,7 @@ export async function fetchInstagramMetrics(
     const metrics = emptyAnalyticsMetrics();
     let permissionError = false;
     let networkError = false;
+    let permissionMessage = '';
     let lastError = '';
     let ladderSucceeded = false;
     let terminalError = false;
@@ -349,6 +450,7 @@ export async function fetchInstagramMetrics(
             if (isTokenError(error)) throw error;
             if (isPermissionError(error)) {
                 permissionError = true;
+                permissionMessage = errorMessage(error);
                 terminalError = true;
                 break;
             }
@@ -372,8 +474,10 @@ export async function fetchInstagramMetrics(
         if (isMetricDataUnavailableError(error)) return;
         if (isInvalidMetricError(error)) return;
         if (!ladderSucceeded) {
-            if (isPermissionError(error)) permissionError = true;
-            else if (isNetworkError(error)) networkError = true;
+            if (isPermissionError(error)) {
+                permissionError = true;
+                permissionMessage = permissionMessage || errorMessage(error);
+            } else if (isNetworkError(error)) networkError = true;
         }
         lastError = errorMessage(error);
     };
@@ -420,7 +524,7 @@ export async function fetchInstagramMetrics(
             : networkError
               ? 'unavailable'
               : 'partial',
-        lastError,
+        permissionError ? permissionMessage || lastError : lastError,
         ['likes', 'comments', 'shares', 'saves', 'reach', 'views']
     );
 }

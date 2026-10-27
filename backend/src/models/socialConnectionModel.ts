@@ -24,6 +24,10 @@ export interface ISocialConnection extends mongoose.Document {
     lastRunAt: Date | null;
     lastError: string;
     lockedAt: Date | null;
+    /** When a Meta login last stored this Page's token. */
+    tokenUpdatedAt: Date | null;
+    /** App permissions Meta reported as granted at that login. Empty when unknown. */
+    grantedScopes: string[];
     createdAt: Date;
     updatedAt: Date;
 }
@@ -67,6 +71,8 @@ const socialConnectionSchema = new mongoose.Schema<ISocialConnection>(
         lastRunAt: { type: Date, default: null },
         lastError: { type: String, default: '' },
         lockedAt: { type: Date, default: null },
+        tokenUpdatedAt: { type: Date, default: null },
+        grantedScopes: { type: [String], default: [] },
     },
     { timestamps: true }
 );

@@ -27,6 +27,13 @@ function TargetMetrics({
     now: number;
 }) {
     const metrics = target.metrics;
+    // A failed sync keeps the last numbers Meta reported.
+    const keptValues = Boolean(
+        metrics &&
+            target.metricsAt &&
+            target.snapshotAt &&
+            target.metricsAt !== target.snapshotAt
+    );
     return (
         <div className="rounded-xl border border-white/5 bg-slate-950/40 p-3">
             <div className="flex flex-wrap items-center gap-2">
@@ -48,9 +55,30 @@ function TargetMetrics({
             </div>
             {target.status === 'permission_error' ? (
                 <div className="mt-2 text-xs text-amber-300">
-                    <Link href="/connections" className="underline">
-                        Reconnect for insights
-                    </Link>
+                    {target.reconnectRequired !== false ? (
+                        <Link
+                            href="/connections?returnTo=/analytics"
+                            className="underline"
+                        >
+                            Reconnect for insights
+                        </Link>
+                    ) : (
+                        <span>Meta is blocking insights for this post.</span>
+                    )}
+                    {target.error ? (
+                        <div className="mt-1 text-[10px] text-amber-200/80">
+                            Meta says: {target.error}
+                        </div>
+                    ) : null}
+                </div>
+            ) : null}
+            {keptValues ? (
+                <div className="mt-2 text-[10px] text-slate-500">
+                    Showing the last values Meta reported
+                    {formatElapsed(target.metricsAt, now)
+                        ? ` (${formatElapsed(target.metricsAt, now)})`
+                        : ''}
+                    .
                 </div>
             ) : null}
             {metrics ? (
