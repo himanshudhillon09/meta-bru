@@ -13,7 +13,28 @@ export interface User {
     isActive?: boolean;
     timezone?: string;
     brandProfile?: BrandProfile;
+    hasBrandLogo?: boolean;
     mustChangePassword?: boolean;
+}
+
+export interface BrandLogo {
+    dataUrl: string;
+    width: number;
+    height: number;
+    bytes: number;
+    updatedAt: string;
+}
+
+export interface BrandFramePreview {
+    label: string;
+    dataUrl: string;
+    width: number;
+    height: number;
+}
+
+export interface BrandLogoDetails {
+    logo: BrandLogo | null;
+    previews: BrandFramePreview[];
 }
 
 export interface RevealedCredentials {

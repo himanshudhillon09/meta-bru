@@ -1,4 +1,8 @@
-import type { DeleteMediaResult, StorageOverview } from './types';
+import type {
+    BrandLogoDetails,
+    DeleteMediaResult,
+    StorageOverview,
+} from './types';
 
 const BASE_URL = (
     process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api'
@@ -183,6 +187,18 @@ export const authApi = {
     saveGeminiCredentials: (data: { apiKey: string }) =>
         api.put('/auth/credentials/gemini', data),
     removeGeminiCredentials: () => api.delete('/auth/credentials/gemini'),
+    getBrandLogo: () =>
+        api.get<{ success: boolean } & BrandLogoDetails>('/auth/brand-logo'),
+    uploadBrandLogo: (file: File) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        return uploadRequest<{ success: boolean } & BrandLogoDetails>(
+            '/auth/brand-logo',
+            formData
+        );
+    },
+    removeBrandLogo: () =>
+        api.delete<{ success: boolean } & BrandLogoDetails>('/auth/brand-logo'),
 };
 
 export const connectionsApi = {

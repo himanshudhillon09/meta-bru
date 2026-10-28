@@ -10,6 +10,11 @@ Page and linked Instagram Business account.
 - Per-user Meta app, Cloudinary, and Gemini credentials entered under Profile
 - Encrypted credential and Page token storage (AES-256-GCM)
 - Cloudinary image hosting (Instagram requires a public image URL)
+- Every upload and AI image is resized to 1080px wide within Instagram's
+  4:5–1.91:1 feed range before it reaches Cloudinary, so posts are never
+  zoomed or letterboxed by Meta
+- Optional brand logo under Profile: new post images get a frame that matches
+  the photo, with the logo centred in the bottom border
 - Per-connection daily time and IANA timezone
 - FIFO queue with one automatic publish per connection per day
 - Immediate **Post now** and **Retry failed** actions
@@ -123,7 +128,9 @@ curl http://localhost:5001/api/health
 3. Save the Cloudinary cloud name, API key, and API secret. Uploads go under
    `meta-bru/<userId>` in that Cloudinary account.
 4. Save a Gemini API key for caption and image generation.
-5. Open **Connections** and connect a Facebook Page through Meta OAuth.
+5. Optionally upload a logo under **Profile → Post branding**. A PNG with a
+   transparent background works best. Without a logo, images are only resized.
+6. Open **Connections** and connect a Facebook Page through Meta OAuth.
 
 Changing or removing the Meta app credentials marks that user's existing Page
 connections as **Reconnect needed**. Changing Cloudinary or Gemini credentials
