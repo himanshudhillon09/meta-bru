@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
+import { preparePostImage } from '../services/brandLogoService.js';
 import { uploadImage as uploadToCloudinary } from '../services/cloudinaryService.js';
 import {
     deleteUserAssets,
@@ -22,7 +23,10 @@ export async function uploadMedia(req: Request, res: Response): Promise<void> {
         throw new AppError(400, 'No image file was uploaded', 'NO_FILE');
     }
 
-    const media = await uploadToCloudinary(req.user.id, req.file.buffer);
+    // Resize to feed limits (and frame with the user's logo) before upload, so
+    // Cloudinary only ever stores the exact image that will be published.
+    const image = await preparePostImage(req.user.id, req.file.buffer);
+    const media = await uploadToCloudinary(req.user.id, image);
 
     res.status(201).json({ success: true, media });
 }

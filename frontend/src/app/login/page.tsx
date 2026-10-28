@@ -33,6 +33,7 @@ export default function LoginPage() {
                     isActive: data.isActive,
                     timezone: data.timezone,
                     brandProfile: data.brandProfile,
+                    hasBrandLogo: Boolean(data.hasBrandLogo),
                     mustChangePassword: Boolean(data.mustChangePassword),
                 });
             }

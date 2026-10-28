@@ -51,6 +51,18 @@ const userSchema = new mongoose.Schema({
         keywords: { type: String, default: '' }
     },
     /**
+     * Normalised PNG logo embedded in the frame of every new post image.
+     * Stored here rather than in Cloudinary so the storage manager can never
+     * list it as an unused asset. The bytes are only selected when needed.
+     */
+    brandLogo: {
+        data: { type: Buffer, select: false },
+        width: { type: Number, default: 0 },
+        height: { type: Number, default: 0 },
+        bytes: { type: Number, default: 0 },
+        updatedAt: { type: Date, default: null }
+    },
+    /**
      * AES-256-GCM encrypted JSON blob containing the user's own Meta app
      * credentials, Cloudinary credentials, and Gemini API key. Never select
      * this field unless the credential service explicitly needs it.

@@ -8,6 +8,24 @@ import { useAuth } from '@/context/AuthContext';
 import { aiApi, connectionsApi, mediaApi, postsApi } from '@/lib/apiClient';
 import type { MediaAsset, SocialConnection } from '@/lib/types';
 
+const KNOWN_ASPECTS: Array<[string, number]> = [
+    ['4:5', 4 / 5],
+    ['1:1', 1],
+    ['4:3', 4 / 3],
+    ['3:2', 3 / 2],
+    ['16:9', 16 / 9],
+    ['1.91:1', 1.91],
+];
+
+function aspectLabel(width: number, height: number): string {
+    if (!width || !height) return '';
+    const ratio = width / height;
+    const known = KNOWN_ASPECTS.find(
+        ([, value]) => Math.abs(ratio - value) / value < 0.01
+    );
+    return known ? known[0] : `${ratio.toFixed(2)}:1`;
+}
+
 interface ComposerDraft {
     connectionId: string;
     caption: string;
@@ -510,6 +528,13 @@ export default function ComposerPage() {
                                     <div className="text-xs text-slate-500 mt-1">
                                         JPEG, PNG or WebP · max 10 MB
                                     </div>
+                                    <div className="text-[11px] text-slate-500 mt-2">
+                                        Auto-sized for the Instagram and Facebook feed
+                                        {user?.hasBrandLogo
+                                            ? ' and framed with your logo'
+                                            : ''}
+                                        .
+                                    </div>
                                 </label>
 
                                 <div className="rounded-2xl border border-white/5 bg-slate-950/40 px-4 py-4">
@@ -540,13 +565,27 @@ export default function ComposerPage() {
                                     />
                                     <div className="min-w-0 flex-1">
                                         <div className="text-xs font-bold text-white truncate">
-                                            {media.width} × {media.height} · {media.format.toUpperCase()}
+                                            {media.width} × {media.height}
+                                            {aspectLabel(media.width, media.height)
+                                                ? ` · ${aspectLabel(media.width, media.height)}`
+                                                : ''}{' '}
+                                            · {media.format.toUpperCase()}
                                         </div>
                                         <div className="text-[11px] text-slate-500 truncate">
                                             {media.publicId}
                                         </div>
                                         <div className="text-[11px] text-slate-500 mt-1">
-                                            Instagram receives an automatic JPEG version.
+                                            {user?.hasBrandLogo ? (
+                                                'Feed-sized with your logo frame.'
+                                            ) : (
+                                                <>
+                                                    Feed-sized for Instagram and Facebook.{' '}
+                                                    <Link href="/settings" className="text-indigo-400">
+                                                        Add a logo
+                                                    </Link>{' '}
+                                                    to frame new posts.
+                                                </>
+                                            )}
                                         </div>
                                     </div>
                                     <button
@@ -611,7 +650,7 @@ export default function ComposerPage() {
                                 <img
                                     src={media.url}
                                     alt=""
-                                    className="w-full aspect-square object-cover"
+                                    className="w-full h-auto"
                                 />
                             ) : (
                                 <div className="aspect-square flex items-center justify-center text-sm text-slate-600 bg-slate-900/40">

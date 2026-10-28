@@ -19,6 +19,7 @@ function publicUser(user: any) {
         isActive: user.isActive,
         timezone: user.timezone,
         brandProfile: user.brandProfile || {},
+        hasBrandLogo: Boolean(user.brandLogo?.updatedAt),
         mustChangePassword: Boolean(user.mustChangePassword),
     };
 }
@@ -141,6 +142,7 @@ export const loginUser = async (req: Request, res: Response) => {
                 isActive: user.isActive,
                 timezone: user.timezone,
                 brandProfile: user.brandProfile || {},
+                hasBrandLogo: Boolean(user.brandLogo?.updatedAt),
                 mustChangePassword: Boolean(user.mustChangePassword),
                 token: generateToken(
                     user._id.toString(),
