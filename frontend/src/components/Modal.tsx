@@ -11,6 +11,8 @@ interface ModalProps {
     confirmText?: string;
     cancelText?: string;
     type?: 'danger' | 'info' | 'success';
+    /** Extra content shown under the message. */
+    children?: React.ReactNode;
 }
 
 export const Modal: React.FC<ModalProps> = ({
@@ -21,7 +23,8 @@ export const Modal: React.FC<ModalProps> = ({
     message,
     confirmText = 'Confirm',
     cancelText = 'Cancel',
-    type = 'info'
+    type = 'info',
+    children,
 }) => {
     const [mounted, setMounted] = useState(false);
 
@@ -81,7 +84,8 @@ export const Modal: React.FC<ModalProps> = ({
                     </div>
 
                     <h3 className="text-2xl font-bold text-white mb-3 tracking-tight">{title}</h3>
-                    <p className="text-slate-400 leading-relaxed mb-8">{message}</p>
+                    <p className={`text-slate-400 leading-relaxed ${children ? 'mb-4' : 'mb-8'}`}>{message}</p>
+                    {children ? <div className="mb-8 w-full text-left">{children}</div> : null}
 
                     <div className="flex items-center gap-3 w-full">
                         <button

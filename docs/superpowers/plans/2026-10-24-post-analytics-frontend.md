@@ -108,6 +108,7 @@ export interface AnalyticsMonitor {
         facebook: AnalyticsMonitorPoint[];
         instagram: AnalyticsMonitorPoint[];
     };
+    seriesTruncated: boolean;
     recentPosts: Array<{
         postId: string;
         caption: string;
@@ -999,6 +1000,11 @@ export function AnalyticsMonitor({
                 <p className="mt-2 text-[11px] text-slate-500">
                     Meta insights can lag up to 48 hours. History builds while Live is on.
                 </p>
+                {data.seriesTruncated && (
+                    <p className="mt-1 text-[11px] text-amber-300">
+                        The chart shows the 100 most recent targets. Summary totals cover the full scope.
+                    </p>
+                )}
             </section>
 
             <div className="grid gap-5 lg:grid-cols-2">

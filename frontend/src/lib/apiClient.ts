@@ -1,6 +1,11 @@
 import type {
+    AnalyticsMonitor,
+    AnalyticsOverview,
+    AnalyticsPostsResponse,
+    AnalyticsTipsResponse,
     BrandLogoDetails,
     DeleteMediaResult,
+    MetaLoginResult,
     StorageOverview,
 } from './types';
 
@@ -209,10 +214,12 @@ export const authApi = {
 
 export const connectionsApi = {
     list: () => api.get('/connections'),
-    start: (timezone?: string) =>
-        api.get(`/connections/meta/start${timezone ? `?timezone=${encodeURIComponent(timezone)}` : ''}`),
+    start: () => api.get('/connections/meta/start'),
     complete: (data: { code: string; state: string }) =>
-        api.post('/connections/meta/complete', data),
+        api.post<{ success: boolean } & MetaLoginResult>(
+            '/connections/meta/complete',
+            data
+        ),
     update: (connectionId: string, data: any) =>
         api.patch(`/connections/${connectionId}`, data),
     disconnect: (connectionId: string) =>
@@ -252,6 +259,42 @@ export const adminApi = {
     overview: () => api.get('/admin/overview'),
     connections: () => api.get('/admin/connections'),
     posts: () => api.get('/admin/posts'),
+};
+
+export const analyticsApi = {
+    overview: (params: Record<string, string>) =>
+        api.get<{ success: boolean } & AnalyticsOverview>(
+            '/analytics/overview',
+            params
+        ),
+    monitor: (params: Record<string, string>) =>
+        api.get<{ success: boolean } & AnalyticsMonitor>(
+            '/analytics/monitor',
+            params
+        ),
+    posts: (params: Record<string, string>) =>
+        api.get<{ success: boolean } & AnalyticsPostsResponse>(
+            '/analytics/posts',
+            params
+        ),
+    sync: (data: {
+        from: string;
+        to: string;
+        mode: 'stale' | 'live';
+        connectionId?: string;
+        platform?: string;
+    }) => api.post('/analytics/sync', data),
+    tips: (params: Record<string, string>) =>
+        api.get<{ success: boolean } & AnalyticsTipsResponse>(
+            '/analytics/tips',
+            params
+        ),
+    generateTips: (data: {
+        from: string;
+        to: string;
+        connectionId?: string;
+        platform?: string;
+    }) => api.post('/analytics/tips', data),
 };
 
 export default api;

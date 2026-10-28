@@ -42,10 +42,12 @@ these steps:
 4. Add the permissions used by the app:
    - `pages_show_list`
    - `pages_read_engagement`
+   - `read_insights` — required for Facebook post reach and view insights.
    - `pages_manage_posts`
    - `business_management`
    - `instagram_basic`
    - `instagram_content_publish`
+   - `instagram_manage_insights` — required for Instagram media insights.
 
    `business_management` is required for Pages owned by a Meta Business
    Portfolio. Without it, `GET /me/accounts` can return an empty list even when

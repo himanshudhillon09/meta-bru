@@ -64,3 +64,28 @@ export const storageLimiter = rateLimit({
             'Storage request limit reached. Try again in a few minutes.',
     },
 });
+
+export const analyticsReadLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 120,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    keyGenerator: userKey,
+    message: {
+        success: false,
+        message:
+            'Analytics request limit reached. Try again in a few minutes.',
+    },
+});
+
+export const analyticsSyncLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 20,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    keyGenerator: userKey,
+    message: {
+        success: false,
+        message: 'Analytics sync limit reached. Try again in a few minutes.',
+    },
+});

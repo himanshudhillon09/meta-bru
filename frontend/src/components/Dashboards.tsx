@@ -15,6 +15,7 @@ import {
     type PostStatus,
     type SocialConnection,
 } from '@/lib/types';
+import { formatDailyTimes } from '@/lib/schedule';
 
 const STATUS_STYLES: Record<PostStatus, string> = {
     draft: 'bg-slate-500/10 text-slate-300 border-slate-500/20',
@@ -106,8 +107,7 @@ function NextSlotCard({ connections }: { connections: SocialConnection[] }) {
                         {formatDate(upcoming.nextRunAt)}
                     </div>
                     <div className="text-sm text-slate-400 mt-1">
-                        {upcoming.pageName} · {upcoming.dailyTime}{' '}
-                        {upcoming.timezone}
+                        {upcoming.pageName} · {upcoming.timezone}
                     </div>
                     <div className="text-xs text-slate-500 mt-4">
                         The next approved post in this queue will publish
@@ -532,7 +532,7 @@ export function AdminDashboard() {
                                                 : 'Not linked'}
                                         </td>
                                         <td className="py-4 text-sm text-slate-400">
-                                            {connection.dailyTime}
+                                            {formatDailyTimes(connection.dailyTimes)}
                                             <div className="text-[11px] text-slate-500">
                                                 {connection.timezone}
                                             </div>
@@ -594,7 +594,7 @@ export function AdminDashboard() {
                                             Daily schedule
                                         </dt>
                                         <dd className="text-slate-300 mt-0.5">
-                                            {connection.dailyTime} ·{' '}
+                                            {formatDailyTimes(connection.dailyTimes)} ·{' '}
                                             {connection.timezone}
                                         </dd>
                                     </div>

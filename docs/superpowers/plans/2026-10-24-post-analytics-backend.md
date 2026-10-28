@@ -1280,6 +1280,12 @@ export function buildMonitorSeries(
 
 - [ ] **Step 4: Add data loading and response builders**
 
+> Historical note: this step is the original design. The implemented service
+> uses `loadLatestSnapshots`, `loadMonitorSnapshots`,
+> `loadPublishedTargetsPage`, and DB-level pagination. Treat
+> `backend/src/services/analyticsService.ts` as the source of truth for these
+> functions.
+
 Append to `analyticsService.ts`:
 
 ```ts
@@ -1346,17 +1352,21 @@ export async function loadSnapshots(
     }).sort({ capturedAt: -1 });
 }
 
-function uniquePermissionErrors(
+export function uniquePermissionErrors(
+    targets: PublishedTarget[],
     latest: Map<string, IPostMetricSnapshot>
 ): Array<{ connectionId: string; pageName: string; platform: Platform }> {
+    const targetKeys = new Set(
+        targets.map((target) => targetKey(target.postId, target.platform))
+    );
     const seen = new Set<string>();
     const errors: Array<{ connectionId: string; pageName: string; platform: Platform }> = [];
-    for (const snapshot of latest.values()) {
+    for (const [key, snapshot] of latest) {
+        if (!targetKeys.has(key)) continue;
         if (snapshot.status !== 'permission_error') continue;
         const connectionId = String(snapshot.connectionId);
-        const key = `${connectionId}:${snapshot.platform}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
+        if (seen.has(connectionId)) continue;
+        seen.add(connectionId);
         errors.push({
             connectionId,
             pageName: snapshot.pageName,
@@ -1366,9 +1376,16 @@ function uniquePermissionErrors(
     return errors;
 }
 
-function lastSyncedAt(latest: Map<string, IPostMetricSnapshot>): string | null {
+function lastSyncedAt(
+    targets: PublishedTarget[],
+    latest: Map<string, IPostMetricSnapshot>
+): string | null {
+    const targetKeys = new Set(
+        targets.map((target) => targetKey(target.postId, target.platform))
+    );
     let newest: Date | null = null;
-    for (const snapshot of latest.values()) {
+    for (const [key, snapshot] of latest) {
+        if (!targetKeys.has(key)) continue;
         if (!newest || snapshot.capturedAt > newest) newest = snapshot.capturedAt;
     }
     return newest ? newest.toISOString() : null;
@@ -1419,10 +1436,10 @@ export async function getAnalyticsOverview(
         activity: buildActivity(targets, latest, range),
         bestTimes: buildBestTimes(targets, latest),
         sync: {
-            lastSyncedAt: lastSyncedAt(latest),
+            lastSyncedAt: lastSyncedAt(targets, latest),
             staleTargets: staleCount(targets, latest, 15),
             remainingTargets: 0,
-            permissionErrors: uniquePermissionErrors(latest),
+            permissionErrors: uniquePermissionErrors(targets, latest),
         },
     };
 }
@@ -1462,10 +1479,10 @@ export async function getAnalyticsMonitor(
         series,
         recentPosts,
         sync: {
-            lastSyncedAt: lastSyncedAt(latest),
+            lastSyncedAt: lastSyncedAt(targets, latest),
             nextSyncAt: new Date(Date.now() + 5 * 60_000).toISOString(),
             staleTargets: staleCount(targets, latest, 5),
-            permissionErrors: uniquePermissionErrors(latest),
+            permissionErrors: uniquePermissionErrors(targets, latest),
         },
     };
 }
@@ -1553,6 +1570,7 @@ export function buildRuleBasedTips(input: {
     activity: ActivityBucket[];
     permissionErrors: Array<{ pageName: string }>;
     posts: Array<{ caption: string; engagementRate: number | null }>;
+    granularity: 'day' | 'week';
 }): RuleBasedTip[] {
     const tips: RuleBasedTip[] = [];
     const overallRate = input.summary.engagementRate;
@@ -1608,13 +1626,15 @@ export function buildRuleBasedTips(input: {
 
     const daysWithPosts = input.activity.filter((bucket) => bucket.posts > 0);
     if (daysWithPosts.length > 1) {
+        const span = input.granularity === 'week' ? 7 : 1;
         let longestGap = 0;
         for (let index = 1; index < daysWithPosts.length; index += 1) {
             const previous = new Date(`${daysWithPosts[index - 1]?.date}T00:00:00+05:30`);
             const current = new Date(`${daysWithPosts[index]?.date}T00:00:00+05:30`);
             longestGap = Math.max(
                 longestGap,
-                Math.round((current.getTime() - previous.getTime()) / 86_400_000) - 1
+                Math.round((current.getTime() - previous.getTime()) / 86_400_000) -
+                    span
             );
         }
         if (longestGap >= 7) {
@@ -1643,11 +1663,13 @@ export function buildRuleBasedTips(input: {
         });
     }
 
-    if (input.permissionErrors.length > 0) {
+    const pageNames = new Set(input.permissionErrors.map((error) => error.pageName));
+    if (pageNames.size > 0) {
+        const count = pageNames.size;
         tips.push({
             id: 'permissions',
             title: 'Reconnect to unlock reach data',
-            body: `${input.permissionErrors.length} Page${input.permissionErrors.length === 1 ? '' : 's'} need insight permission. Reconnect to load complete engagement data.`,
+            body: `${count} Page${count === 1 ? '' : 's'} ${count === 1 ? 'needs' : 'need'} insight permission. Reconnect to load complete engagement data.`,
             severity: 'warning',
             actionLabel: 'Open connections',
             actionHref: '/connections',
@@ -1657,50 +1679,23 @@ export function buildRuleBasedTips(input: {
     return tips.slice(0, 6);
 }
 
-export function buildAnalyticsAiPayload(input: {
-    range: AnalyticsRange;
-    scopeName: string;
-    summary: AnalyticsSummary;
-    byPlatform: { facebook: AnalyticsSummary; instagram: AnalyticsSummary };
-    activity: ActivityBucket[];
-    bestTimes: BestTimeBucket[];
-    permissionErrors: Array<{ pageName: string }>;
-    topPosts: Array<{ caption: string; reach: number; interactions: number; engagementRate: number | null }>;
-    brandProfile: Record<string, string | undefined>;
-}) {
-    return {
-        range: { from: input.range.fromKey, to: input.range.toKey, timezone: 'Asia/Kolkata' },
-        scopeName: input.scopeName,
-        summary: input.summary,
-        byPlatform: input.byPlatform,
-        activity: input.activity,
-        bestTimes: input.bestTimes.filter((bucket) => bucket.posts > 0),
-        permissionErrors: input.permissionErrors,
-        topPosts: [...input.topPosts]
-            .sort((a, b) => b.reach - a.reach)
-            .slice(0, 5)
-            .map((post) => ({
-                caption: post.caption.slice(0, 120),
-                reach: post.reach,
-                interactions: post.interactions,
-                engagementRate: post.engagementRate,
-            })),
-        topEngagementPosts: [...input.topPosts]
-            .filter((post) => post.engagementRate !== null)
-            .sort(
-                (a, b) =>
-                    (b.engagementRate || 0) - (a.engagementRate || 0)
-            )
-            .slice(0, 5)
-            .map((post) => ({
-                caption: post.caption.slice(0, 120),
-                reach: post.reach,
-                interactions: post.interactions,
-                engagementRate: post.engagementRate,
-            })),
-        brandProfile: input.brandProfile,
-    };
-}
+The implemented `buildAnalyticsAiPayload` lives in
+`backend/src/services/analyticsService.ts`. Its input shape is:
+
+```ts
+topPosts: Array<{
+    postId: string;
+    caption: string;
+    reach: number;
+    views: number | null;
+    interactions: number | null;
+}>;
+```
+
+The implementation dedupes cross-posted entries by `postId`, combines
+reach/views/interactions, computes the engagement rate with the reach→views
+denominator, trims captions to 120 characters, and strips IDs and full captions
+from the payload.
 ```
 
 - [ ] **Step 6: Run the tests and build**
@@ -1763,8 +1758,8 @@ import { PostMetricSnapshot } from '../models/postMetricSnapshotModel.js';
 import { decryptSecret } from './cryptoService.js';
 import {
     latestSnapshotsByTarget,
+    loadLatestSnapshots,
     loadPublishedTargets,
-    loadSnapshots,
     targetKey,
     type AnalyticsFilters,
     type PublishedTarget,
@@ -1869,7 +1864,7 @@ export async function syncAnalytics(
     mode: SyncMode
 ): Promise<SyncResult> {
     const targets = await loadPublishedTargets(userId, range, filters);
-    const snapshots = await loadSnapshots(userId, targets);
+    const snapshots = await loadLatestSnapshots(userId, targets, range);
     const latest = latestSnapshotsByTarget(snapshots);
     const stale = selectStaleTargets(targets, latest, mode, new Date());
     const selected = stale.slice(0, syncCapForMode(mode));
@@ -2372,10 +2367,12 @@ import {
     getAnalyticsMonitor,
     getAnalyticsOverview,
     getAnalyticsPosts,
+    loadLatestSnapshots,
     loadPublishedTargets,
-    loadSnapshots,
     latestSnapshotsByTarget,
+    resolvePageName,
     summarizeTargets,
+    uniquePermissionErrors,
 } from '../services/analyticsService.js';
 import { parseAnalyticsRange } from '../services/analyticsDateService.js';
 import { syncAnalytics } from '../services/analyticsSyncService.js';
@@ -2453,7 +2450,7 @@ export async function tips(req: Request, res: Response): Promise<void> {
     const input = parseQuery(rangeQuerySchema, req);
     const { range, filters } = rangeAndFilters(input);
     const targets = await loadPublishedTargets(req.user!.id, range, filters);
-    const snapshots = await loadSnapshots(req.user!.id, targets);
+    const snapshots = await loadLatestSnapshots(req.user!.id, targets, range);
     const latest = latestSnapshotsByTarget(snapshots);
     const summary = summarizeTargets(targets, latest);
     const byPlatform = {
@@ -2468,9 +2465,7 @@ export async function tips(req: Request, res: Response): Promise<void> {
     };
     const activity = buildActivity(targets, latest, range);
     const bestTimes = buildBestTimes(targets, latest);
-    const permissionErrors = [...latest.values()]
-        .filter((snapshot) => snapshot.status === 'permission_error')
-        .map((snapshot) => ({ pageName: snapshot.pageName }));
+    const permissionErrors = uniquePermissionErrors(targets, latest);
     const posts = targets.map((target) => ({
         caption: target.caption,
         engagementRate:
@@ -2483,24 +2478,28 @@ export async function tips(req: Request, res: Response): Promise<void> {
         activity,
         permissionErrors,
         posts,
+        granularity: range.granularity,
     });
     const scopeKey = filters.connectionId || 'all';
     const rangeKey = `${range.fromKey}:${range.toKey}:${filters.platform || 'all'}`;
+    const scopeName = filters.connectionId
+        ? await resolvePageName(req.user!.id, filters.connectionId, targets)
+        : 'All Pages';
     const payload = buildAnalyticsAiPayload({
         range,
-        scopeName: targets[0]?.pageName || 'All Pages',
+        scopeName,
         summary,
         byPlatform,
         activity,
         bestTimes,
         permissionErrors,
         topPosts: targets.map((target) => ({
+            postId: target.postId,
             caption: target.caption,
             reach: latest.get(`${target.postId}:${target.platform}`)?.metrics.reach ?? 0,
+            views: latest.get(`${target.postId}:${target.platform}`)?.metrics.views ?? null,
             interactions:
-                latest.get(`${target.postId}:${target.platform}`)?.metrics.interactions ?? 0,
-            engagementRate:
-                latest.get(`${target.postId}:${target.platform}`)?.metrics.engagementRate ?? null,
+                latest.get(`${target.postId}:${target.platform}`)?.metrics.interactions ?? null,
         })),
         brandProfile: req.user!.brandProfile || {},
     });
@@ -2529,7 +2528,7 @@ export async function generateTips(req: Request, res: Response): Promise<void> {
     const input = parseBody(tipsBodySchema, req);
     const { range, filters } = rangeAndFilters(input);
     const targets = await loadPublishedTargets(req.user!.id, range, filters);
-    const snapshots = await loadSnapshots(req.user!.id, targets);
+    const snapshots = await loadLatestSnapshots(req.user!.id, targets, range);
     const latest = latestSnapshotsByTarget(snapshots);
     const summary = summarizeTargets(targets, latest);
     const byPlatform = {
@@ -2544,23 +2543,25 @@ export async function generateTips(req: Request, res: Response): Promise<void> {
     };
     const activity = buildActivity(targets, latest, range);
     const bestTimes = buildBestTimes(targets, latest);
+    const permissionErrors = uniquePermissionErrors(targets, latest);
+    const scopeName = filters.connectionId
+        ? await resolvePageName(req.user!.id, filters.connectionId, targets)
+        : 'All Pages';
     const payload = buildAnalyticsAiPayload({
         range,
-        scopeName: targets[0]?.pageName || 'All Pages',
+        scopeName,
         summary,
         byPlatform,
         activity,
         bestTimes,
-        permissionErrors: [...latest.values()]
-            .filter((snapshot) => snapshot.status === 'permission_error')
-            .map((snapshot) => ({ pageName: snapshot.pageName })),
+        permissionErrors,
         topPosts: targets.map((target) => ({
+            postId: target.postId,
             caption: target.caption,
             reach: latest.get(`${target.postId}:${target.platform}`)?.metrics.reach ?? 0,
+            views: latest.get(`${target.postId}:${target.platform}`)?.metrics.views ?? null,
             interactions:
-                latest.get(`${target.postId}:${target.platform}`)?.metrics.interactions ?? 0,
-            engagementRate:
-                latest.get(`${target.postId}:${target.platform}`)?.metrics.engagementRate ?? null,
+                latest.get(`${target.postId}:${target.platform}`)?.metrics.interactions ?? null,
         })),
         brandProfile: req.user!.brandProfile || {},
     });

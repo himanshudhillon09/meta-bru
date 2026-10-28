@@ -5,6 +5,7 @@ import { env } from '../config/env.js';
 import { User } from '../models/userModel.js';
 import { SocialConnection } from '../models/socialConnectionModel.js';
 import { generateTemporaryPassword } from '../services/passwordService.js';
+import { syncConnectionTimezones } from '../services/scheduleSyncService.js';
 import { isValidTimezone } from '../services/timeService.js';
 import { AppError } from '../utils/errors.js';
 import { parseBody } from '../utils/validation.js';
@@ -374,9 +375,29 @@ export const updateProfile = async (req: Request, res: Response) => {
         throw error;
     }
 
+    // Pages post in the Profile timezone. The sync only touches Pages on a
+    // different timezone, so it is safe on every save and retries a failure.
+    let rescheduledPages: number | undefined;
+    if (parsed.timezone !== undefined) {
+        try {
+            rescheduledPages = await syncConnectionTimezones(
+                req.user.id,
+                parsed.timezone
+            );
+        } catch (error) {
+            console.error('[auth] Could not reschedule Pages:', error);
+            throw new AppError(
+                500,
+                'Profile saved, but your Pages could not be rescheduled. Save your profile again to retry.',
+                'RESCHEDULE_FAILED'
+            );
+        }
+    }
+
     res.json({
         success: true,
         user: publicUser(user),
+        ...(rescheduledPages !== undefined ? { rescheduledPages } : {}),
     });
 };
 

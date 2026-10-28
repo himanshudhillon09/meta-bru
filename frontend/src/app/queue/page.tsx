@@ -8,6 +8,9 @@ import { postsApi } from '@/lib/apiClient';
 import {
     connectionName,
     formatDate,
+    formatElapsed,
+    formatIstDateTime,
+    latestPublishedAt,
     type Post,
     type TokenStatus,
 } from '@/lib/types';
@@ -256,7 +259,30 @@ export default function QueuePage() {
                                             ) : null}
                                             <span className="text-xs text-slate-600">·</span>
                                             <span className="text-xs text-slate-500">
-                                                {formatDate(post.createdAt)}
+                                                {post.status === 'published' ||
+                                                post.status === 'partial' ? (
+                                                    latestPublishedAt(
+                                                        post
+                                                    ) ? (
+                                                        <>
+                                                            Published{' '}
+                                                            {formatIstDateTime(
+                                                                latestPublishedAt(
+                                                                    post
+                                                                )
+                                                            )}
+                                                            {` · ${formatElapsed(
+                                                                latestPublishedAt(
+                                                                    post
+                                                                )
+                                                            )}`}
+                                                        </>
+                                                    ) : (
+                                                        'Publish time unavailable'
+                                                    )
+                                                ) : (
+                                                    formatDate(post.createdAt)
+                                                )}
                                             </span>
                                             {post.attempts > 0 ? (
                                                 <span className="text-xs text-slate-600">
