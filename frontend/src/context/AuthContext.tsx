@@ -48,20 +48,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 try {
                     // Pre-load from localStorage for instant UI feedback
                     setUser(JSON.parse(storedUser));
+                } catch {
+                    localStorage.removeItem('token');
+                    localStorage.removeItem('user');
+                    setLoading(false);
+                    return;
+                }
 
-                    // Verify token with backend to ensure it's still valid and user is active
+                try {
+                    // Refresh the profile and pick up a renewed token. A
+                    // rejected token (401) or deactivated account is handled by
+                    // the 'meta-bru:unauthorized' listener below; any other
+                    // failure (backend restarting, network blip) keeps the
+                    // cached session instead of signing the user out.
                     const data: any = await authApi.getMe();
-                    if (data.success) {
+                    if (data?.success && data.user) {
+                        if (typeof data.token === 'string' && data.token) {
+                            localStorage.setItem('token', data.token);
+                        }
                         setUser(data.user);
                         localStorage.setItem('user', JSON.stringify(data.user));
-                    } else {
-                        throw new Error('User verification failed');
                     }
                 } catch (error) {
                     console.warn('Session verification failed:', error);
-                    localStorage.removeItem('token');
-                    localStorage.removeItem('user');
-                    setUser(null);
                 }
             }
             setLoading(false);
