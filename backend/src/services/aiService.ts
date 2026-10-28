@@ -1,5 +1,6 @@
 import { env } from '../config/env.js';
 import { AppError } from '../utils/errors.js';
+import { preparePostImage } from './brandLogoService.js';
 import {
     jpegUrlFor,
     uploadImage,
@@ -528,5 +529,8 @@ export async function generateImage(
         );
     }
 
-    return uploadImage(userId, Buffer.from(image.data, 'base64'));
+    return uploadImage(
+        userId,
+        await preparePostImage(userId, Buffer.from(image.data, 'base64'))
+    );
 }
