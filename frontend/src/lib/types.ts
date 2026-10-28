@@ -79,7 +79,8 @@ export interface SocialConnection {
     pageName: string;
     tokenStatus: TokenStatus;
     instagram: InstagramAccount | null;
-    dailyTime: string;
+    /** Sorted daily posting times (HH:mm) in `timezone`. */
+    dailyTimes: string[];
     timezone: string;
     publishToFacebook: boolean;
     publishToInstagram: boolean;
@@ -88,8 +89,20 @@ export interface SocialConnection {
     lastRunAt: string | null;
     lastError: string;
     queuedCount?: number;
+    tokenUpdatedAt?: string | null;
+    grantedScopes?: string[];
     createdAt: string;
     updatedAt: string;
+}
+
+export interface MetaLoginResult {
+    connected: number;
+    added?: string[];
+    reconnected?: string[];
+    /** Connected Pages that Meta left out of this login. */
+    notIncluded?: string[];
+    /** Requested permissions that were not granted in this login. */
+    notGranted?: string[];
 }
 
 export type Platform = 'facebook' | 'instagram';
@@ -270,4 +283,219 @@ export function formatBytes(bytes: number): string {
             : value.toFixed(1);
 
     return `${formatted} ${units[exponent]}`;
+}
+
+export interface AnalyticsMetrics {
+    likes: number | null;
+    comments: number | null;
+    shares: number | null;
+    saves: number | null;
+    reach: number | null;
+    views: number | null;
+    clicks: number | null;
+    interactions: number | null;
+    engagementRate: number | null;
+}
+
+export interface AnalyticsSummary {
+    posts: number;
+    facebookPosts: number;
+    instagramPosts: number;
+    reach: number;
+    views: number;
+    interactions: number;
+    likes: number;
+    comments: number;
+    shares: number;
+    saves: number;
+    clicks: number;
+    engagementRate: number | null;
+}
+
+export interface AnalyticsActivityBucket {
+    date: string;
+    label: string;
+    posts: number;
+    facebook: number;
+    instagram: number;
+    reach: number;
+    interactions: number;
+}
+
+export interface AnalyticsBestTime {
+    day: number;
+    dayLabel: string;
+    block: number;
+    label: string;
+    posts: number;
+    avgEngagementRate: number | null;
+}
+
+export interface AnalyticsPermissionError {
+    connectionId: string;
+    pageName: string;
+    platform: Platform;
+    platforms?: Platform[];
+    /** Meta's own error message. */
+    error?: string;
+    missingScopes?: string[];
+    /** False when Meta still refuses after a full reconnect. */
+    reconnectRequired?: boolean;
+}
+
+export interface AnalyticsSyncState {
+    lastSyncedAt: string | null;
+    staleTargets: number;
+    remainingTargets?: number;
+    nextSyncAt?: string;
+    permissionErrors: AnalyticsPermissionError[];
+}
+
+export interface AnalyticsOverview {
+    range: { from: string; to: string; preset: string; timezone: string };
+    totals: AnalyticsSummary;
+    byPlatform: { facebook: AnalyticsSummary; instagram: AnalyticsSummary };
+    activity: AnalyticsActivityBucket[];
+    bestTimes: AnalyticsBestTime[];
+    sync: AnalyticsSyncState;
+}
+
+export interface AnalyticsMonitorPoint {
+    capturedAt: string;
+    reach: number;
+    views: number;
+    interactions: number;
+    engagementRate: number | null;
+}
+
+export interface AnalyticsMonitor {
+    scope: { connectionId: string | null; pageName: string };
+    summary: AnalyticsSummary;
+    series: {
+        all: AnalyticsMonitorPoint[];
+        facebook: AnalyticsMonitorPoint[];
+        instagram: AnalyticsMonitorPoint[];
+    };
+    seriesTruncated: boolean;
+    recentPosts: Array<{
+        postId: string;
+        caption: string;
+        mediaUrl: string;
+        pageName: string;
+        platform: Platform;
+        publishedAt: string;
+        metrics: AnalyticsMetrics | null;
+    }>;
+    sync: AnalyticsSyncState;
+}
+
+export interface AnalyticsPostTarget {
+    platform: Platform;
+    externalId: string;
+    publishedAt: string;
+    metrics: AnalyticsMetrics | null;
+    availableMetrics: string[];
+    snapshotAt: string | null;
+    /** When Meta reported these metrics; older than snapshotAt if kept. */
+    metricsAt?: string | null;
+    status: 'ok' | 'partial' | 'unavailable' | 'permission_error';
+    error: string;
+    reconnectRequired?: boolean;
+}
+
+export interface AnalyticsPost {
+    postId: string;
+    caption: string;
+    mediaUrl: string;
+    status: PostStatus;
+    connection: {
+        id: string;
+        pageId: string;
+        pageName: string;
+        instagramUsername: string;
+    };
+    targets: AnalyticsPostTarget[];
+}
+
+export interface AnalyticsPostsResponse {
+    posts: AnalyticsPost[];
+    page: number;
+    limit: number;
+    total: number;
+    hasMore: boolean;
+}
+
+export interface AnalyticsRuleTip {
+    id: string;
+    title: string;
+    body: string;
+    severity: 'info' | 'success' | 'warning';
+    actionLabel: string;
+    actionHref: string;
+}
+
+export interface AnalyticsAiTip {
+    title: string;
+    body: string;
+    severity: 'info' | 'success' | 'warning';
+    actionLabel: string;
+    actionHref: string;
+}
+
+export interface AnalyticsAiInsight {
+    cached: boolean;
+    generatedAt: string;
+    expiresAt: string;
+    model: string;
+    tips: AnalyticsAiTip[];
+}
+
+export interface AnalyticsTipsResponse {
+    ruleBased: AnalyticsRuleTip[];
+    ai: AnalyticsAiInsight | null;
+}
+
+export function formatIstDateTime(value: string | null | undefined): string {
+    if (!value) return 'Not published';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return 'Not published';
+    const formatted = new Intl.DateTimeFormat('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hourCycle: 'h23',
+    }).format(date);
+    return `${formatted} IST`;
+}
+
+export function formatElapsed(
+    value: string | null | undefined,
+    now = Date.now()
+): string {
+    if (!value || now <= 0) return '';
+    const then = new Date(value).getTime();
+    if (Number.isNaN(then)) return '';
+    const seconds = Math.max(0, Math.floor((now - then) / 1000));
+    if (seconds < 60) return 'Just now';
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ${minutes % 60}m ago`;
+    const days = Math.floor(hours / 24);
+    if (days < 30) return `${days}d ${hours % 24}h ago`;
+    const months = Math.floor(days / 30);
+    if (months < 12) return `${months}mo ago`;
+    return `${Math.floor(months / 12)}y ago`;
+}
+
+export function latestPublishedAt(post: Post): string | null {
+    const times = post.targets
+        .filter((target) => target.status === 'published' && target.publishedAt)
+        .map((target) => new Date(target.publishedAt as string).getTime())
+        .filter((time) => Number.isFinite(time));
+    if (times.length > 0) return new Date(Math.max(...times)).toISOString();
+    return post.publishedAt;
 }

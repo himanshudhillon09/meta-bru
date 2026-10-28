@@ -5,12 +5,14 @@ import { connectDB } from './config/db.js';
 import { env } from './config/env.js';
 import adminRoutes from './routes/adminRoutes.js';
 import aiRoutes from './routes/aiRoutes.js';
+import analyticsRoutes from './routes/analyticsRoutes.js';
 import authRoutes from './routes/authRoutes.js';
 import connectionRoutes from './routes/connectionRoutes.js';
 import mediaRoutes from './routes/mediaRoutes.js';
 import postRoutes from './routes/postRoutes.js';
 import { errorHandler, notFound } from './middlewares/errorMiddleware.js';
 import { startScheduler, stopScheduler } from './services/schedulerService.js';
+import { migrateConnectionSchedules } from './services/scheduleSyncService.js';
 
 const app = express();
 
@@ -48,6 +50,7 @@ app.get('/api/health', (_req: Request, res: Response) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/connections', connectionRoutes);
 app.use('/api/posts', postRoutes);
+app.use('/api/analytics', analyticsRoutes);
 app.use('/api/media', mediaRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/admin', adminRoutes);
@@ -57,6 +60,15 @@ app.use(errorHandler);
 
 async function start(): Promise<void> {
     await connectDB();
+
+    // Upgrade Page schedules before the scheduler reads them. A failure stops
+    // start-up, like a database connection failure.
+    const migration = await migrateConnectionSchedules();
+    if (migration.copied > 0 || migration.rescheduled > 0) {
+        console.log(
+            `[schedule] Upgraded ${migration.copied} Page schedules; moved ${migration.rescheduled} Pages to their Profile timezone`
+        );
+    }
 
     app.listen(env.port, () => {
         console.log(`Server is running on http://localhost:${env.port}`);

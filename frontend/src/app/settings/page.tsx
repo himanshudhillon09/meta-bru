@@ -307,10 +307,14 @@ export default function SettingsPage() {
             if (data.success) {
                 updateUser(data.user);
                 setCurrentPassword('');
+                const rescheduled = Number(data.rescheduledPages) || 0;
                 setNotice(
-                    emailChanged
+                    (emailChanged
                         ? 'Profile saved. Use your new email next time you sign in.'
-                        : 'Profile saved.'
+                        : 'Profile saved.') +
+                        (rescheduled > 0
+                            ? ` Rescheduled ${rescheduled} Page${rescheduled === 1 ? '' : 's'}.`
+                            : '')
                 );
             }
         } catch (err: any) {
@@ -604,8 +608,8 @@ export default function SettingsPage() {
                                 ))}
                             </select>
                             <p className="text-xs text-slate-500 mt-2">
-                                Used for new Pages. Each connection can override
-                                its own timezone.
+                                Every Page posts at its scheduled times in this
+                                timezone. Changing it reschedules all Pages.
                             </p>
                         </div>
                     </div>
@@ -862,6 +866,21 @@ export default function SettingsPage() {
                                     )}
                                 </div>
                             </div>
+
+                            {credentialStatus?.meta.configured &&
+                            (!credentialStatus.meta.scopes.includes(
+                                'read_insights'
+                            ) ||
+                                !credentialStatus.meta.scopes.includes(
+                                    'instagram_manage_insights'
+                                )) ? (
+                                <div className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-200">
+                                    Add <code>read_insights</code> and{' '}
+                                    <code>instagram_manage_insights</code> to
+                                    your Meta app and reconnect your Pages to
+                                    enable analytics.
+                                </div>
+                            ) : null}
 
                             {credentialStatus?.meta.needsReauthCount ? (
                                 <div className="mt-5 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-200">

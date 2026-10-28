@@ -78,6 +78,7 @@ export const env = {
             [
                 'pages_show_list',
                 'pages_read_engagement',
+                'read_insights',
                 'pages_manage_posts',
                 // Business-owned Pages are omitted from /me/accounts unless
                 // this permission is granted (Meta requires it for Business
@@ -85,6 +86,7 @@ export const env = {
                 'business_management',
                 'instagram_basic',
                 'instagram_content_publish',
+                'instagram_manage_insights',
             ].join(',')
         )
             .split(',')
