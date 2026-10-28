@@ -171,6 +171,16 @@ export const getMe = async (req: any, res: Response) => {
         res.status(200).json({
             success: true,
             user: publicUser(user),
+            // Sliding session: an active user gets a fresh token at most once
+            // a day, so they are never signed out while they keep using the app.
+            ...(shouldRenewToken(req.tokenIssuedAt)
+                ? {
+                      token: generateToken(
+                          user._id.toString(),
+                          user.tokenVersion ?? 0
+                      ),
+                  }
+                : {}),
         });
     } catch (error: any) {
         console.error('[auth] Request failed:', error);
@@ -471,9 +481,20 @@ export const resetUserPassword = async (req: any, res: Response) => {
     });
 };
 
+const TOKEN_LIFETIME = '30d';
+const TOKEN_RENEW_AFTER_SECONDS = 24 * 60 * 60;
+
+export function shouldRenewToken(
+    issuedAt: number | undefined,
+    now = Date.now()
+): boolean {
+    if (!issuedAt) return false;
+    return now / 1000 - issuedAt >= TOKEN_RENEW_AFTER_SECONDS;
+}
+
 // Generate JWT
 const generateToken = (id: string, tokenVersion = 0) => {
     return jwt.sign({ id, tokenVersion }, env.jwtSecret, {
-        expiresIn: '30d',
+        expiresIn: TOKEN_LIFETIME,
     });
 };

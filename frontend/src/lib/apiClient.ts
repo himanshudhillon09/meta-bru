@@ -1,10 +1,9 @@
 import type {
-    BrandLogoDetails,
-    DeleteMediaResult,
     AnalyticsMonitor,
     AnalyticsOverview,
     AnalyticsPostsResponse,
     AnalyticsTipsResponse,
+    BrandLogoDetails,
     DeleteMediaResult,
     MetaLoginResult,
     StorageOverview,
@@ -73,8 +72,14 @@ async function apiRequest<T>(endpoint: string, options: RequestOptions = {}): Pr
         }
 
         if (!response.ok) {
+            // Only a rejected token (401) or a deactivated account ends the
+            // session. Server errors, timeouts, and restarts must not sign the
+            // user out.
+            const sessionEnded =
+                response.status === 401 ||
+                (response.status === 403 && data?.code === 'ACCOUNT_INACTIVE');
             if (
-                response.status === 401 &&
+                sessionEnded &&
                 typeof window !== 'undefined' &&
                 authToken &&
                 localStorage.getItem('token') === authToken
