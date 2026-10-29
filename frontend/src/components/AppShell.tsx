@@ -15,6 +15,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
     { href: '/dashboard', label: 'Overview', icon: 'grid' },
     { href: '/composer', label: 'Composer', icon: 'plus' },
+    { href: '/reels', label: 'Reels', icon: 'film' },
     { href: '/queue', label: 'Queue', icon: 'list' },
     { href: '/analytics', label: 'Analytics', icon: 'chart' },
     { href: '/activity', label: 'Activity', icon: 'clock' },
@@ -48,6 +49,14 @@ function NavIcon({ name }: { name: string }) {
         return (
             <svg {...common}>
                 <path d="M12 5v14M5 12h14" />
+            </svg>
+        );
+    }
+    if (name === 'film') {
+        return (
+            <svg {...common}>
+                <rect x="3" y="3" width="18" height="18" rx="2.5" />
+                <path d="M3 8h18M3 16h18M8 3v5M16 3v5M8 16v5M16 16v5" />
             </svg>
         );
     }

@@ -4,14 +4,23 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AppShell } from '@/components/AppShell';
 import { StatusBadge } from '@/components/Dashboards';
+import { Modal } from '@/components/Modal';
+import { StoryShareModal } from '@/components/StoryShareModal';
 import { postsApi } from '@/lib/apiClient';
 import {
     connectionName,
     formatDate,
+    formatDuration,
     formatElapsed,
     formatIstDateTime,
+    isReel,
     latestPublishedAt,
+    postThumbnailUrl,
+    publishedPlatforms,
+    unsharedStoryPlatforms,
+    type Platform,
     type Post,
+    type TargetStatus,
     type TokenStatus,
 } from '@/lib/types';
 
@@ -24,10 +33,23 @@ const TABS = [
 
 type TabKey = (typeof TABS)[number]['key'];
 
+const KINDS = [
+    { key: 'all', label: 'All' },
+    { key: 'image', label: 'Posts' },
+    { key: 'reel', label: 'Reels' },
+] as const;
+
+type KindKey = (typeof KINDS)[number]['key'];
+
 function matchesTab(post: Post, tab: TabKey): boolean {
     if (tab === 'failed') return post.status === 'failed' || post.status === 'partial';
     if (tab === 'published') return post.status === 'published' || post.status === 'partial';
     return post.status === tab;
+}
+
+function matchesKind(post: Post, kind: KindKey): boolean {
+    if (kind === 'all') return true;
+    return kind === 'reel' ? isReel(post) : !isReel(post);
 }
 
 function destinationStatus(post: Post): TokenStatus | null {
@@ -37,13 +59,28 @@ function destinationStatus(post: Post): TokenStatus | null {
     return post.connectionId.tokenStatus;
 }
 
+function targetChipClass(status: TargetStatus): string {
+    if (status === 'published') {
+        return 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20';
+    }
+    if (status === 'failed') {
+        return 'bg-rose-500/10 text-rose-300 border-rose-500/20';
+    }
+    return 'bg-slate-500/10 text-slate-400 border-slate-500/20';
+}
+
 export default function QueuePage() {
     const [posts, setPosts] = useState<Post[]>([]);
     const [tab, setTab] = useState<TabKey>('queued');
+    const [kind, setKind] = useState<KindKey>('all');
     const [loading, setLoading] = useState(true);
     const [busyId, setBusyId] = useState('');
+    const [sharingId, setSharingId] = useState('');
     const [editingId, setEditingId] = useState('');
     const [editCaption, setEditCaption] = useState('');
+    const [deleteTarget, setDeleteTarget] = useState<Post | null>(null);
+    const [storyPost, setStoryPost] = useState<Post | null>(null);
+    const [storySelection, setStorySelection] = useState<Platform[]>([]);
     const [error, setError] = useState('');
     const [notice, setNotice] = useState('');
 
@@ -60,9 +97,14 @@ export default function QueuePage() {
     };
 
     useEffect(() => {
-        const requestedTab = new URLSearchParams(window.location.search).get('tab');
+        const params = new URLSearchParams(window.location.search);
+        const requestedTab = params.get('tab');
         if (TABS.some((item) => item.key === requestedTab)) {
             setTab(requestedTab as TabKey);
+        }
+        const requestedKind = params.get('kind');
+        if (KINDS.some((item) => item.key === requestedKind)) {
+            setKind(requestedKind as KindKey);
         }
 
         void load(true);
@@ -82,7 +124,7 @@ export default function QueuePage() {
             ) {
                 setError(data.post.lastError || 'Publishing failed');
             } else {
-                setNotice('Post published.');
+                setNotice(isReel(post) ? 'Reel published.' : 'Post published.');
             }
             await load();
         } catch (err: any) {
@@ -120,14 +162,72 @@ export default function QueuePage() {
     const remove = async (post: Post) => {
         setBusyId(post._id);
         setError('');
+        setNotice('');
         try {
-            await postsApi.remove(post._id);
+            const data = await postsApi.remove(post._id);
             setPosts((current) => current.filter((item) => item._id !== post._id));
-            setNotice('Post deleted.');
+            setNotice(
+                data.mediaDeleted
+                    ? `Post deleted. Its ${isReel(post) ? 'video' : 'image'} was also removed from Cloudinary.`
+                    : 'Post deleted.'
+            );
+            if (data.mediaError) {
+                setError(`Could not remove its Cloudinary file: ${data.mediaError}`);
+            }
         } catch (err: any) {
             setError(typeof err === 'string' ? err : 'Could not delete post');
         } finally {
             setBusyId('');
+        }
+    };
+
+    const openStoryShare = (post: Post) => {
+        setStorySelection(unsharedStoryPlatforms(post));
+        setStoryPost(post);
+    };
+
+    const toggleStoryPlatform = (platform: Platform) => {
+        setStorySelection((current) =>
+            current.includes(platform)
+                ? current.filter((item) => item !== platform)
+                : [...current, platform]
+        );
+    };
+
+    const shareStory = async (post: Post, platforms: Platform[]) => {
+        if (platforms.length === 0) return;
+        setBusyId(post._id);
+        setSharingId(post._id);
+        setError('');
+        setNotice('');
+        try {
+            const data = await postsApi.shareStory(post._id, platforms);
+            // The response is not populated; keep the Page details we have.
+            setPosts((current) =>
+                current.map((item) =>
+                    item._id === post._id
+                        ? { ...data.post, connectionId: item.connectionId }
+                        : item
+                )
+            );
+            const failed = (data.post.storyTargets ?? []).filter(
+                (target) =>
+                    platforms.includes(target.platform) && target.status === 'failed'
+            );
+            if (failed.length > 0) {
+                setError(
+                    failed
+                        .map((target) => `${target.platform} Story: ${target.error}`)
+                        .join(' | ')
+                );
+            } else {
+                setNotice('Shared to Story.');
+            }
+        } catch (err: any) {
+            setError(typeof err === 'string' ? err : 'Could not share to Story');
+        } finally {
+            setBusyId('');
+            setSharingId('');
         }
     };
 
@@ -157,19 +257,28 @@ export default function QueuePage() {
         }
     };
 
-    const visible = posts.filter((post) => matchesTab(post, tab));
+    const kindPosts = posts.filter((post) => matchesKind(post, kind));
+    const visible = kindPosts.filter((post) => matchesTab(post, tab));
 
     return (
         <AppShell
             title="Queue"
-            subtitle="One post per Page per day, in the order you added them."
+            subtitle="Posts and reels publish at each Page's daily times, in the order you added them."
             actions={
-                <Link
-                    href="/composer"
-                    className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all"
-                >
-                    New post
-                </Link>
+                <>
+                    <Link
+                        href="/reels"
+                        className="bg-white/5 hover:bg-white/10 text-white border border-white/10 px-5 py-2.5 rounded-xl text-sm font-bold transition-all"
+                    >
+                        New reel
+                    </Link>
+                    <Link
+                        href="/composer"
+                        className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all"
+                    >
+                        New post
+                    </Link>
+                </>
             }
         >
             {notice ? (
@@ -183,23 +292,41 @@ export default function QueuePage() {
                 </div>
             ) : null}
 
-            <div className="flex gap-2 overflow-x-auto mb-7">
-                {TABS.map((item) => (
-                    <button
-                        key={item.key}
-                        onClick={() => setTab(item.key)}
-                        className={`whitespace-nowrap px-4 py-2.5 rounded-xl text-xs font-bold border transition-all ${
-                            tab === item.key
-                                ? 'bg-indigo-500/15 text-indigo-300 border-indigo-500/20'
-                                : 'bg-slate-900/40 text-slate-400 border-white/5 hover:text-white'
-                        }`}
-                    >
-                        {item.label}
-                        <span className="ml-2 text-slate-500">
-                            {posts.filter((post) => matchesTab(post, item.key)).length}
-                        </span>
-                    </button>
-                ))}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-7">
+                <div className="flex gap-2 overflow-x-auto">
+                    {TABS.map((item) => (
+                        <button
+                            key={item.key}
+                            onClick={() => setTab(item.key)}
+                            className={`whitespace-nowrap px-4 py-2.5 rounded-xl text-xs font-bold border transition-all ${
+                                tab === item.key
+                                    ? 'bg-indigo-500/15 text-indigo-300 border-indigo-500/20'
+                                    : 'bg-slate-900/40 text-slate-400 border-white/5 hover:text-white'
+                            }`}
+                        >
+                            {item.label}
+                            <span className="ml-2 text-slate-500">
+                                {kindPosts.filter((post) => matchesTab(post, item.key)).length}
+                            </span>
+                        </button>
+                    ))}
+                </div>
+
+                <div className="flex gap-1 rounded-xl border border-white/5 bg-slate-900/40 p-1 self-start">
+                    {KINDS.map((item) => (
+                        <button
+                            key={item.key}
+                            onClick={() => setKind(item.key)}
+                            className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all ${
+                                kind === item.key
+                                    ? 'bg-white/10 text-white'
+                                    : 'text-slate-500 hover:text-white'
+                            }`}
+                        >
+                            {item.label}
+                        </button>
+                    ))}
+                </div>
             </div>
 
             {loading ? (
@@ -212,7 +339,7 @@ export default function QueuePage() {
                         Nothing in {TABS.find((item) => item.key === tab)?.label.toLowerCase()}
                     </div>
                     <p className="text-sm text-slate-400 mt-2">
-                        Posts you create in the composer show up here.
+                        Posts from the Composer and reels from the Reels page show up here.
                     </p>
                 </div>
             ) : (
@@ -220,6 +347,11 @@ export default function QueuePage() {
                     {visible.map((post) => {
                         const status = destinationStatus(post);
                         const publishBlocked = status !== 'active';
+                        const thumbnail = postThumbnailUrl(post);
+                        const canShareStory =
+                            (post.status === 'published' || post.status === 'partial') &&
+                            publishedPlatforms(post).length > 0;
+                        const storyLeft = unsharedStoryPlatforms(post).length;
 
                         return (
                             <article
@@ -227,18 +359,30 @@ export default function QueuePage() {
                                 className="rounded-3xl border border-white/5 bg-slate-900/40 p-5 sm:p-6 shadow-xl"
                             >
                                 <div className="flex flex-col sm:flex-row gap-5">
-                                    <div className="w-full sm:w-28 h-40 sm:h-28 rounded-2xl overflow-hidden bg-slate-800 shrink-0 border border-white/5">
-                                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                                        <img
-                                            src={post.mediaUrl}
-                                            alt=""
-                                            className="w-full h-full object-cover"
-                                        />
+                                    <div className="relative w-full sm:w-28 h-40 sm:h-28 rounded-2xl overflow-hidden bg-slate-800 shrink-0 border border-white/5">
+                                        {thumbnail ? (
+                                            // eslint-disable-next-line @next/next/no-img-element
+                                            <img
+                                                src={thumbnail}
+                                                alt=""
+                                                className="w-full h-full object-cover"
+                                            />
+                                        ) : null}
+                                        {isReel(post) ? (
+                                            <span className="absolute bottom-1.5 left-1.5 rounded-md bg-slate-950/80 px-1.5 py-0.5 text-[10px] font-bold text-white backdrop-blur">
+                                                ▶ {formatDuration(post.mediaDuration ?? 0)}
+                                            </span>
+                                        ) : null}
                                     </div>
 
                                     <div className="flex-1 min-w-0">
                                         <div className="flex flex-wrap items-center gap-2 mb-2">
                                             <StatusBadge status={post.status} />
+                                            {isReel(post) ? (
+                                                <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full border bg-fuchsia-500/10 text-fuchsia-300 border-fuchsia-500/20">
+                                                    Reel
+                                                </span>
+                                            ) : null}
                                             <span className="text-xs text-slate-500">
                                                 {connectionName(post)}
                                             </span>
@@ -261,20 +405,14 @@ export default function QueuePage() {
                                             <span className="text-xs text-slate-500">
                                                 {post.status === 'published' ||
                                                 post.status === 'partial' ? (
-                                                    latestPublishedAt(
-                                                        post
-                                                    ) ? (
+                                                    latestPublishedAt(post) ? (
                                                         <>
                                                             Published{' '}
                                                             {formatIstDateTime(
-                                                                latestPublishedAt(
-                                                                    post
-                                                                )
+                                                                latestPublishedAt(post)
                                                             )}
                                                             {` · ${formatElapsed(
-                                                                latestPublishedAt(
-                                                                    post
-                                                                )
+                                                                latestPublishedAt(post)
                                                             )}`}
                                                         </>
                                                     ) : (
@@ -329,15 +467,18 @@ export default function QueuePage() {
                                             {post.targets.map((target) => (
                                                 <span
                                                     key={target.platform}
-                                                    className={`text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full border ${
-                                                        target.status === 'published'
-                                                            ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
-                                                            : target.status === 'failed'
-                                                              ? 'bg-rose-500/10 text-rose-300 border-rose-500/20'
-                                                              : 'bg-slate-500/10 text-slate-400 border-slate-500/20'
-                                                    }`}
+                                                    className={`text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full border ${targetChipClass(target.status)}`}
                                                 >
                                                     {target.platform}: {target.status}
+                                                </span>
+                                            ))}
+                                            {(post.storyTargets ?? []).map((target) => (
+                                                <span
+                                                    key={`story-${target.platform}`}
+                                                    title={target.error || undefined}
+                                                    className={`text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full border ${targetChipClass(target.status)}`}
+                                                >
+                                                    {target.platform} story: {target.status}
                                                 </span>
                                             ))}
                                         </div>
@@ -355,10 +496,7 @@ export default function QueuePage() {
                                             post.status === 'failed') && (
                                             <button
                                                 onClick={() => publishNow(post)}
-                                                disabled={
-                                                    busyId === post._id ||
-                                                    publishBlocked
-                                                }
+                                                disabled={busyId === post._id || publishBlocked}
                                                 title={
                                                     publishBlocked
                                                         ? 'Reconnect this Page before publishing.'
@@ -366,17 +504,16 @@ export default function QueuePage() {
                                                 }
                                                 className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-all"
                                             >
-                                                {busyId === post._id ? 'Working...' : 'Post now'}
+                                                {busyId === post._id && !sharingId
+                                                    ? 'Working...'
+                                                    : 'Post now'}
                                             </button>
                                         )}
                                         {(post.status === 'failed' ||
                                             post.status === 'partial') && (
                                             <button
                                                 onClick={() => retry(post)}
-                                                disabled={
-                                                    busyId === post._id ||
-                                                    publishBlocked
-                                                }
+                                                disabled={busyId === post._id || publishBlocked}
                                                 title={
                                                     publishBlocked
                                                         ? 'Reconnect this Page before retrying.'
@@ -385,6 +522,30 @@ export default function QueuePage() {
                                                 className="bg-amber-500 hover:bg-amber-400 disabled:opacity-40 disabled:cursor-not-allowed text-slate-950 px-4 py-2.5 rounded-xl text-xs font-bold transition-all"
                                             >
                                                 Retry failed
+                                            </button>
+                                        )}
+                                        {canShareStory && (
+                                            <button
+                                                onClick={() => openStoryShare(post)}
+                                                disabled={
+                                                    busyId === post._id ||
+                                                    publishBlocked ||
+                                                    storyLeft === 0
+                                                }
+                                                title={
+                                                    publishBlocked
+                                                        ? 'Reconnect this Page before sharing.'
+                                                        : storyLeft === 0
+                                                          ? 'Already shared to Story on every published platform.'
+                                                          : undefined
+                                                }
+                                                className="bg-amber-500/10 hover:bg-amber-500/20 text-amber-200 border border-amber-500/20 disabled:opacity-40 disabled:cursor-not-allowed px-4 py-2.5 rounded-xl text-xs font-bold transition-all"
+                                            >
+                                                {sharingId === post._id
+                                                    ? 'Sharing...'
+                                                    : storyLeft === 0
+                                                      ? 'Shared to Story'
+                                                      : 'Share to Story'}
                                             </button>
                                         )}
                                         {post.status !== 'publishing' &&
@@ -398,7 +559,7 @@ export default function QueuePage() {
                                                         Edit
                                                     </button>
                                                     <button
-                                                        onClick={() => remove(post)}
+                                                        onClick={() => setDeleteTarget(post)}
                                                         disabled={busyId === post._id}
                                                         className="bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/10 px-4 py-2.5 rounded-xl text-xs font-bold transition-all"
                                                     >
@@ -413,6 +574,30 @@ export default function QueuePage() {
                     })}
                 </div>
             )}
+
+            <Modal
+                isOpen={deleteTarget !== null}
+                onClose={() => setDeleteTarget(null)}
+                onConfirm={() => {
+                    if (deleteTarget) void remove(deleteTarget);
+                }}
+                title={deleteTarget && isReel(deleteTarget) ? 'Delete this reel?' : 'Delete this post?'}
+                message={`This removes it from Meta-Bru. Its ${
+                    deleteTarget && isReel(deleteTarget) ? 'video' : 'image'
+                } is also deleted from your Cloudinary account when no other post uses it. This cannot be undone.`}
+                confirmText="Delete"
+                type="danger"
+            />
+
+            <StoryShareModal
+                post={storyPost}
+                selected={storySelection}
+                onToggle={toggleStoryPlatform}
+                onClose={() => setStoryPost(null)}
+                onConfirm={() => {
+                    if (storyPost) void shareStory(storyPost, storySelection);
+                }}
+            />
         </AppShell>
     );
 }

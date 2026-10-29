@@ -16,6 +16,17 @@ import {
 type StorageFilter = 'all' | 'duplicates' | 'unused' | 'used';
 type StorageSort = 'newest' | 'oldest' | 'largest' | 'smallest';
 type NoticeKind = 'success' | 'warning';
+type StorageKind = 'all' | 'image' | 'video';
+
+const KINDS: Array<{ key: StorageKind; label: string }> = [
+    { key: 'all', label: 'All types' },
+    { key: 'image', label: 'Images' },
+    { key: 'video', label: 'Reels' },
+];
+
+function files(count: number): string {
+    return count === 1 ? 'file' : 'files';
+}
 
 const PAGE_SIZE = 24;
 const DELETE_BATCH_SIZE = 500;
@@ -75,6 +86,7 @@ export default function StoragePage() {
     const [notice, setNotice] = useState('');
     const [noticeKind, setNoticeKind] = useState<NoticeKind>('success');
     const [filter, setFilter] = useState<StorageFilter>('all');
+    const [kind, setKind] = useState<StorageKind>('all');
     const [search, setSearch] = useState('');
     const [sort, setSort] = useState<StorageSort>('newest');
     const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -132,6 +144,10 @@ export default function StoragePage() {
         const query = search.trim().toLowerCase();
         let list = assets;
 
+        if (kind !== 'all') {
+            list = list.filter((asset) => asset.resourceType === kind);
+        }
+
         if (filter === 'duplicates') {
             list = list.filter((asset) => asset.duplicateCount > 1);
         } else if (filter === 'unused') {
@@ -159,7 +175,7 @@ export default function StoragePage() {
         });
 
         return sorted;
-    }, [assets, filter, search, sort]);
+    }, [assets, filter, kind, search, sort]);
 
     const visibleAssets = filteredAssets.slice(0, visibleCount);
     const hasMore = visibleCount < filteredAssets.length;
@@ -188,9 +204,16 @@ export default function StoragePage() {
     const unusedDeletableCount = assets.filter(
         (asset) => asset.posts.length === 0 && asset.canDelete
     ).length;
+    const videoCount = assets.filter((asset) => asset.resourceType === 'video').length;
+    const imageCount = assets.length - videoCount;
 
     const changeFilter = (next: StorageFilter) => {
         setFilter(next);
+        setVisibleCount(PAGE_SIZE);
+    };
+
+    const changeKind = (next: StorageKind) => {
+        setKind(next);
         setVisibleCount(PAGE_SIZE);
     };
 
@@ -250,10 +273,8 @@ export default function StoragePage() {
         setSelected(new Set(ids));
         setNotice(
             ids.length > 0
-                ? `Selected ${ids.length} unused image${
-                      ids.length === 1 ? '' : 's'
-                  }.`
-                : 'No deletable unused images were found.'
+                ? `Selected ${ids.length} unused ${files(ids.length)}.`
+                : 'No deletable unused files were found.'
         );
         setNoticeKind(ids.length > 0 ? 'success' : 'warning');
     };
@@ -291,16 +312,14 @@ export default function StoragePage() {
 
             if (deleted.length > 0) {
                 parts.push(
-                    `Deleted ${deleted.length} image${
-                        deleted.length === 1 ? '' : 's'
-                    } and freed ${formatBytes(freedBytes)}.`
+                    `Deleted ${deleted.length} ${files(deleted.length)} and freed ${formatBytes(freedBytes)}.`
                 );
             }
 
             if (blocked.length > 0) {
                 parts.push(
-                    `${blocked.length} image${
-                        blocked.length === 1 ? ' is' : 's are'
+                    `${blocked.length} ${files(blocked.length)} ${
+                        blocked.length === 1 ? 'is' : 'are'
                     } still used by unfinished posts and ${
                         blocked.length === 1 ? 'was' : 'were'
                     } not deleted.`
@@ -309,14 +328,14 @@ export default function StoragePage() {
 
             if (skipped.length > 0) {
                 parts.push(
-                    `${skipped.length} image${
-                        skipped.length === 1 ? ' was' : 's were'
+                    `${skipped.length} ${files(skipped.length)} ${
+                        skipped.length === 1 ? 'was' : 'were'
                     } skipped.`
                 );
             }
 
             if (parts.length === 0) {
-                parts.push('No images were deleted.');
+                parts.push('No files were deleted.');
             }
 
             const firstReason =
@@ -335,7 +354,7 @@ export default function StoragePage() {
             setError(
                 errorMessage(
                     err,
-                    'Could not delete the selected images. Try again.'
+                    'Could not delete the selected files. Try again.'
                 )
             );
         } finally {
@@ -357,26 +376,26 @@ export default function StoragePage() {
             : 0
         : 0;
 
-    const deleteMessage = `Permanently delete ${selected.size} image${
-        selected.size === 1 ? '' : 's'
-    } (${formatBytes(selectedBytes)}) from Cloudinary? This cannot be undone.${
+    const deleteMessage = `Permanently delete ${selected.size} ${files(
+        selected.size
+    )} (${formatBytes(selectedBytes)}) from Cloudinary? This cannot be undone.${
         publishedSelected.length > 0
-            ? ` ${publishedSelected.length} selected image${
-                  publishedSelected.length === 1 ? ' is' : 's are'
-              } used by published posts; those post previews will stop loading.`
+            ? ` ${publishedSelected.length} selected ${files(publishedSelected.length)} ${
+                  publishedSelected.length === 1 ? 'is' : 'are'
+              } used by published posts; those previews will stop loading.`
             : ''
     }${
         lockedSelected.length > 0
-            ? ` ${lockedSelected.length} selected image${
-                  lockedSelected.length === 1 ? ' is' : 's are'
+            ? ` ${lockedSelected.length} selected ${files(lockedSelected.length)} ${
+                  lockedSelected.length === 1 ? 'is' : 'are'
               } locked by unfinished posts and will be skipped.`
             : ''
-    } Deleting an image can also break an unsaved Composer draft that still references it.`;
+    } Deleting a file can also break an unsaved Composer or Reels draft that still references it.`;
 
     return (
         <AppShell
             title="Storage"
-            subtitle="Manage the images Meta-Bru uploaded to your own Cloudinary account."
+            subtitle="Manage the images and reels Meta-Bru uploaded to your own Cloudinary account."
             actions={
                 <button
                     onClick={() => {
@@ -552,11 +571,9 @@ export default function StoragePage() {
                             <SummaryCard
                                 label="Meta-Bru uploads"
                                 value={formatBytes(summary.folder.bytes)}
-                                hint={`${summary.folder.assetCount} image${
-                                    summary.folder.assetCount === 1
-                                        ? ''
-                                        : 's'
-                                }`}
+                                hint={`${imageCount} image${
+                                    imageCount === 1 ? '' : 's'
+                                } · ${videoCount} reel${videoCount === 1 ? '' : 's'}`}
                                 accent="border-white/5 bg-slate-900/40"
                             />
 
@@ -591,7 +608,7 @@ export default function StoragePage() {
                             />
 
                             <SummaryCard
-                                label="Unused images"
+                                label="Unused files"
                                 value={String(summary.unused.assets)}
                                 hint={formatBytes(summary.unused.bytes)}
                                 accent="border-emerald-500/15 bg-emerald-500/5"
@@ -609,7 +626,7 @@ export default function StoragePage() {
                             />
 
                             <SummaryCard
-                                label="Locked images"
+                                label="Locked files"
                                 value={String(summary.protected.assets)}
                                 hint={formatBytes(summary.protected.bytes)}
                                 accent="border-amber-500/15 bg-amber-500/5"
@@ -621,26 +638,26 @@ export default function StoragePage() {
                                 </div>
                                 <ul className="mt-3 space-y-2 text-xs text-slate-400">
                                     <li>
-                                        Only images in your own
+                                        Only images and reels in your own
                                         meta-bru/your-user-id/ folder are
                                         listed. Another user cannot access
                                         your Cloudinary account through
                                         Meta-Bru.
                                     </li>
                                     <li>
-                                        Images used by draft, queued,
+                                        Files used by draft, queued,
                                         publishing, failed, or partial posts
                                         are locked.
                                     </li>
                                     <li>
-                                        Published images can be deleted, but
+                                        Published files can be deleted, but
                                         their previews in Activity will stop
                                         loading.
                                     </li>
                                     <li>
-                                        Deleting an image can break an
-                                        unsaved Composer draft that still
-                                        references it.
+                                        Deleting a draft or queued post in
+                                        Queue also removes its file when no
+                                        other post uses it.
                                     </li>
                                 </ul>
                             </div>
@@ -689,12 +706,28 @@ export default function StoragePage() {
                                         changeSearch(event.target.value)
                                     }
                                     placeholder="Search by public ID or folder"
-                                    aria-label="Search images"
+                                    aria-label="Search files"
                                     className="w-full bg-slate-950/80 border border-white/10 rounded-xl pl-10 pr-4 py-3 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
                                 />
                             </div>
 
                             <div className="flex flex-wrap items-center gap-2">
+                                <div className="flex gap-1 rounded-xl border border-white/5 bg-slate-950/40 p-1">
+                                    {KINDS.map((item) => (
+                                        <button
+                                            key={item.key}
+                                            onClick={() => changeKind(item.key)}
+                                            className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all ${
+                                                kind === item.key
+                                                    ? 'bg-white/10 text-white'
+                                                    : 'text-slate-500 hover:text-white'
+                                            }`}
+                                        >
+                                            {item.label}
+                                        </button>
+                                    ))}
+                                </div>
+
                                 {FILTERS.map((item) => (
                                     <button
                                         key={item.key}
@@ -713,7 +746,7 @@ export default function StoragePage() {
 
                                 <select
                                     value={sort}
-                                    aria-label="Sort images"
+                                    aria-label="Sort files"
                                     onChange={(event) =>
                                         changeSort(
                                             event.target
@@ -769,11 +802,9 @@ export default function StoragePage() {
                                         ? `${selected.size} selected · ${formatBytes(
                                               selectedBytes
                                           )}`
-                                        : `${filteredAssets.length} image${
-                                              filteredAssets.length === 1
-                                                  ? ''
-                                                  : 's'
-                                          }`}
+                                        : `${filteredAssets.length} ${files(
+                                              filteredAssets.length
+                                          )}`}
                                 </div>
                                 <button
                                     onClick={() => setDeleteOpen(true)}
@@ -796,8 +827,8 @@ export default function StoragePage() {
                                 No Meta-Bru uploads yet
                             </div>
                             <p className="text-sm text-slate-400 mt-2">
-                                Images you upload or generate in the
-                                Composer will appear here.
+                                Images from the Composer and videos from the
+                                Reels page will appear here.
                             </p>
                             <Link
                                 href="/composer"
@@ -809,13 +840,14 @@ export default function StoragePage() {
                     ) : filteredAssets.length === 0 ? (
                         <div className="rounded-3xl border border-dashed border-white/10 bg-slate-900/30 p-12 text-center">
                             <div className="text-lg font-bold text-white">
-                                No images match this view
+                                No files match this view
                             </div>
                             <p className="text-sm text-slate-400 mt-2">
                                 Try a different search or filter.
                             </p>
                             <button
                                 onClick={() => {
+                                    changeKind('all');
                                     changeFilter('all');
                                     changeSearch('');
                                 }}
@@ -866,7 +898,7 @@ export default function StoragePage() {
                 isOpen={deleteOpen}
                 onClose={() => setDeleteOpen(false)}
                 onConfirm={() => void confirmDelete()}
-                title="Delete selected images?"
+                title="Delete selected files?"
                 message={deleteMessage}
                 confirmText="Delete permanently"
                 type="danger"

@@ -4,6 +4,7 @@ import {
     Post,
     type IPost,
     type IPostTarget,
+    type MediaType,
     type Platform,
     type PostStatus,
 } from '../models/postModel.js';
@@ -16,7 +17,12 @@ import {
     STALE_LOCK_MS,
     canPublishWithStatus,
 } from '../services/connectionLifecycleService.js';
-import { publishPost } from '../services/publishService.js';
+import { deletePostMediaIfUnused } from '../services/cloudinaryStorageService.js';
+import { getCloudinaryCredentials } from '../services/credentialService.js';
+import { REEL_LIMITS } from '../services/mediaDerivativeService.js';
+import { publishPost, sharePostToStory } from '../services/publishService.js';
+import { storyPlatforms } from '../services/storyService.js';
+import { loadReelVideo } from '../services/videoUploadService.js';
 import { AppError } from '../utils/errors.js';
 import { parseBody } from '../utils/validation.js';
 
@@ -25,33 +31,101 @@ const platformSchema = z.object({
     instagram: z.boolean().default(false),
 });
 
-const createPostSchema = z.object({
+function publicUrl(label: string) {
+    return z
+        .string()
+        .url(`${label} must be a public URL`)
+        .refine(
+            (value) => /^https?:\/\//i.test(value),
+            `${label} must use http or https`
+        );
+}
+
+const postFields = {
     connectionId: z.string().min(1),
     caption: z.string().trim().min(1, 'Caption is required').max(2200),
-    mediaUrl: z
-        .string()
-        .url('mediaUrl must be a public URL')
-        .refine(
-            (value) => /^https?:\/\//i.test(value),
-            'mediaUrl must use http or https'
-        ),
-    mediaJpegUrl: z
-        .string()
-        .url('mediaJpegUrl must be a public URL')
-        .refine(
-            (value) => /^https?:\/\//i.test(value),
-            'mediaJpegUrl must use http or https'
-        )
-        .optional()
-        .default(''),
-    mediaPublicId: z.string().max(300).optional().default(''),
     platforms: platformSchema,
     action: z.enum(['draft', 'queue', 'now']).default('queue'),
+    shareToStory: z.boolean().default(false),
+};
+
+const createImagePostSchema = z.object({
+    ...postFields,
+    mediaType: z.literal('image'),
+    mediaUrl: publicUrl('mediaUrl'),
+    mediaJpegUrl: publicUrl('mediaJpegUrl').optional().default(''),
+    mediaPublicId: z.string().max(300).optional().default(''),
 });
+
+// A reel's URLs and duration are read back from Cloudinary, never taken from
+// the client.
+const createReelPostSchema = z.object({
+    ...postFields,
+    mediaType: z.literal('reel'),
+    mediaPublicId: z.string().trim().min(1, 'Upload a reel video first').max(300),
+});
+
+const createPostSchema = z.preprocess(
+    (body) =>
+        body && typeof body === 'object' && !('mediaType' in body)
+            ? { ...body, mediaType: 'image' }
+            : body,
+    z.discriminatedUnion('mediaType', [createImagePostSchema, createReelPostSchema])
+);
+
+type CreatePostInput = z.infer<typeof createPostSchema>;
+
+interface PostMediaFields {
+    mediaType: MediaType;
+    mediaUrl: string;
+    mediaJpegUrl: string;
+    mediaPublicId: string;
+    mediaDuration: number;
+    mediaCoverUrl: string;
+}
+
+async function resolvePostMedia(
+    userId: string,
+    parsed: CreatePostInput
+): Promise<PostMediaFields> {
+    if (parsed.mediaType === 'image') {
+        return {
+            mediaType: 'image',
+            mediaUrl: parsed.mediaUrl,
+            mediaJpegUrl: parsed.mediaJpegUrl,
+            mediaPublicId: parsed.mediaPublicId,
+            mediaDuration: 0,
+            mediaCoverUrl: '',
+        };
+    }
+
+    const credentials = await getCloudinaryCredentials(userId);
+    const video = await loadReelVideo(userId, parsed.mediaPublicId, credentials);
+    if (parsed.platforms.facebook && video.duration > REEL_LIMITS.maxFacebookSeconds) {
+        throw new AppError(
+            400,
+            'Facebook Reels can be at most 90 seconds long. Turn off Facebook or upload a shorter reel.',
+            'FACEBOOK_REEL_TOO_LONG'
+        );
+    }
+
+    return {
+        mediaType: 'reel',
+        mediaUrl: video.url,
+        mediaJpegUrl: '',
+        mediaPublicId: video.publicId,
+        mediaDuration: video.duration,
+        mediaCoverUrl: video.coverUrl,
+    };
+}
 
 const updatePostSchema = z.object({
     caption: z.string().trim().min(1).max(2200).optional(),
     action: z.enum(['draft', 'queue']).optional(),
+});
+
+const shareStorySchema = z.object({
+    platforms: z.array(z.enum(['facebook', 'instagram'])).min(1).max(2),
 });
 
 const ALLOWED_STATUSES = [
@@ -247,6 +321,8 @@ export async function createPost(req: Request, res: Response): Promise<void> {
         }
     }
 
+    const media = await resolvePostMedia(req.user.id, parsed);
+
     if (parsed.action === 'now') {
         const { connection: claimedConnection, lockedAt } =
             await claimConnectionForPublish(
@@ -259,9 +335,8 @@ export async function createPost(req: Request, res: Response): Promise<void> {
                 userId: req.user.id,
                 connectionId: claimedConnection._id,
                 caption: parsed.caption,
-                mediaUrl: parsed.mediaUrl,
-                mediaJpegUrl: parsed.mediaJpegUrl,
-                mediaPublicId: parsed.mediaPublicId,
+                ...media,
+                shareToStory: parsed.shareToStory,
                 platforms: parsed.platforms,
                 status: 'publishing',
                 targets: buildTargets(parsed.platforms),
@@ -282,9 +357,8 @@ export async function createPost(req: Request, res: Response): Promise<void> {
         userId: req.user.id,
         connectionId: connection._id,
         caption: parsed.caption,
-        mediaUrl: parsed.mediaUrl,
-        mediaJpegUrl: parsed.mediaJpegUrl,
-        mediaPublicId: parsed.mediaPublicId,
+        ...media,
+        shareToStory: parsed.shareToStory,
         platforms: parsed.platforms,
         status: parsed.action === 'draft' ? 'draft' : 'queued',
         targets: buildTargets(parsed.platforms),
@@ -395,7 +469,12 @@ export async function deletePost(req: Request, res: Response): Promise<void> {
         throw new AppError(409, 'This post is currently publishing', 'POST_LOCKED');
     }
 
-    res.json({ success: true, message: 'Post deleted' });
+    const cleanup = await deletePostMediaIfUnused(req.user.id, {
+        publicId: post.mediaPublicId,
+        resourceType: post.mediaType === 'reel' ? 'video' : 'image',
+    });
+
+    res.json({ success: true, message: 'Post deleted', ...cleanup });
 }
 
 export async function publishNow(req: Request, res: Response): Promise<void> {
@@ -488,6 +567,41 @@ export async function retryPost(req: Request, res: Response): Promise<void> {
             platforms: retryPlatforms,
         });
         res.json({ success: true, post: claimed });
+    } finally {
+        await releaseConnectionLock(connection._id.toString(), lockedAt);
+    }
+}
+
+export async function shareStory(req: Request, res: Response): Promise<void> {
+    const { platforms } = parseBody(shareStorySchema, req);
+    const existing = await ownedPost(String(req.params.id), req.user.id);
+
+    if (existing.status !== 'published' && existing.status !== 'partial') {
+        throw new AppError(
+            400,
+            'Only published posts can be shared to Story',
+            'POST_NOT_PUBLISHED'
+        );
+    }
+    if (storyPlatforms(existing, platforms).length === 0) {
+        throw new AppError(
+            400,
+            'Nothing left to share to Story on those platforms',
+            'NOTHING_TO_SHARE'
+        );
+    }
+
+    // The Page lock stops a second click or the scheduler from racing this.
+    const { connection, lockedAt } = await claimConnectionForPublish(
+        existing.connectionId.toString(),
+        req.user.id
+    );
+
+    try {
+        // Re-read under the lock so a share that just finished is not repeated.
+        const post = await ownedPost(String(req.params.id), req.user.id);
+        await sharePostToStory(post, connection, platforms);
+        res.json({ success: true, post });
     } finally {
         await releaseConnectionLock(connection._id.toString(), lockedAt);
     }

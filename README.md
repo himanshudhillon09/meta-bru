@@ -15,6 +15,13 @@ Page and linked Instagram Business account.
   zoomed or letterboxed by Meta
 - Optional brand logo under Profile: new post images get a frame that matches
   the photo, with the logo centred in the bottom border
+- Reels: MP4 or MOV videos upload straight from the browser to the user's own
+  Cloudinary account, then publish to Facebook Reels (3–90 seconds) and
+  Instagram Reels (up to 15 minutes) from the same queue as image posts
+- Story sharing: share any published post or reel to Facebook and Instagram
+  Stories, automatically after publishing or on demand from Queue
+- Deleting an unpublished post also removes its Cloudinary file when no other
+  post uses it
 - Per-connection daily time and IANA timezone
 - FIFO queue with one automatic publish per connection per day
 - Immediate **Post now** and **Retry failed** actions
@@ -25,8 +32,8 @@ Page and linked Instagram Business account.
 - Admin user approval, per-user password resets, and a read-only activity
   overview
 
-Image posts only in v1. Video, Reels, carousels, Stories, analytics, and billing
-are intentionally out of scope.
+Carousels, long videos over 100 MB, Reel and Story analytics, and billing are
+intentionally out of scope.
 
 ## Structure
 

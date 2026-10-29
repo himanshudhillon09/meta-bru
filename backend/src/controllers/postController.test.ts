@@ -6,11 +6,14 @@ import type { AppError } from '../utils/errors.js';
 process.env.JWT_SECRET = 'test-jwt-secret-that-is-at-least-32-chars';
 process.env.TOKEN_ENCRYPTION_KEY = '0123456789abcdef'.repeat(4);
 
-const { createPost, publishNow, retryPost } = await import(
+const { createPost, deletePost, publishNow, retryPost, shareStory } = await import(
     './postController.js'
 );
 const { SocialConnection } = await import('../models/socialConnectionModel.js');
 const { Post } = await import('../models/postModel.js');
+const { User } = await import('../models/userModel.js');
+const { encryptSecret } = await import('../services/cryptoService.js');
+const { v2: cloudinary } = await import('cloudinary');
 
 const CONNECTION_ID = '64b7f1c2a1b2c3d4e5f60718';
 const POST_ID = '64b7f1c2a1b2c3d4e5f6071a';
@@ -21,6 +24,47 @@ type JsonMock = ReturnType<typeof mock.fn>;
 
 const socialConnection = SocialConnection as unknown as MockableModel;
 const post = Post as unknown as MockableModel;
+const user = User as unknown as MockableModel;
+const cloudinaryApi = cloudinary.api as unknown as MockableModel;
+const REEL_ID = `meta-bru/${USER_ID}/reel-1`;
+
+function cloudinaryUser(): Record<string, unknown> {
+    return {
+        select: async () => ({
+            _id: USER_ID,
+            credentialsEnc: encryptSecret(
+                JSON.stringify({
+                    cloudinary: { cloudName: 'demo', apiKey: 'key', apiSecret: 'secret' },
+                })
+            ),
+        }),
+    };
+}
+
+function reelResource(duration: number): Record<string, unknown> {
+    return {
+        public_id: REEL_ID,
+        asset_folder: `meta-bru/${USER_ID}`,
+        secure_url: `https://res.cloudinary.com/demo/video/upload/v1/${REEL_ID}.mp4`,
+        format: 'mp4',
+        bytes: 8_000_000,
+        width: 1080,
+        height: 1920,
+        duration,
+    };
+}
+
+function reelBody(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+        connectionId: CONNECTION_ID,
+        caption: 'A test reel',
+        mediaType: 'reel',
+        mediaPublicId: REEL_ID,
+        platforms: { facebook: true, instagram: false },
+        action: 'queue',
+        ...overrides,
+    };
+}
 
 function connectionDoc(
     overrides: Record<string, unknown> = {}
@@ -84,6 +128,13 @@ function requestWithBody(body: Record<string, unknown>): Request {
 function response(): { res: Response; json: JsonMock } {
     const json = mock.fn();
     return { res: { json } as unknown as Response, json };
+}
+
+function createdResponse(): { res: Response; json: JsonMock } {
+    const json = mock.fn();
+    const res = { json } as unknown as Response & { status: unknown };
+    res.status = mock.fn(() => res);
+    return { res, json };
 }
 
 function assertAppError(statusCode: number, code: string) {
@@ -303,4 +354,198 @@ test('retryPost rejects a disconnected Page', async () => {
         assertAppError(409, 'PAGE_DISCONNECTED')
     );
     assert.equal(claim.mock.callCount(), 0);
+});
+
+test('createPost fills reel media from Cloudinary and ignores client URLs', async () => {
+    mock.method(socialConnection, 'findOne', () => ({
+        select: async () => connectionDoc(),
+    }));
+    mock.method(user, 'findById', () => cloudinaryUser());
+    mock.method(cloudinaryApi, 'resource', async () => reelResource(30));
+    let created: Record<string, unknown> | undefined;
+    mock.method(post, 'create', async (doc: unknown) => {
+        created = doc as Record<string, unknown>;
+        return doc;
+    });
+
+    const { res } = createdResponse();
+    await createPost(
+        requestWithBody(
+            reelBody({
+                mediaUrl: 'https://evil.example/fake.mp4',
+                shareToStory: true,
+            })
+        ),
+        res
+    );
+
+    assert.ok(created);
+    assert.equal(created.mediaType, 'reel');
+    assert.equal(created.mediaPublicId, REEL_ID);
+    assert.match(
+        String(created.mediaUrl),
+        /^https:\/\/res\.cloudinary\.com\/demo\/video\/upload\/c_pad/
+    );
+    assert.match(String(created.mediaCoverUrl), /reel-1\.jpg/);
+    assert.equal(created.mediaJpegUrl, '');
+    assert.equal(created.mediaDuration, 30);
+    assert.equal(created.shareToStory, true);
+    assert.equal(created.status, 'queued');
+});
+
+test('createPost rejects a Facebook reel over 90 seconds', async () => {
+    mock.method(socialConnection, 'findOne', () => ({
+        select: async () => connectionDoc(),
+    }));
+    mock.method(user, 'findById', () => cloudinaryUser());
+    mock.method(cloudinaryApi, 'resource', async () => reelResource(120));
+    const create = mock.method(post, 'create', async () => {
+        throw new Error('Post.create should not be called');
+    });
+
+    const { res } = createdResponse();
+    await assert.rejects(
+        () => createPost(requestWithBody(reelBody()), res),
+        assertAppError(400, 'FACEBOOK_REEL_TOO_LONG')
+    );
+    assert.equal(create.mock.callCount(), 0);
+});
+
+test('createPost requires a reel video', async () => {
+    const { res } = createdResponse();
+
+    await assert.rejects(
+        () => createPost(requestWithBody(reelBody({ mediaPublicId: '' })), res),
+        assertAppError(400, 'VALIDATION_ERROR')
+    );
+});
+
+test('createPost keeps image posts working without a mediaType', async () => {
+    mock.method(socialConnection, 'findOne', () => ({
+        select: async () => connectionDoc(),
+    }));
+    let created: Record<string, unknown> | undefined;
+    mock.method(post, 'create', async (doc: unknown) => {
+        created = doc as Record<string, unknown>;
+        return doc;
+    });
+
+    const { res } = createdResponse();
+    await createPost(requestWithBody(createBody()), res);
+
+    assert.ok(created);
+    assert.equal(created.mediaType, 'image');
+    assert.equal(created.mediaUrl, 'https://example.com/image.jpg');
+    assert.equal(created.mediaDuration, 0);
+    assert.equal(created.shareToStory, false);
+});
+
+function publishedPost(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return queuedPost({
+        status: 'published',
+        targets: [
+            {
+                platform: 'facebook',
+                status: 'published',
+                externalId: 'fb-post-1',
+                creationId: '',
+                error: '',
+                publishedAt: new Date(),
+            },
+        ],
+        storyTargets: [],
+        ...overrides,
+    });
+}
+
+test('shareStory validates the requested platforms', async () => {
+    const { res } = response();
+
+    await assert.rejects(
+        () => shareStory(requestWithBody({ platforms: [] }), res),
+        assertAppError(400, 'VALIDATION_ERROR')
+    );
+});
+
+test('shareStory rejects a post that has not published', async () => {
+    mock.method(post, 'findOne', async () => queuedPost());
+    const { res } = response();
+
+    await assert.rejects(
+        () => shareStory(requestWithBody({ platforms: ['facebook'] }), res),
+        assertAppError(400, 'POST_NOT_PUBLISHED')
+    );
+});
+
+test('shareStory rejects platforms with nothing left to share', async () => {
+    mock.method(post, 'findOne', async () =>
+        publishedPost({
+            storyTargets: [
+                {
+                    platform: 'facebook',
+                    status: 'published',
+                    externalId: 'story-1',
+                    creationId: '',
+                    error: '',
+                    publishedAt: new Date(),
+                },
+            ],
+        })
+    );
+    const claim = mock.method(socialConnection, 'findOneAndUpdate', () => {
+        throw new Error('the Page lock should not be claimed');
+    });
+    const { res } = response();
+
+    await assert.rejects(
+        () => shareStory(requestWithBody({ platforms: ['facebook', 'instagram'] }), res),
+        assertAppError(400, 'NOTHING_TO_SHARE')
+    );
+    assert.equal(claim.mock.callCount(), 0);
+});
+
+test('shareStory releases the Page lock when sharing fails', async () => {
+    mock.method(post, 'findOne', async () => publishedPost());
+    mock.method(socialConnection, 'findOneAndUpdate', () => ({
+        select: async () => connectionDoc(),
+    }));
+    // No Meta credentials: sharePostToStory throws META_NOT_CONFIGURED.
+    mock.method(user, 'findById', () => ({
+        select: async () => ({ credentialsEnc: '' }),
+    }));
+    const release = mock.method(socialConnection, 'updateOne', () => ({
+        matchedCount: 1,
+    }));
+    const { res } = response();
+
+    await assert.rejects(
+        () => shareStory(requestWithBody({ platforms: ['facebook'] }), res),
+        assertAppError(503, 'META_NOT_CONFIGURED')
+    );
+    assert.equal(release.mock.callCount(), 1);
+    assert.deepEqual(
+        (release.mock.calls[0]?.arguments[1] as Record<string, unknown>).$set,
+        { lockedAt: null }
+    );
+});
+
+test('deletePost keeps a file another post still uses and reports it', async () => {
+    const draft = queuedPost({
+        status: 'draft',
+        mediaType: 'image',
+        mediaPublicId: `meta-bru/${USER_ID}/image-1`,
+    });
+    mock.method(post, 'findOne', async () => draft);
+    mock.method(post, 'findOneAndDelete', async () => draft);
+    mock.method(post, 'exists', async () => ({ _id: 'another-post' }));
+    const { res, json } = response();
+
+    await deletePost(request(), res);
+
+    assert.deepEqual(json.mock.calls[0]?.arguments[0], {
+        success: true,
+        message: 'Post deleted',
+        mediaDeleted: false,
+        mediaError: '',
+    });
 });

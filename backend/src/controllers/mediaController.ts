@@ -8,6 +8,11 @@ import {
     getStorageOverviewForUser,
     MAX_DELETE_IDS,
 } from '../services/cloudinaryStorageService.js';
+import { getCloudinaryCredentials } from '../services/credentialService.js';
+import {
+    loadReelVideo,
+    signVideoUpload,
+} from '../services/videoUploadService.js';
 import { AppError } from '../utils/errors.js';
 import { parseBody } from '../utils/validation.js';
 
@@ -16,6 +21,10 @@ const deleteMediaSchema = z.object({
         .array(z.string().trim().min(1))
         .min(1)
         .max(MAX_DELETE_IDS),
+});
+
+const registerVideoSchema = z.object({
+    publicId: z.string().trim().min(1).max(300),
 });
 
 export async function uploadMedia(req: Request, res: Response): Promise<void> {
@@ -74,4 +83,30 @@ export async function deleteMedia(
     const result = await deleteUserAssets(req.user.id, assetIds);
 
     res.json({ success: true, ...result });
+}
+
+/**
+ * Signs a direct browser upload of a reel to the user's own Cloudinary
+ * account. Large videos never pass through this server.
+ */
+export async function createVideoSignature(
+    req: Request,
+    res: Response
+): Promise<void> {
+    const credentials = await getCloudinaryCredentials(req.user.id);
+    res.json({ success: true, upload: signVideoUpload(credentials, req.user.id) });
+}
+
+/**
+ * Checks a reel the browser just uploaded and returns its media details. A
+ * video that breaks the reel limits is deleted from Cloudinary.
+ */
+export async function registerVideo(req: Request, res: Response): Promise<void> {
+    const { publicId } = parseBody(registerVideoSchema, req);
+    const credentials = await getCloudinaryCredentials(req.user.id);
+    const media = await loadReelVideo(req.user.id, publicId, credentials, {
+        deleteIfRejected: true,
+    });
+
+    res.status(201).json({ success: true, media });
 }

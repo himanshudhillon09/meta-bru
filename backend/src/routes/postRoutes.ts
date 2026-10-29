@@ -5,6 +5,7 @@ import {
     listPosts,
     publishNow,
     retryPost,
+    shareStory,
     updatePost,
 } from '../controllers/postController.js';
 import { protect } from '../middlewares/authMiddleware.js';
@@ -19,5 +20,6 @@ router.patch('/:id', updatePost);
 router.delete('/:id', deletePost);
 router.post('/:id/publish-now', publishNow);
 router.post('/:id/retry', retryPost);
+router.post('/:id/story', shareStory);
 
 export default router;

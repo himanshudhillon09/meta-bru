@@ -479,6 +479,8 @@ interface PostLike {
     populated?: (path: string) => unknown;
     caption?: string;
     mediaUrl?: string;
+    mediaType?: 'image' | 'reel';
+    mediaCoverUrl?: string;
     status?: PostStatus;
     publishedAt?: Date | null;
     targets?: Array<{
@@ -538,7 +540,11 @@ function targetsFromPost(
             externalId: target.externalId || '',
             publishedAt,
             caption: post.caption || '',
-            mediaUrl: post.mediaUrl || '',
+            // A reel's mediaUrl is an MP4; previews need its cover image.
+            mediaUrl:
+                post.mediaType === 'reel'
+                    ? post.mediaCoverUrl || ''
+                    : post.mediaUrl || '',
             postStatus: post.status || 'published',
             instagramUsername: connection?.instagram?.username || '',
             tokenUpdatedAt: connection?.tokenUpdatedAt ?? null,

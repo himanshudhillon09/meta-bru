@@ -6,7 +6,11 @@ import type {
     BrandLogoDetails,
     DeleteMediaResult,
     MetaLoginResult,
+    Platform,
+    Post,
     StorageOverview,
+    VideoMedia,
+    VideoUploadSignature,
 } from './types';
 
 const BASE_URL = (
@@ -134,6 +138,65 @@ async function uploadRequest<T>(endpoint: string, formData: FormData): Promise<T
     }
 }
 
+export interface VideoUploadHandle {
+    promise: Promise<{ publicId: string }>;
+    abort: () => void;
+}
+
+/**
+ * Sends a reel straight from the browser to the user's own Cloudinary
+ * account, using the signature from /media/video-signature, and reports
+ * progress from 0 to 1. Rejects with a readable message string, like the
+ * other API helpers.
+ */
+export function uploadVideoToCloudinary(
+    file: File,
+    upload: VideoUploadSignature,
+    onProgress: (fraction: number) => void
+): VideoUploadHandle {
+    const xhr = new XMLHttpRequest();
+
+    const promise = new Promise<{ publicId: string }>((resolve, reject) => {
+        const form = new FormData();
+        form.append('file', file);
+        form.append('api_key', upload.apiKey);
+        form.append('timestamp', String(upload.timestamp));
+        form.append('signature', upload.signature);
+        form.append('folder', upload.folder);
+        form.append('eager', upload.eager);
+        form.append('eager_async', upload.eagerAsync);
+        form.append('allowed_formats', upload.allowedFormats);
+
+        xhr.open(
+            'POST',
+            `https://api.cloudinary.com/v1_1/${encodeURIComponent(upload.cloudName)}/video/upload`
+        );
+        xhr.upload.onprogress = (event) => {
+            if (event.lengthComputable) onProgress(event.loaded / event.total);
+        };
+        xhr.onload = () => {
+            let data: { public_id?: unknown; error?: { message?: string } } | null = null;
+            try {
+                data = JSON.parse(xhr.responseText);
+            } catch {
+                data = null;
+            }
+
+            if (xhr.status >= 200 && xhr.status < 300 && typeof data?.public_id === 'string') {
+                resolve({ publicId: data.public_id });
+                return;
+            }
+            reject(data?.error?.message || `Cloudinary upload failed (${xhr.status})`);
+        };
+        xhr.onerror = () =>
+            reject('Could not reach Cloudinary. Check your connection and try again.');
+        xhr.onabort = () => reject('Upload cancelled.');
+        xhr.send(form);
+    });
+
+    return { promise, abort: () => xhr.abort() };
+}
+
 /**
  * Generic API client methods
  */
@@ -230,7 +293,17 @@ export const postsApi = {
     list: (params?: Record<string, string>) => api.get('/posts', params),
     create: (data: any) => api.post('/posts', data),
     update: (postId: string, data: any) => api.patch(`/posts/${postId}`, data),
-    remove: (postId: string) => api.delete(`/posts/${postId}`),
+    remove: (postId: string) =>
+        api.delete<{
+            success: boolean;
+            message: string;
+            mediaDeleted?: boolean;
+            mediaError?: string;
+        }>(`/posts/${postId}`),
+    shareStory: (postId: string, platforms: Platform[]) =>
+        api.post<{ success: boolean; post: Post }>(`/posts/${postId}/story`, {
+            platforms,
+        }),
     publishNow: (postId: string) => api.post(`/posts/${postId}/publish-now`),
     retry: (postId: string) => api.post(`/posts/${postId}/retry`),
 };
@@ -246,6 +319,14 @@ export const mediaApi = {
     deleteAssets: (assetIds: string[]) =>
         api.post<{ success: boolean } & DeleteMediaResult>('/media/delete', {
             assetIds,
+        }),
+    videoSignature: () =>
+        api.post<{ success: boolean; upload: VideoUploadSignature }>(
+            '/media/video-signature'
+        ),
+    registerVideo: (publicId: string) =>
+        api.post<{ success: boolean; media: VideoMedia }>('/media/videos', {
+            publicId,
         }),
 };
 

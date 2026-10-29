@@ -5,6 +5,7 @@ import {
     getCloudinaryCredentials,
     type CloudinaryCredentials,
 } from './credentialService.js';
+import { reelCoverUrl } from './mediaDerivativeService.js';
 
 const FOLDER_ROOT = 'meta-bru';
 const MAX_ASSETS = 2000;
@@ -21,6 +22,8 @@ const PROTECTED_POST_STATUSES: ReadonlySet<PostStatus> = new Set([
 
 export type DuplicateMatch = 'exact' | 'likely' | '';
 
+export type MediaResourceType = 'image' | 'video';
+
 export interface StoragePostUsage {
     id: string;
     status: PostStatus;
@@ -33,6 +36,9 @@ export interface StorageAssetBase {
     assetId: string;
     publicId: string;
     assetFolder: string;
+    resourceType: MediaResourceType;
+    /** Video length in seconds; 0 for images. */
+    duration: number;
     url: string;
     secureUrl: string;
     thumbnailUrl: string;
@@ -112,6 +118,8 @@ interface RawAsset {
     asset_id?: unknown;
     public_id?: unknown;
     asset_folder?: unknown;
+    resource_type?: unknown;
+    duration?: unknown;
     url?: unknown;
     secure_url?: unknown;
     format?: unknown;
@@ -196,7 +204,7 @@ export function thumbnailUrlFor(cloudName: string, publicId: string): string {
     });
 }
 
-function credentialsOptions(
+export function credentialsOptions(
     credentials: CloudinaryCredentials
 ): Record<string, string> {
     return {
@@ -253,8 +261,18 @@ function cloudinaryErrorInfo(error: unknown): {
     return { message, status };
 }
 
-function cloudinaryErrorMessage(error: unknown): string {
+export function cloudinaryErrorMessage(error: unknown): string {
     return cloudinaryErrorInfo(error).message;
+}
+
+/** The HTTP status of a Cloudinary SDK error, which nests it under `error`. */
+export function cloudinaryHttpCode(error: unknown): number | undefined {
+    const shape = error as
+        | { http_code?: unknown; error?: { http_code?: unknown } }
+        | null
+        | undefined;
+    const code = shape?.error?.http_code ?? shape?.http_code;
+    return typeof code === 'number' ? code : undefined;
 }
 
 function asCloudinaryError(error: unknown): AppError {
@@ -337,15 +355,23 @@ export function normalizeAsset(
 
     if (!publicId || !assetId) return null;
 
+    const resourceType: MediaResourceType =
+        raw.resource_type === 'video' ? 'video' : 'image';
+
     return {
         assetId,
         publicId,
         assetFolder:
             typeof raw.asset_folder === 'string' ? raw.asset_folder : '',
+        resourceType,
+        duration: numberOrZero(raw.duration),
         url: typeof raw.url === 'string' ? raw.url : '',
         secureUrl:
             typeof raw.secure_url === 'string' ? raw.secure_url : '',
-        thumbnailUrl: thumbnailUrlFor(cloudName, publicId),
+        thumbnailUrl:
+            resourceType === 'video'
+                ? reelCoverUrl(cloudName, publicId)
+                : thumbnailUrlFor(cloudName, publicId),
         format: typeof raw.format === 'string' ? raw.format : '',
         width: numberOrZero(raw.width),
         height: numberOrZero(raw.height),
@@ -384,7 +410,7 @@ async function searchUserAssets(
     includeImageAnalysis: boolean
 ): Promise<AssetListResult> {
     const folder = userFolder(userId);
-    const expression = `(public_id:${folder}/* OR asset_folder=${folder}) AND resource_type:image AND type:upload`;
+    const expression = `(public_id:${folder}/* OR asset_folder=${folder}) AND (resource_type:image OR resource_type:video) AND type:upload`;
     const assets: StorageAssetBase[] = [];
     let cursor = '';
     let truncated = false;
@@ -473,33 +499,39 @@ async function listUserAssetsByPrefix(
 ): Promise<AssetListResult> {
     const prefix = userFolderPrefix(userId);
     const assets: StorageAssetBase[] = [];
-    let cursor = '';
     let truncated = false;
 
-    do {
-        const options: Record<string, unknown> = {
-            ...credentialsOptions(credentials),
-            resource_type: 'image',
-            type: 'upload',
-            prefix,
-            max_results: 500,
-        };
-        if (cursor) options.next_cursor = cursor;
+    // The Admin API lists one resource type per call.
+    for (const resourceType of ['image', 'video'] as const) {
+        let cursor = '';
 
-        const raw = await cloudinary.api.resources(options);
-        const page = normalizePage(raw, credentials.cloudName);
-        assets.push(
-            ...page.assets.filter((asset) =>
-                isAssetInUserFolder(asset, userId)
-            )
-        );
-        cursor = page.nextCursor;
+        do {
+            const options: Record<string, unknown> = {
+                ...credentialsOptions(credentials),
+                resource_type: resourceType,
+                type: 'upload',
+                prefix,
+                max_results: 500,
+            };
+            if (cursor) options.next_cursor = cursor;
 
-        if (assets.length >= cap) {
-            truncated = Boolean(cursor);
-            break;
-        }
-    } while (cursor);
+            const raw = await cloudinary.api.resources(options);
+            const page = normalizePage(raw, credentials.cloudName);
+            assets.push(
+                ...page.assets.filter((asset) =>
+                    isAssetInUserFolder(asset, userId)
+                )
+            );
+            cursor = page.nextCursor;
+
+            if (assets.length >= cap) {
+                truncated = Boolean(cursor) || resourceType !== 'video';
+                break;
+            }
+        } while (cursor);
+
+        if (assets.length >= cap) break;
+    }
 
     return { assets: assets.slice(0, cap), truncated };
 }
@@ -922,7 +954,7 @@ export async function deleteUserAssets(
     if (assetIds.length === 0) {
         throw new AppError(
             400,
-            'Select at least one image to delete.',
+            'Select at least one file to delete.',
             'VALIDATION_ERROR'
         );
     }
@@ -930,7 +962,7 @@ export async function deleteUserAssets(
     if (assetIds.length > MAX_DELETE_IDS) {
         throw new AppError(
             400,
-            `You can delete at most ${MAX_DELETE_IDS} images at a time.`,
+            `You can delete at most ${MAX_DELETE_IDS} files at a time.`,
             'VALIDATION_ERROR'
         );
     }
@@ -940,4 +972,84 @@ export async function deleteUserAssets(
     const plan = planDeletion(owned.assets, assetIds);
 
     return executeDeletion(credentials, plan);
+}
+
+export interface PostMediaCleanup {
+    mediaDeleted: boolean;
+    mediaError: string;
+}
+
+export interface MediaFileStore {
+    /** The file's asset folder, or null when Cloudinary no longer has it. */
+    assetFolder(publicId: string, resourceType: MediaResourceType): Promise<string | null>;
+    remove(publicId: string, resourceType: MediaResourceType): Promise<void>;
+}
+
+export function cloudinaryMediaFileStore(
+    credentials: CloudinaryCredentials
+): MediaFileStore {
+    const options = credentialsOptions(credentials);
+
+    return {
+        async assetFolder(publicId, resourceType) {
+            try {
+                const raw = (await cloudinary.api.resource(publicId, {
+                    ...options,
+                    resource_type: resourceType,
+                })) as { asset_folder?: unknown };
+                return typeof raw.asset_folder === 'string' ? raw.asset_folder : '';
+            } catch (error) {
+                if (cloudinaryHttpCode(error) === 404) return null;
+                throw error;
+            }
+        },
+        async remove(publicId, resourceType) {
+            const response = (await cloudinary.api.delete_resources([publicId], {
+                ...options,
+                resource_type: resourceType,
+                type: 'upload',
+            })) as DeleteApiResponse;
+            const status = response.deleted?.[publicId];
+            if (status !== 'deleted' && status !== 'not_found') {
+                throw new Error(
+                    typeof status === 'string'
+                        ? `Cloudinary returned: ${status}`
+                        : 'Cloudinary did not confirm deletion.'
+                );
+            }
+        },
+    };
+}
+
+/**
+ * Deletes a deleted post's Cloudinary file when no other post of the same
+ * user still uses it and it sits in the user's Meta-Bru folder. Failures are
+ * reported, never thrown: the post is already gone.
+ */
+export async function deletePostMediaIfUnused(
+    userId: string,
+    media: { publicId: string; resourceType: MediaResourceType },
+    storeFor: (credentials: CloudinaryCredentials) => MediaFileStore = cloudinaryMediaFileStore
+): Promise<PostMediaCleanup> {
+    const { publicId, resourceType } = media;
+    const kept: PostMediaCleanup = { mediaDeleted: false, mediaError: '' };
+    if (!publicId) return kept;
+
+    try {
+        if (await Post.exists({ userId, mediaPublicId: publicId })) return kept;
+
+        const store = storeFor(await getCloudinaryCredentials(userId));
+        const assetFolder = await store.assetFolder(publicId, resourceType);
+        if (assetFolder === null || !isAssetInUserFolder({ publicId, assetFolder }, userId)) {
+            return kept;
+        }
+
+        await store.remove(publicId, resourceType);
+        return { mediaDeleted: true, mediaError: '' };
+    } catch (error) {
+        if (error instanceof AppError && error.code === 'MEDIA_NOT_CONFIGURED') {
+            return kept;
+        }
+        return { mediaDeleted: false, mediaError: cloudinaryErrorMessage(error) };
+    }
 }

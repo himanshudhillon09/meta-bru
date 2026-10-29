@@ -3,6 +3,7 @@
 import React from 'react';
 import {
     formatBytes,
+    formatDuration,
     type PostStatus,
     type StorageAsset,
 } from '@/lib/types';
@@ -62,6 +63,7 @@ export function StorageAssetCard({
 }: StorageAssetCardProps) {
     const usage = usageBadge(asset);
     const duplicate = asset.duplicateCount > 1;
+    const isVideo = asset.resourceType === 'video';
 
     return (
         <article
@@ -77,7 +79,7 @@ export function StorageAssetCard({
                     target="_blank"
                     rel="noreferrer"
                     className="block w-full h-full"
-                    title="Open full image"
+                    title={isVideo ? 'Open video' : 'Open full image'}
                 >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
@@ -87,6 +89,7 @@ export function StorageAssetCard({
                         onError={(event) => {
                             const image = event.currentTarget;
                             if (
+                                !isVideo &&
                                 asset.secureUrl &&
                                 image.src !== asset.secureUrl
                             ) {
@@ -105,9 +108,9 @@ export function StorageAssetCard({
                         aria-label={
                             asset.canDelete
                                 ? selected
-                                    ? 'Deselect image'
-                                    : 'Select image'
-                                : 'This image cannot be deleted'
+                                    ? 'Deselect file'
+                                    : 'Select file'
+                                : 'This file cannot be deleted'
                         }
                         aria-pressed={selected}
                         className={`w-8 h-8 rounded-xl border flex items-center justify-center transition-all ${
@@ -135,6 +138,11 @@ export function StorageAssetCard({
                 </div>
 
                 <div className="absolute top-3 right-3 flex flex-col items-end gap-1.5">
+                    {isVideo ? (
+                        <span className="rounded-full border border-fuchsia-500/25 bg-slate-950/80 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-fuchsia-300 backdrop-blur">
+                            ▶ Reel · {formatDuration(asset.duration)}
+                        </span>
+                    ) : null}
                     {duplicate ? (
                         <span className="rounded-full border border-indigo-500/25 bg-slate-950/80 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-indigo-300 backdrop-blur">
                             {asset.duplicateMatch === 'exact'
@@ -175,8 +183,11 @@ export function StorageAssetCard({
                         <div className="text-[11px] text-slate-500 mt-1">
                             {asset.format
                                 ? asset.format.toUpperCase()
-                                : 'Image'}{' '}
+                                : isVideo
+                                  ? 'Video'
+                                  : 'Image'}{' '}
                             · {asset.width}×{asset.height} ·{' '}
+                            {isVideo ? `${formatDuration(asset.duration)} · ` : ''}
                             {formatBytes(asset.bytes)}
                         </div>
                         <div className="text-[11px] text-slate-500 mt-0.5">

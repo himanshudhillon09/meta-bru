@@ -7,6 +7,7 @@ import { postsApi } from '@/lib/apiClient';
 import {
     connectionName,
     formatDate,
+    postThumbnailUrl,
     type Post,
 } from '@/lib/types';
 
@@ -105,7 +106,7 @@ export default function ActivityPage() {
                                 <div className="w-full sm:w-24 h-36 sm:h-24 rounded-2xl overflow-hidden bg-slate-800 shrink-0 border border-white/5">
                                     {/* eslint-disable-next-line @next/next/no-img-element */}
                                     <img
-                                        src={post.mediaUrl}
+                                        src={postThumbnailUrl(post)}
                                         alt=""
                                         className="w-full h-full object-cover"
                                     />

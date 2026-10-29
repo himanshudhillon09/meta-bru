@@ -4,19 +4,33 @@ import type { ISocialConnection } from '../models/socialConnectionModel.js';
 import { AppError } from '../utils/errors.js';
 import { getMetaCredentials } from './credentialService.js';
 import { decryptSecret } from './cryptoService.js';
+import { REEL_LIMITS, REEL_THUMB_OFFSET_MS } from './mediaDerivativeService.js';
+import {
+    FACEBOOK_REEL_STATUS_WAIT_MS,
+    INSTAGRAM_VIDEO_WAIT_MS,
+    assertInstagramQuota,
+    defaultMetaMediaDeps,
+    publishFacebookVideoJob,
+    publishInstagramContainerJob,
+    type MetaMediaDeps,
+} from './metaMediaJobs.js';
 import {
     MetaApiError,
     createInstagramContainer,
     getInstagramContainerStatus,
-    getInstagramPublishingUsage,
     publishFacebookPhoto,
     publishInstagramContainer,
 } from './metaService.js';
+import { Deadline, PUBLISH_RUN_MS } from './pollService.js';
+import { publishStories } from './storyService.js';
 
 export interface PublishOptions {
     /** Limit publishing to specific platforms (used when retrying only failed targets). */
     platforms?: Platform[];
 }
+
+const TOKEN_ERROR_MESSAGE =
+    'Meta access token is invalid or was revoked. Reconnect this Page.';
 
 function selectedPlatforms(post: IPost, options: PublishOptions): Platform[] {
     if (options.platforms && options.platforms.length > 0) {
@@ -132,13 +146,7 @@ async function publishToInstagram(
         throw new MetaApiError('Instagram requires a public image URL', 400);
     }
 
-    const usage = await getInstagramPublishingUsage(igUserId, accessToken);
-    if (usage.quotaUsage >= usage.quotaTotal) {
-        throw new MetaApiError(
-            `Instagram publishing limit reached (${usage.quotaUsage}/${usage.quotaTotal} in 24h)`,
-            429
-        );
-    }
+    await assertInstagramQuota(igUserId, accessToken);
 
     if (!target.creationId) {
         target.creationId = await createInstagramContainer({
@@ -212,6 +220,77 @@ async function publishToInstagram(
     }
 }
 
+async function publishReel(
+    post: IPost,
+    connection: ISocialConnection,
+    accessToken: string,
+    target: IPostTarget,
+    deps: MetaMediaDeps,
+    deadline: Deadline
+): Promise<void> {
+    if (!post.mediaUrl) {
+        throw new MetaApiError('This reel has no video', 400);
+    }
+    if (
+        target.platform === 'facebook' &&
+        post.mediaDuration > REEL_LIMITS.maxFacebookSeconds
+    ) {
+        throw new MetaApiError('Facebook Reels can be at most 90 seconds long.', 400);
+    }
+    // 425 (Too Early): nothing reached Meta, so a retry cannot duplicate it.
+    if (!(await deps.waitForDerivative(post.mediaUrl, deadline))) {
+        throw new MetaApiError(
+            'Cloudinary is still preparing this reel. Retry in a few minutes.',
+            425
+        );
+    }
+
+    if (target.platform === 'facebook') {
+        await publishFacebookVideoJob(
+            {
+                pageId: connection.pageId,
+                accessToken,
+                edge: 'video_reels',
+                fileUrl: post.mediaUrl,
+                finishParams: { video_state: 'PUBLISHED', description: post.caption },
+                target,
+                statusWaitMs: FACEBOOK_REEL_STATUS_WAIT_MS,
+            },
+            deps.facebookVideo,
+            deadline
+        );
+        return;
+    }
+
+    const igUserId = connection.instagram?.id;
+    if (!igUserId) {
+        throw new MetaApiError(
+            'No Instagram Business account is linked to this Facebook Page',
+            400
+        );
+    }
+    await assertInstagramQuota(igUserId, accessToken, deps.instagramUsage);
+    await publishInstagramContainerJob(
+        {
+            igUserId,
+            accessToken,
+            target,
+            params: {
+                media_type: 'REELS',
+                video_url: post.mediaUrl,
+                caption: post.caption,
+                share_to_feed: 'true',
+                thumb_offset: REEL_THUMB_OFFSET_MS,
+            },
+            waitMs: INSTAGRAM_VIDEO_WAIT_MS,
+            stillProcessingMessage:
+                'Instagram is still processing this reel. Retry in a few minutes.',
+        },
+        deps.instagram,
+        deadline
+    );
+}
+
 /**
  * Publishes a post to its selected platforms. The caller must provide a
  * connection fetched with `+pageAccessTokenEnc`.
@@ -219,7 +298,8 @@ async function publishToInstagram(
 export async function publishPost(
     post: IPost,
     connection: ISocialConnection,
-    options: PublishOptions = {}
+    options: PublishOptions = {},
+    deps: MetaMediaDeps = defaultMetaMediaDeps
 ): Promise<IPost> {
     const platforms = selectedPlatforms(post, options);
     if (platforms.length === 0) {
@@ -279,9 +359,12 @@ export async function publishPost(
     }
     await post.save();
 
+    const deadline = Deadline.after(PUBLISH_RUN_MS, deps.clock);
     for (const target of targets) {
         try {
-            if (target.platform === 'facebook') {
+            if (post.mediaType === 'reel') {
+                await publishReel(post, connection, accessToken, target, deps, deadline);
+            } else if (target.platform === 'facebook') {
                 await publishToFacebook(post, connection, accessToken, target);
             } else {
                 await publishToInstagram(post, connection, accessToken, target);
@@ -300,10 +383,7 @@ export async function publishPost(
                 : message;
 
             if (error instanceof MetaApiError && error.isTokenError) {
-                await markConnectionNeedsReauth(
-                    connection,
-                    'Meta access token is invalid or was revoked. Reconnect this Page.'
-                );
+                await markConnectionNeedsReauth(connection, TOKEN_ERROR_MESSAGE);
             }
         }
 
@@ -321,5 +401,58 @@ export async function publishPost(
     }
 
     await post.save();
+
+    if (post.shareToStory) {
+        await publishStories(
+            {
+                post,
+                connection,
+                accessToken,
+                platforms,
+                deadline,
+                onTokenError: () =>
+                    markConnectionNeedsReauth(connection, TOKEN_ERROR_MESSAGE),
+            },
+            deps
+        );
+    }
+
+    return post;
+}
+
+/**
+ * Shares an already published post or reel to Stories on demand. The caller
+ * must hold the Page lock and pass a connection fetched with
+ * `+pageAccessTokenEnc`.
+ */
+export async function sharePostToStory(
+    post: IPost,
+    connection: ISocialConnection,
+    platforms: Platform[],
+    deps: MetaMediaDeps = defaultMetaMediaDeps
+): Promise<IPost> {
+    // Same rule as publishing: only the owner's own Meta app may be used.
+    await getMetaCredentials(String(post.userId));
+
+    let accessToken: string;
+    try {
+        accessToken = decryptSecret(connection.pageAccessTokenEnc);
+    } catch {
+        const message = 'Stored Page token could not be decrypted. Reconnect this Page.';
+        await markConnectionNeedsReauth(connection, message);
+        throw new AppError(409, message, 'RECONNECT_REQUIRED');
+    }
+
+    await publishStories(
+        {
+            post,
+            connection,
+            accessToken,
+            platforms,
+            deadline: Deadline.after(PUBLISH_RUN_MS, deps.clock),
+            onTokenError: () => markConnectionNeedsReauth(connection, TOKEN_ERROR_MESSAGE),
+        },
+        deps
+    );
     return post;
 }

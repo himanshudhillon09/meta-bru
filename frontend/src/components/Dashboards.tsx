@@ -10,6 +10,7 @@ import { adminApi, authApi, connectionsApi, postsApi } from '@/lib/apiClient';
 import {
     connectionName,
     formatDate,
+    postThumbnailUrl,
     type AdminOverview,
     type Post,
     type PostStatus,
@@ -64,7 +65,7 @@ function RecentPostRow({ post }: { post: Post }) {
             <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-800 shrink-0 border border-white/5">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                    src={post.mediaUrl}
+                    src={postThumbnailUrl(post)}
                     alt=""
                     className="w-full h-full object-cover"
                 />
