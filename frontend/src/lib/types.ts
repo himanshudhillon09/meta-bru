@@ -472,6 +472,8 @@ export interface AnalyticsSyncState {
     lastSyncedAt: string | null;
     staleTargets: number;
     remainingTargets?: number;
+    /** Posts to read again because their Page was reconnected. */
+    reconnectPending?: number;
     nextSyncAt?: string;
     permissionErrors: AnalyticsPermissionError[];
 }
@@ -664,6 +666,8 @@ export interface AnalyticsAiInsight {
 export interface AnalyticsTipsResponse {
     ruleBased: AnalyticsRuleTip[];
     ai: AnalyticsAiInsight | null;
+    /** No AI analysis has run today for this view yet. */
+    aiDueToday?: boolean;
 }
 
 export function formatIstDateTime(value: string | null | undefined): string {

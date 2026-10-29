@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { DateTime } from 'luxon';
 import { env } from '../config/env.js';
 import {
     ANALYTICS_TIP_CATEGORIES,
@@ -13,7 +14,9 @@ import { recordGeminiCall } from './geminiUsageService.js';
 import { getGeminiCredentials } from './credentialService.js';
 
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
-const CACHE_HOURS = 6;
+/** Saved analyses stay viewable for a week; a new one runs at most daily. */
+const KEEP_DAYS = 7;
+const TIMEZONE = 'Asia/Kolkata';
 const MAX_TIPS = 6;
 const MAX_TITLE_LENGTH = 120;
 const MAX_BODY_LENGTH = 280;
@@ -154,20 +157,25 @@ export function hashAnalyticsAiPayload(payload: unknown): string {
         .digest('hex');
 }
 
-export async function getCachedAnalyticsAiInsight(
+/** The newest saved analysis for this scope and range, whatever data it saw. */
+export async function getLatestAnalyticsAiInsight(
     userId: string,
     scopeKey: string,
     rangeKey: string,
-    dataHash: string,
     now: Date = new Date()
 ) {
     return AnalyticsAiInsight.findOne({
         userId,
         scopeKey,
         rangeKey,
-        dataHash,
         expiresAt: { $gt: now },
     }).sort({ generatedAt: -1 });
+}
+
+/** True when the analysis ran on the same IST calendar day as `now`. */
+export function generatedToday(generatedAt: Date, now: Date = new Date()): boolean {
+    const day = (value: Date) => DateTime.fromJSDate(value).setZone(TIMEZONE).toISODate();
+    return day(generatedAt) === day(now);
 }
 
 function extractText(data: GeminiResponse): string {
@@ -187,20 +195,23 @@ export async function generateAnalyticsAiInsight(
     connectionId: string | null,
     /** The user's Gemini text model from Profile; empty uses the default. */
     textModel = '',
+    /**
+     * True for the Run/Refresh button: always ask Gemini. False for the daily
+     * automatic run, which reuses an analysis already made today.
+     */
+    force = true,
     deps: AnalyticsAiDependencies = {}
 ) {
     const model = textModel || env.gemini.textModel;
     const now = deps.now?.() ?? new Date();
     const dataHash = hashAnalyticsAiPayload(payload);
 
-    const cached = await getCachedAnalyticsAiInsight(
-        userId,
-        scopeKey,
-        rangeKey,
-        dataHash,
-        now
-    );
-    if (cached) return { insight: cached, cached: true as const };
+    if (!force) {
+        const latest = await getLatestAnalyticsAiInsight(userId, scopeKey, rangeKey, now);
+        if (latest && generatedToday(latest.generatedAt, now)) {
+            return { insight: latest, cached: true as const };
+        }
+    }
 
     const getCredentials = deps.getCredentials ?? getGeminiCredentials;
     let credentials: Awaited<ReturnType<typeof getGeminiCredentials>>;
@@ -288,7 +299,7 @@ export async function generateAnalyticsAiInsight(
         model,
         generatedAt,
         expiresAt: new Date(
-            generatedAt.getTime() + CACHE_HOURS * 60 * 60_000
+            generatedAt.getTime() + KEEP_DAYS * 24 * 60 * 60_000
         ),
     });
 

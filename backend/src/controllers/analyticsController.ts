@@ -27,8 +27,8 @@ import { getStoryAnalytics } from '../services/storyAnalyticsService.js';
 import { syncStoryInsights } from '../services/storySyncService.js';
 import {
     generateAnalyticsAiInsight,
-    getCachedAnalyticsAiInsight,
-    hashAnalyticsAiPayload,
+    generatedToday,
+    getLatestAnalyticsAiInsight,
 } from '../services/analyticsAiService.js';
 import { parseBody, parseQuery } from '../utils/validation.js';
 
@@ -52,7 +52,10 @@ const syncBodySchema = rangeQuerySchema.extend({
     mode: z.enum(['stale', 'live']).default('stale'),
 });
 
-const tipsBodySchema = rangeQuerySchema;
+const tipsBodySchema = rangeQuerySchema.extend({
+    /** False for the once-a-day automatic run; the button always runs. */
+    force: z.boolean().default(true),
+});
 
 function rangeAndFilters(input: z.infer<typeof rangeQuerySchema>) {
     return {
@@ -206,25 +209,27 @@ export async function tips(req: Request, res: Response): Promise<void> {
         filters,
         req.user!.brandProfile || {}
     );
-    const cached = await getCachedAnalyticsAiInsight(
+    const latest = await getLatestAnalyticsAiInsight(
         req.user!.id,
         context.scopeKey,
-        context.rangeKey,
-        hashAnalyticsAiPayload(context.payload)
+        context.rangeKey
     );
+    const ranToday = latest ? generatedToday(latest.generatedAt) : false;
 
     res.json({
         success: true,
         ruleBased: context.ruleBased,
-        ai: cached
+        ai: latest
             ? {
                   cached: true,
-                  generatedAt: cached.generatedAt.toISOString(),
-                  expiresAt: cached.expiresAt.toISOString(),
-                  model: cached.model,
-                  tips: cached.tips,
+                  generatedAt: latest.generatedAt.toISOString(),
+                  expiresAt: latest.expiresAt.toISOString(),
+                  model: latest.model,
+                  tips: latest.tips,
               }
             : null,
+        // The page runs the analysis by itself once a day, on the first visit.
+        aiDueToday: !ranToday,
     });
 }
 
@@ -246,7 +251,8 @@ export async function generateTips(
         context.rangeKey,
         context.payload,
         filters.connectionId || null,
-        typeof req.user!.aiModels?.text === 'string' ? req.user!.aiModels.text : ''
+        typeof req.user!.aiModels?.text === 'string' ? req.user!.aiModels.text : '',
+        input.force
     );
 
     res.json({
