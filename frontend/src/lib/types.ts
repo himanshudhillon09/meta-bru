@@ -710,3 +710,77 @@ export function latestPublishedAt(post: Post): string | null {
     if (times.length > 0) return new Date(Math.max(...times)).toISOString();
     return post.publishedAt;
 }
+
+export type GeminiFeature = 'caption' | 'image text' | 'image' | 'analytics';
+
+export interface GeminiTotals {
+    requests: number;
+    failures: number;
+    rateLimited: number;
+    inputTokens: number;
+    outputTokens: number;
+    images: number;
+}
+
+export interface GeminiModelUsage {
+    model: string;
+    features: GeminiFeature[];
+    today: GeminiTotals;
+    month: GeminiTotals;
+    /** Daily request limit Google reported for this model, if it has. */
+    dailyLimit: number | null;
+    minuteLimit: number | null;
+    freeTier: boolean;
+    limitObservedAt: string | null;
+}
+
+export interface GeminiLimits {
+    dailyRequests: number | null;
+    monthlyRequests: number | null;
+}
+
+export interface GeminiUsageReport {
+    configured: boolean;
+    today: GeminiTotals;
+    month: GeminiTotals;
+    byModel: GeminiModelUsage[];
+    byFeature: Array<{ feature: GeminiFeature; today: number; month: number }>;
+    daily: Array<{ day: string; requests: number; tokens: number; images: number }>;
+    limits: GeminiLimits;
+    lastLimitHit: {
+        model: string;
+        period: 'day' | 'minute' | 'other';
+        limit: number | null;
+        freeTier: boolean;
+        observedAt: string;
+        message: string;
+    } | null;
+    /** When Google's daily quotas next reset (midnight Pacific time). */
+    resetsAt: string;
+    models: { text: string; image: string };
+}
+
+export interface CloudinaryMeter {
+    used: number;
+    limit: number;
+    credits: number | null;
+}
+
+export interface CloudinaryPlanUsage {
+    configured: boolean;
+    plan: string;
+    lastUpdated: string;
+    credits: { used: number; limit: number; percent: number } | null;
+    storage: CloudinaryMeter;
+    bandwidth: CloudinaryMeter;
+    transformations: CloudinaryMeter;
+    resources: number;
+    derivedResources: number;
+    requests: number;
+    error: string;
+}
+
+export interface UsageReport {
+    gemini: GeminiUsageReport;
+    cloudinary: CloudinaryPlanUsage;
+}

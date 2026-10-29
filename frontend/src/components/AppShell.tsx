@@ -40,6 +40,7 @@ const NAV_GROUPS: NavGroup[] = [
         items: [
             { href: '/connections', label: 'Connections', icon: 'link' },
             { href: '/storage', label: 'Storage', icon: 'cloud' },
+            { href: '/usage', label: 'Usage', icon: 'gauge' },
             { href: '/settings', label: 'Profile', icon: 'settings' },
         ],
     },
@@ -55,6 +56,7 @@ type IconName =
     | 'cloud'
     | 'chart'
     | 'settings'
+    | 'gauge'
     | 'menu'
     | 'close'
     | 'logout';
@@ -109,6 +111,13 @@ const ICON_PATHS: Record<IconName, React.ReactNode> = {
         <>
             <circle cx="12" cy="8" r="4" />
             <path d="M4 21a8 8 0 0 1 16 0" />
+        </>
+    ),
+    gauge: (
+        <>
+            <path d="M4 18a8 8 0 1 1 16 0" />
+            <path d="M12 18l4-5" />
+            <circle cx="12" cy="18" r="1" />
         </>
     ),
     menu: <path d="M4 7h16M4 12h16M4 17h16" />,
