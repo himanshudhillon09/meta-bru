@@ -549,3 +549,106 @@ test('deletePost keeps a file another post still uses and reports it', async () 
         mediaError: '',
     });
 });
+
+test('createPost burns overlay text into the image and removes the plain copy', async () => {
+    const { default: sharp } = await import('sharp');
+    const plain = await sharp({
+        create: { width: 1080, height: 1350, channels: 3, background: '#4a90d9' },
+    })
+        .jpeg()
+        .toBuffer();
+    const basePublicId = `meta-bru/${USER_ID}/plain-1`;
+
+    mock.method(socialConnection, 'findOne', () => ({
+        select: async () => connectionDoc(),
+    }));
+    mock.method(user, 'findById', () => cloudinaryUser());
+    const fetched: string[] = [];
+    mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
+        fetched.push(String(input));
+        return new Response(plain, { status: 200, headers: { 'content-type': 'image/jpeg' } });
+    });
+    let uploadedBytes = 0;
+    mock.method(
+        cloudinary.uploader as unknown as MockableModel,
+        'upload_stream',
+        (_options: unknown, callback: unknown) => ({
+            end: (buffer: Buffer) => {
+                uploadedBytes = buffer.length;
+                (callback as (error: unknown, result: unknown) => void)(undefined, {
+                    secure_url: 'https://res.cloudinary.com/demo/image/upload/v2/with-text.jpg',
+                    public_id: `meta-bru/${USER_ID}/with-text`,
+                    width: 1080,
+                    height: 1350,
+                    format: 'jpg',
+                    bytes: buffer.length,
+                });
+            },
+        })
+    );
+    mock.method(post, 'exists', async () => null);
+    mock.method(cloudinaryApi, 'resource', async () => ({ asset_folder: `meta-bru/${USER_ID}` }));
+    const removed = mock.method(cloudinaryApi, 'delete_resources', async (ids: unknown) => ({
+        deleted: Object.fromEntries((ids as string[]).map((id) => [id, 'deleted'])),
+    }));
+    let created: Record<string, unknown> | undefined;
+    mock.method(post, 'create', async (doc: unknown) => {
+        created = doc as Record<string, unknown>;
+        return doc;
+    });
+
+    const { res } = createdResponse();
+    await createPost(
+        requestWithBody(
+            createBody({
+                mediaUrl: 'https://res.cloudinary.com/demo/image/upload/v1/plain-1.jpg',
+                mediaPublicId: basePublicId,
+                overlayText: 'Real life wali *bandi*',
+                mediaTextArea: { left: 0, top: 0, width: 1080, height: 1350, radius: 0 },
+            })
+        ),
+        res
+    );
+
+    assert.equal(fetched.length, 1);
+    assert.ok(fetched[0]?.includes(basePublicId));
+    assert.ok(uploadedBytes > 0);
+    assert.ok(created);
+    assert.equal(created.mediaPublicId, `meta-bru/${USER_ID}/with-text`);
+    assert.equal(created.mediaUrl, 'https://res.cloudinary.com/demo/image/upload/v2/with-text.jpg');
+    assert.match(String(created.mediaJpegUrl), /with-text/);
+    assert.deepEqual(removed.mock.calls[0]?.arguments[0], [basePublicId]);
+});
+
+test('createPost needs a Meta-Bru image to add overlay text', async () => {
+    mock.method(socialConnection, 'findOne', () => ({
+        select: async () => connectionDoc(),
+    }));
+    const create = mock.method(post, 'create', async () => {
+        throw new Error('Post.create should not be called');
+    });
+
+    const { res } = createdResponse();
+    await assert.rejects(
+        () => createPost(requestWithBody(createBody({ overlayText: 'Hello *world*' })), res),
+        assertAppError(400, 'OVERLAY_MEDIA_REQUIRED')
+    );
+    assert.equal(create.mock.callCount(), 0);
+});
+
+test('createPost ignores overlay text with nothing drawable', async () => {
+    mock.method(socialConnection, 'findOne', () => ({
+        select: async () => connectionDoc(),
+    }));
+    let created: Record<string, unknown> | undefined;
+    mock.method(post, 'create', async (doc: unknown) => {
+        created = doc as Record<string, unknown>;
+        return doc;
+    });
+
+    const { res } = createdResponse();
+    await createPost(requestWithBody(createBody({ overlayText: '  😂 *  ' })), res);
+
+    assert.ok(created);
+    assert.equal(created.mediaUrl, 'https://example.com/image.jpg');
+});
