@@ -52,6 +52,18 @@ export const mediaLimiter = rateLimit({
     },
 });
 
+export const aiModelsLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 30,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    keyGenerator: userKey,
+    message: {
+        success: false,
+        message: 'Model list limit reached. Try again in a few minutes.',
+    },
+});
+
 export const storageLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     limit: 60,

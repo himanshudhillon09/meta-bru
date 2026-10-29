@@ -8,11 +8,13 @@ const {
     buildCaptionPrompt,
     buildImageGenerationBody,
     buildOverlayPrompt,
+    classifyGeminiModels,
     extractInlineImage,
     describeGeminiError,
     generateCaption,
     generateImage,
     generateOverlayText,
+    listGeminiModels,
     parseCaptionResponse,
     parseOverlayResponse,
     resolveImageModel,
@@ -381,4 +383,95 @@ test('generateImage returns the billing explanation from Gemini', async () => {
         () => generateImage(USER_ID, 'A robot reading a newspaper'),
         (error: unknown) => (error as { code?: string }).code === 'AI_IMAGE_NEEDS_BILLING'
     );
+});
+
+function geminiUser() {
+    const credentialsEnc = encryptSecret(JSON.stringify({ gemini: { apiKey: 'gemini-test-key' } }));
+    mock.method(User, 'findById', () => ({
+        select: async () => ({ credentialsEnc }),
+    }));
+}
+
+const MODEL_LIST = [
+    { name: 'models/gemini-2.5-flash', displayName: 'Gemini 2.5 Flash', supportedGenerationMethods: ['generateContent', 'countTokens'] },
+    { name: 'models/gemini-2.5-pro', displayName: 'Gemini 2.5 Pro', supportedGenerationMethods: ['generateContent'] },
+    { name: 'models/gemini-3.1-flash-lite-image', displayName: 'Nano Banana 2 Lite', supportedGenerationMethods: ['generateContent'] },
+    { name: 'models/gemini-2.5-flash-preview-tts', displayName: 'TTS', supportedGenerationMethods: ['generateContent'] },
+    { name: 'models/gemini-embedding-001', displayName: 'Embedding', supportedGenerationMethods: ['embedContent'] },
+    { name: 'models/imagen-4.0-generate', displayName: 'Imagen 4', supportedGenerationMethods: ['predict'] },
+    { name: 'models/gemma-3-27b-it', displayName: 'Gemma 3', supportedGenerationMethods: ['generateContent'] },
+];
+
+test('sorts Gemini models into caption and image choices', () => {
+    assert.deepEqual(classifyGeminiModels(MODEL_LIST), {
+        text: [
+            { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' },
+            { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
+        ],
+        image: [{ id: 'gemini-3.1-flash-lite-image', name: 'Nano Banana 2 Lite' }],
+    });
+});
+
+test('lists every page of models the key can use', async () => {
+    geminiUser();
+    const urls: string[] = [];
+    mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
+        const url = String(input);
+        urls.push(url);
+        const firstPage = !url.includes('pageToken');
+        return new Response(
+            JSON.stringify(
+                firstPage
+                    ? { models: MODEL_LIST.slice(0, 3), nextPageToken: 'next' }
+                    : { models: MODEL_LIST.slice(3) }
+            ),
+            { status: 200, headers: { 'content-type': 'application/json' } }
+        );
+    });
+
+    const list = await listGeminiModels(USER_ID);
+
+    assert.equal(urls.length, 2);
+    assert.match(urls[1] ?? '', /pageToken=next/);
+    assert.equal(list.text.length, 2);
+    assert.equal(list.image[0]?.id, 'gemini-3.1-flash-lite-image');
+    assert.ok(list.defaults.text);
+    assert.ok(list.defaults.image);
+});
+
+test('writes captions with the model chosen for captions', async () => {
+    geminiUser();
+    let url = '';
+    let body = '';
+    mock.method(globalThis, 'fetch', async (input: string | URL | Request, init?: RequestInit) => {
+        url = String(input);
+        body = typeof init?.body === 'string' ? init.body : '';
+        return new Response(
+            JSON.stringify({
+                candidates: [{ content: { parts: [{ text: 'CAPTION:\nHello\nHASHTAGS:\n#a #b #c' }] } }],
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } }
+        );
+    });
+
+    await generateCaption(USER_ID, { platform: 'facebook', topic: 'Hello', model: 'gemini-2.5-pro' });
+
+    assert.match(url, /models\/gemini-2\.5-pro:generateContent/);
+    assert.doesNotMatch(body, /thinkingBudget/);
+});
+
+test('generates images with the model chosen for images', async () => {
+    geminiUser();
+    let url = '';
+    mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
+        url = String(input);
+        return new Response(JSON.stringify(FREE_TIER_IMAGE_ERROR), {
+            status: 429,
+            headers: { 'content-type': 'application/json' },
+        });
+    });
+
+    await assert.rejects(() => generateImage(USER_ID, 'A robot', 'gemini-3.1-flash-lite-image'));
+
+    assert.match(url, /models\/gemini-3\.1-flash-lite-image:generateContent/);
 });

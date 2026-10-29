@@ -28,6 +28,8 @@ export interface CaptionInput {
     platform: 'facebook' | 'instagram' | 'both';
     brandProfile?: BrandProfile;
     mediaPublicId?: string;
+    /** The user's caption model; empty uses the deployment default. */
+    model?: string;
 }
 
 interface InlineImage {
@@ -62,12 +64,13 @@ interface GeminiErrorBody {
     }>;
 }
 
-export type GeminiTask = 'image' | 'caption' | 'image text';
+export type GeminiTask = 'image' | 'caption' | 'image text' | 'model list';
 
 const GEMINI_FAILURE_CODES: Record<GeminiTask, string> = {
     image: 'AI_IMAGE_FAILED',
     caption: 'AI_CAPTION_FAILED',
     'image text': 'AI_OVERLAY_FAILED',
+    'model list': 'AI_MODELS_FAILED',
 };
 
 const FREE_TIER = /free_tier|FreeTier/i;
@@ -494,11 +497,13 @@ async function loadCaptionImage(
 }
 
 interface GeminiTextRequest {
+    /** Model id; empty uses the deployment default. */
+    model?: string | undefined;
     parts: Array<{ text?: string; inlineData?: InlineImage }>;
     temperature: number;
     maxOutputTokens: number;
     /** What is being written, for error messages. */
-    label: Exclude<GeminiTask, 'image'>;
+    label: 'caption' | 'image text';
     errorCode: string;
     truncatedCode: string;
 }
@@ -508,10 +513,11 @@ async function requestGeminiText(
     apiKey: string,
     request: GeminiTextRequest
 ): Promise<string> {
+    const model = request.model || env.gemini.textModel;
     let response: Response;
     try {
         response = await fetch(
-            `${GEMINI_BASE}/models/${encodeURIComponent(env.gemini.textModel)}:generateContent`,
+            `${GEMINI_BASE}/models/${encodeURIComponent(model)}:generateContent`,
             {
                 method: 'POST',
                 headers: {
@@ -523,7 +529,9 @@ async function requestGeminiText(
                     generationConfig: {
                         temperature: request.temperature,
                         maxOutputTokens: request.maxOutputTokens,
-                        ...(env.gemini.textModel.includes('flash')
+                        // Only 2.5 Flash models accept turning thinking off
+                        // with a zero budget; other models reject it.
+                        ...(/^gemini-2\.5-flash/.test(model)
                             ? { thinkingConfig: { thinkingBudget: 0 } }
                             : {}),
                     },
@@ -588,6 +596,7 @@ export async function generateCaption(
     }
 
     const rawText = await requestGeminiText(credentials.apiKey, {
+        model: input.model,
         parts,
         temperature: 0.8,
         maxOutputTokens: 4096,
@@ -607,10 +616,12 @@ export async function generateCaption(
 
 export async function generateImage(
     userId: string,
-    prompt: string
+    prompt: string,
+    /** The user's image model; empty uses the deployment default. */
+    imageModel = ''
 ): Promise<PostImageMedia> {
     const credentials = await getGeminiCredentials(userId);
-    const model = resolveImageModel(env.gemini.imageModel);
+    const model = resolveImageModel(imageModel || env.gemini.imageModel);
 
     let response: Response;
     try {
@@ -671,6 +682,8 @@ export interface OverlayTextInput {
     /** The prompt the image was generated from. */
     prompt?: string;
     brandProfile?: BrandProfile;
+    /** The user's caption model, also used for image text. */
+    model?: string;
 }
 
 export function buildOverlayPrompt(input: OverlayTextInput): string {
@@ -732,6 +745,7 @@ export async function generateOverlayText(
 ): Promise<string> {
     const credentials = await getGeminiCredentials(userId);
     const rawText = await requestGeminiText(credentials.apiKey, {
+        model: input.model,
         parts: [{ text: buildOverlayPrompt(input) }],
         temperature: 0.9,
         maxOutputTokens: 256,
@@ -745,4 +759,109 @@ export async function generateOverlayText(
         throw new AppError(502, 'Gemini returned an empty image text', 'AI_EMPTY_RESPONSE');
     }
     return text;
+}
+
+export interface GeminiModelOption {
+    id: string;
+    name: string;
+}
+
+export interface GeminiModelList {
+    /** What an empty choice falls back to on this deployment. */
+    defaults: { text: string; image: string };
+    text: GeminiModelOption[];
+    image: GeminiModelOption[];
+}
+
+interface RawGeminiModel {
+    name?: unknown;
+    displayName?: unknown;
+    supportedGenerationMethods?: unknown;
+}
+
+// Models that answer generateContent but cannot write a caption.
+const NOT_FOR_CAPTIONS = /(tts|audio|live|embedding|aqa|veo|computer-use|robotics)/i;
+
+/**
+ * Splits the models a key can use into caption choices and image choices.
+ * Only Gemini models that support generateContent are offered; image models
+ * are the ones whose id names images.
+ */
+export function classifyGeminiModels(
+    raw: unknown[]
+): Pick<GeminiModelList, 'text' | 'image'> {
+    const text = new Map<string, GeminiModelOption>();
+    const image = new Map<string, GeminiModelOption>();
+
+    for (const entry of raw) {
+        const model = (entry ?? {}) as RawGeminiModel;
+        const id = typeof model.name === 'string' ? model.name.replace(/^models\//, '') : '';
+        const methods = Array.isArray(model.supportedGenerationMethods)
+            ? model.supportedGenerationMethods
+            : [];
+        if (!id.startsWith('gemini') || !methods.includes('generateContent')) continue;
+
+        const option = {
+            id,
+            name: typeof model.displayName === 'string' && model.displayName ? model.displayName : id,
+        };
+        if (/image/i.test(id)) image.set(id, option);
+        else if (!NOT_FOR_CAPTIONS.test(id)) text.set(id, option);
+    }
+
+    const newestFirst = (a: GeminiModelOption, b: GeminiModelOption) => b.id.localeCompare(a.id);
+    return {
+        text: [...text.values()].sort(newestFirst),
+        image: [...image.values()].sort(newestFirst),
+    };
+}
+
+/** Lists the Gemini models the user's own key can use, for the Profile pickers. */
+export async function listGeminiModels(userId: string): Promise<GeminiModelList> {
+    const credentials = await getGeminiCredentials(userId);
+    const models: unknown[] = [];
+    let pageToken = '';
+
+    for (let page = 0; page < 5; page += 1) {
+        const url = new URL(`${GEMINI_BASE}/models`);
+        url.searchParams.set('pageSize', '200');
+        if (pageToken) url.searchParams.set('pageToken', pageToken);
+
+        let response: Response;
+        try {
+            response = await fetch(url, {
+                headers: { 'x-goog-api-key': credentials.apiKey },
+                signal: AbortSignal.timeout(15_000),
+            });
+        } catch (error) {
+            throw new AppError(
+                502,
+                error instanceof Error
+                    ? `Could not reach Gemini: ${error.message}`
+                    : 'Could not reach Gemini',
+                'AI_MODELS_FAILED'
+            );
+        }
+
+        const data = (await response.json().catch(() => ({}))) as {
+            models?: unknown[];
+            nextPageToken?: string;
+            error?: GeminiErrorBody;
+        };
+        if (!response.ok || data.error) {
+            throw describeGeminiError(response.status, data, 'model list');
+        }
+
+        models.push(...(Array.isArray(data.models) ? data.models : []));
+        pageToken = typeof data.nextPageToken === 'string' ? data.nextPageToken : '';
+        if (!pageToken) break;
+    }
+
+    return {
+        defaults: {
+            text: env.gemini.textModel,
+            image: resolveImageModel(env.gemini.imageModel),
+        },
+        ...classifyGeminiModels(models),
+    };
 }
