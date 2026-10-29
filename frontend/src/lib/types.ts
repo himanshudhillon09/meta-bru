@@ -114,6 +114,7 @@ export type PostStatus =
     | 'partial'
     | 'failed';
 export type TargetStatus = 'pending' | 'publishing' | 'published' | 'failed';
+export type MediaType = 'image' | 'reel';
 
 export interface PostTarget {
     platform: Platform;
@@ -139,6 +140,13 @@ export interface Post {
     mediaUrl: string;
     mediaJpegUrl?: string;
     mediaPublicId: string;
+    mediaType?: MediaType;
+    /** Reel length in seconds. */
+    mediaDuration?: number;
+    /** Reel cover JPG; empty for images. */
+    mediaCoverUrl?: string;
+    shareToStory?: boolean;
+    storyTargets?: PostTarget[];
     platforms: { facebook: boolean; instagram: boolean };
     status: PostStatus;
     targets: PostTarget[];
@@ -159,6 +167,31 @@ export interface MediaAsset {
     bytes: number;
 }
 
+export interface VideoMedia {
+    publicId: string;
+    /** Meta-ready MP4 derivative. */
+    url: string;
+    coverUrl: string;
+    /** The uploaded file, used while the derivative is still processing. */
+    originalUrl: string;
+    width: number;
+    height: number;
+    duration: number;
+    format: string;
+    bytes: number;
+}
+
+export interface VideoUploadSignature {
+    cloudName: string;
+    apiKey: string;
+    timestamp: number;
+    signature: string;
+    folder: string;
+    eager: string;
+    eagerAsync: string;
+    allowedFormats: string;
+}
+
 export type StorageDuplicateMatch = 'exact' | 'likely' | '';
 
 export interface StoragePostUsage {
@@ -173,6 +206,9 @@ export interface StorageAsset {
     assetId: string;
     publicId: string;
     assetFolder: string;
+    resourceType: 'image' | 'video';
+    /** Video length in seconds; 0 for images. */
+    duration: number;
     url: string;
     secureUrl: string;
     thumbnailUrl: string;
@@ -258,6 +294,45 @@ export interface AdminOverview {
 export function connectionName(post: Post): string {
     if (typeof post.connectionId === 'string') return 'Connected page';
     return post.connectionId?.pageName || 'Connected page';
+}
+
+export function isReel(post: Pick<Post, 'mediaType'>): boolean {
+    return post.mediaType === 'reel';
+}
+
+/** The image to show for a post: a reel's mediaUrl is an MP4, so use its cover. */
+export function postThumbnailUrl(
+    post: Pick<Post, 'mediaType' | 'mediaUrl' | 'mediaCoverUrl'>
+): string {
+    return isReel(post) ? post.mediaCoverUrl || '' : post.mediaUrl;
+}
+
+export function publishedPlatforms(post: Pick<Post, 'targets'>): Platform[] {
+    return post.targets
+        .filter((target) => target.status === 'published')
+        .map((target) => target.platform);
+}
+
+export function storyTarget(
+    post: Pick<Post, 'storyTargets'>,
+    platform: Platform
+): PostTarget | undefined {
+    return (post.storyTargets ?? []).find((target) => target.platform === platform);
+}
+
+/** Published platforms whose Story has not published yet. */
+export function unsharedStoryPlatforms(
+    post: Pick<Post, 'targets' | 'storyTargets'>
+): Platform[] {
+    return publishedPlatforms(post).filter(
+        (platform) => storyTarget(post, platform)?.status !== 'published'
+    );
+}
+
+export function formatDuration(seconds: number): string {
+    const total = Math.max(0, Math.round(seconds));
+    const minutes = Math.floor(total / 60);
+    return `${minutes}:${String(total % 60).padStart(2, '0')}`;
 }
 
 export function formatDate(value: string | null | undefined): string {
