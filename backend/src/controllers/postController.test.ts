@@ -6,7 +6,7 @@ import type { AppError } from '../utils/errors.js';
 process.env.JWT_SECRET = 'test-jwt-secret-that-is-at-least-32-chars';
 process.env.TOKEN_ENCRYPTION_KEY = '0123456789abcdef'.repeat(4);
 
-const { createPost, publishNow, retryPost } = await import(
+const { createPost, deletePost, publishNow, retryPost, shareStory } = await import(
     './postController.js'
 );
 const { SocialConnection } = await import('../models/socialConnectionModel.js');
@@ -438,4 +438,93 @@ test('createPost keeps image posts working without a mediaType', async () => {
     assert.equal(created.mediaUrl, 'https://example.com/image.jpg');
     assert.equal(created.mediaDuration, 0);
     assert.equal(created.shareToStory, false);
+});
+
+function publishedPost(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return queuedPost({
+        status: 'published',
+        targets: [
+            {
+                platform: 'facebook',
+                status: 'published',
+                externalId: 'fb-post-1',
+                creationId: '',
+                error: '',
+                publishedAt: new Date(),
+            },
+        ],
+        storyTargets: [],
+        ...overrides,
+    });
+}
+
+test('shareStory validates the requested platforms', async () => {
+    const { res } = response();
+
+    await assert.rejects(
+        () => shareStory(requestWithBody({ platforms: [] }), res),
+        assertAppError(400, 'VALIDATION_ERROR')
+    );
+});
+
+test('shareStory rejects a post that has not published', async () => {
+    mock.method(post, 'findOne', async () => queuedPost());
+    const { res } = response();
+
+    await assert.rejects(
+        () => shareStory(requestWithBody({ platforms: ['facebook'] }), res),
+        assertAppError(400, 'POST_NOT_PUBLISHED')
+    );
+});
+
+test('shareStory rejects platforms with nothing left to share', async () => {
+    mock.method(post, 'findOne', async () =>
+        publishedPost({
+            storyTargets: [
+                {
+                    platform: 'facebook',
+                    status: 'published',
+                    externalId: 'story-1',
+                    creationId: '',
+                    error: '',
+                    publishedAt: new Date(),
+                },
+            ],
+        })
+    );
+    const claim = mock.method(socialConnection, 'findOneAndUpdate', () => {
+        throw new Error('the Page lock should not be claimed');
+    });
+    const { res } = response();
+
+    await assert.rejects(
+        () => shareStory(requestWithBody({ platforms: ['facebook', 'instagram'] }), res),
+        assertAppError(400, 'NOTHING_TO_SHARE')
+    );
+    assert.equal(claim.mock.callCount(), 0);
+});
+
+test('shareStory releases the Page lock when sharing fails', async () => {
+    mock.method(post, 'findOne', async () => publishedPost());
+    mock.method(socialConnection, 'findOneAndUpdate', () => ({
+        select: async () => connectionDoc(),
+    }));
+    // No Meta credentials: sharePostToStory throws META_NOT_CONFIGURED.
+    mock.method(user, 'findById', () => ({
+        select: async () => ({ credentialsEnc: '' }),
+    }));
+    const release = mock.method(socialConnection, 'updateOne', () => ({
+        matchedCount: 1,
+    }));
+    const { res } = response();
+
+    await assert.rejects(
+        () => shareStory(requestWithBody({ platforms: ['facebook'] }), res),
+        assertAppError(503, 'META_NOT_CONFIGURED')
+    );
+    assert.equal(release.mock.callCount(), 1);
+    assert.deepEqual(
+        (release.mock.calls[0]?.arguments[1] as Record<string, unknown>).$set,
+        { lockedAt: null }
+    );
 });

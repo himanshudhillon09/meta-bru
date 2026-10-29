@@ -19,7 +19,8 @@ import {
 } from '../services/connectionLifecycleService.js';
 import { getCloudinaryCredentials } from '../services/credentialService.js';
 import { REEL_LIMITS } from '../services/mediaDerivativeService.js';
-import { publishPost } from '../services/publishService.js';
+import { publishPost, sharePostToStory } from '../services/publishService.js';
+import { storyPlatforms } from '../services/storyService.js';
 import { loadReelVideo } from '../services/videoUploadService.js';
 import { AppError } from '../utils/errors.js';
 import { parseBody } from '../utils/validation.js';
@@ -120,6 +121,10 @@ async function resolvePostMedia(
 const updatePostSchema = z.object({
     caption: z.string().trim().min(1).max(2200).optional(),
     action: z.enum(['draft', 'queue']).optional(),
+});
+
+const shareStorySchema = z.object({
+    platforms: z.array(z.enum(['facebook', 'instagram'])).min(1).max(2),
 });
 
 const ALLOWED_STATUSES = [
@@ -556,6 +561,41 @@ export async function retryPost(req: Request, res: Response): Promise<void> {
             platforms: retryPlatforms,
         });
         res.json({ success: true, post: claimed });
+    } finally {
+        await releaseConnectionLock(connection._id.toString(), lockedAt);
+    }
+}
+
+export async function shareStory(req: Request, res: Response): Promise<void> {
+    const { platforms } = parseBody(shareStorySchema, req);
+    const existing = await ownedPost(String(req.params.id), req.user.id);
+
+    if (existing.status !== 'published' && existing.status !== 'partial') {
+        throw new AppError(
+            400,
+            'Only published posts can be shared to Story',
+            'POST_NOT_PUBLISHED'
+        );
+    }
+    if (storyPlatforms(existing, platforms).length === 0) {
+        throw new AppError(
+            400,
+            'Nothing left to share to Story on those platforms',
+            'NOTHING_TO_SHARE'
+        );
+    }
+
+    // The Page lock stops a second click or the scheduler from racing this.
+    const { connection, lockedAt } = await claimConnectionForPublish(
+        existing.connectionId.toString(),
+        req.user.id
+    );
+
+    try {
+        // Re-read under the lock so a share that just finished is not repeated.
+        const post = await ownedPost(String(req.params.id), req.user.id);
+        await sharePostToStory(post, connection, platforms);
+        res.json({ success: true, post });
     } finally {
         await releaseConnectionLock(connection._id.toString(), lockedAt);
     }

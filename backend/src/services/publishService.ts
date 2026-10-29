@@ -419,3 +419,40 @@ export async function publishPost(
 
     return post;
 }
+
+/**
+ * Shares an already published post or reel to Stories on demand. The caller
+ * must hold the Page lock and pass a connection fetched with
+ * `+pageAccessTokenEnc`.
+ */
+export async function sharePostToStory(
+    post: IPost,
+    connection: ISocialConnection,
+    platforms: Platform[],
+    deps: MetaMediaDeps = defaultMetaMediaDeps
+): Promise<IPost> {
+    // Same rule as publishing: only the owner's own Meta app may be used.
+    await getMetaCredentials(String(post.userId));
+
+    let accessToken: string;
+    try {
+        accessToken = decryptSecret(connection.pageAccessTokenEnc);
+    } catch {
+        const message = 'Stored Page token could not be decrypted. Reconnect this Page.';
+        await markConnectionNeedsReauth(connection, message);
+        throw new AppError(409, message, 'RECONNECT_REQUIRED');
+    }
+
+    await publishStories(
+        {
+            post,
+            connection,
+            accessToken,
+            platforms,
+            deadline: Deadline.after(PUBLISH_RUN_MS, deps.clock),
+            onTokenError: () => markConnectionNeedsReauth(connection, TOKEN_ERROR_MESSAGE),
+        },
+        deps
+    );
+    return post;
+}
