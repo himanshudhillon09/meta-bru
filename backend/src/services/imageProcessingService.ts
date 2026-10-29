@@ -593,6 +593,16 @@ export async function renderPostImage(
 }
 
 /**
+ * The original photo as a JPEG data URL, before any resizing to feed limits
+ * or framing, so the Composer can crop it and upload the result.
+ */
+export async function editableSourceDataUrl(input: Buffer): Promise<string> {
+    const photo = await loadPhoto(input);
+    const jpeg = await fromRaw(photo).jpeg({ quality: 90, mozjpeg: true }).toBuffer();
+    return `data:image/jpeg;base64,${jpeg.toString('base64')}`;
+}
+
+/**
  * Normalises an uploaded logo: upright, transparent padding trimmed so its
  * spacing in the frame is exact, and capped in size before it is stored.
  */

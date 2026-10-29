@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { preparePostImage } from '../services/brandLogoService.js';
 import { uploadImage as uploadToCloudinary } from '../services/cloudinaryService.js';
 import {
+    deletePostMediaIfUnused,
     deleteUserAssets,
     emptyStorageSummary,
     getStorageOverviewForUser,
@@ -28,6 +29,10 @@ const registerVideoSchema = z.object({
     publicId: z.string().trim().min(1).max(300),
 });
 
+const discardImageSchema = z.object({
+    publicId: z.string().trim().min(1).max(300),
+});
+
 const textPreviewSchema = z.object({
     publicId: z.string().trim().min(1).max(300),
     text: z.string().max(500),
@@ -48,6 +53,21 @@ export async function uploadMedia(req: Request, res: Response): Promise<void> {
     };
 
     res.status(201).json({ success: true, media });
+}
+
+/**
+ * Removes a Composer image the user replaced (for example after re-cropping
+ * it). Nothing is deleted when a post uses the image or it lies outside the
+ * user's own folder.
+ */
+export async function discardImage(req: Request, res: Response): Promise<void> {
+    const { publicId } = parseBody(discardImageSchema, req);
+    const result = await deletePostMediaIfUnused(req.user.id, {
+        publicId,
+        resourceType: 'image',
+    });
+
+    res.json({ success: true, deleted: result.mediaDeleted });
 }
 
 /**
