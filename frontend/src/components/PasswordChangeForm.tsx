@@ -124,7 +124,7 @@ export function PasswordChangeForm({
             </p>
 
             {error ? (
-                <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
+                <div className="animate-fade-up rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
                     {error}
                 </div>
             ) : null}

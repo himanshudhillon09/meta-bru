@@ -26,7 +26,7 @@ export function AuthFrame({ title, subtitle, width = 'narrow', children }: AuthF
             </header>
             <main className="flex flex-1 items-center justify-center px-4 pb-16">
                 <div
-                    className={`w-full rounded-2xl border border-line bg-surface p-8 shadow-card sm:p-10 ${
+                    className={`w-full animate-pop-in rounded-2xl border border-line bg-surface p-8 shadow-card sm:p-10 ${
                         width === 'wide' ? 'max-w-lg' : 'max-w-[420px]'
                     }`}
                 >

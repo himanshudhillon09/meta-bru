@@ -4,8 +4,10 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AppShell } from '@/components/AppShell';
 import { StatusBadge } from '@/components/Dashboards';
+import { EmptyState, ListSkeleton } from '@/components/Feedback';
 import { Modal } from '@/components/Modal';
 import { StoryShareModal } from '@/components/StoryShareModal';
+import { Tabs } from '@/components/Tabs';
 import { postsApi } from '@/lib/apiClient';
 import {
     connectionName,
@@ -282,68 +284,47 @@ export default function QueuePage() {
             }
         >
             {notice ? (
-                <div className="mb-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-300">
+                <div className="animate-fade-up mb-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-300">
                     {notice}
                 </div>
             ) : null}
             {error ? (
-                <div className="mb-6 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
+                <div className="animate-fade-up mb-6 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
                     {error}
                 </div>
             ) : null}
 
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-7">
-                <div className="flex gap-2 overflow-x-auto">
-                    {TABS.map((item) => (
-                        <button
-                            key={item.key}
-                            onClick={() => setTab(item.key)}
-                            className={`whitespace-nowrap px-4 py-2.5 rounded-xl text-xs font-bold border transition-all ${
-                                tab === item.key
-                                    ? 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-500/20'
-                                    : 'bg-surface text-muted border-line hover:text-fg'
-                            }`}
-                        >
-                            {item.label}
-                            <span className="ml-2 text-subtle">
-                                {kindPosts.filter((post) => matchesTab(post, item.key)).length}
-                            </span>
-                        </button>
-                    ))}
-                </div>
+                <Tabs
+                    label="Post status"
+                    items={TABS.map((item) => ({
+                        ...item,
+                        count: kindPosts.filter((post) => matchesTab(post, item.key)).length,
+                    }))}
+                    value={tab}
+                    onChange={setTab}
+                />
 
-                <div className="flex gap-1 rounded-xl border border-line bg-surface p-1 self-start">
-                    {KINDS.map((item) => (
-                        <button
-                            key={item.key}
-                            onClick={() => setKind(item.key)}
-                            className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all ${
-                                kind === item.key
-                                    ? 'bg-hover-strong text-fg'
-                                    : 'text-subtle hover:text-fg'
-                            }`}
-                        >
-                            {item.label}
-                        </button>
-                    ))}
-                </div>
+                <Tabs
+                    label="Post type"
+                    variant="segmented"
+                    items={KINDS}
+                    value={kind}
+                    onChange={setKind}
+                    className="self-start"
+                />
             </div>
 
             {loading ? (
-                <div className="flex justify-center py-24">
-                    <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-indigo-500" />
-                </div>
+                <ListSkeleton />
             ) : visible.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-line-strong bg-surface p-12 text-center">
-                    <div className="text-lg font-bold text-fg">
-                        Nothing in {TABS.find((item) => item.key === tab)?.label.toLowerCase()}
-                    </div>
-                    <p className="text-sm text-muted mt-2">
-                        Posts from the Composer and reels from the Reels page show up here.
-                    </p>
-                </div>
+                <EmptyState
+                    key={`${tab}-${kind}`}
+                    title={`Nothing in ${TABS.find((item) => item.key === tab)?.label.toLowerCase()}`}
+                    body="Posts from the Composer and reels from the Reels page show up here."
+                />
             ) : (
-                <div className="space-y-4">
+                <div key={`${tab}-${kind}`} className="stagger space-y-4">
                     {visible.map((post) => {
                         const status = destinationStatus(post);
                         const publishBlocked = status !== 'active';
@@ -356,7 +337,7 @@ export default function QueuePage() {
                         return (
                             <article
                                 key={post._id}
-                                className="rounded-2xl border border-line bg-surface p-5 sm:p-6 shadow-card"
+                                className="rounded-2xl border border-line bg-surface p-5 sm:p-6 shadow-card transition-[border-color,box-shadow,translate] duration-200 hover:-translate-y-0.5 hover:border-line-strong hover:shadow-card-hover"
                             >
                                 <div className="flex flex-col sm:flex-row gap-5">
                                     <div className="relative w-full sm:w-28 h-40 sm:h-28 rounded-2xl overflow-hidden bg-sunken shrink-0 border border-line">

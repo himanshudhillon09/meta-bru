@@ -15,8 +15,16 @@ export function currentTheme(): Theme {
     return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
 }
 
+let switchTimer: ReturnType<typeof setTimeout> | undefined;
+
 export function setTheme(theme: Theme): void {
-    document.documentElement.setAttribute('data-theme', theme);
+    // Fade colours between themes instead of snapping (see globals.css).
+    const root = document.documentElement;
+    root.classList.add('theme-switching');
+    clearTimeout(switchTimer);
+    switchTimer = setTimeout(() => root.classList.remove('theme-switching'), 350);
+
+    root.setAttribute('data-theme', theme);
     try {
         window.localStorage.setItem(THEME_STORAGE_KEY, theme);
     } catch {

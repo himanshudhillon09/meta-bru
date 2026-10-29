@@ -280,7 +280,7 @@ export default function ConnectionsPage() {
             </Modal>
 
             {notice ? (
-                <div className="mb-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-300 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="animate-fade-up mb-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-300 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <span>{notice}</span>
                     {returnTo && !connecting ? (
                         <Link
@@ -296,23 +296,23 @@ export default function ConnectionsPage() {
             {warnings.map((warning) => (
                 <div
                     key={warning}
-                    className="mb-6 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-200"
+                    className="animate-fade-up mb-6 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-200"
                 >
                     {warning}
                 </div>
             ))}
             {error ? (
-                <div className="mb-6 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
+                <div className="animate-fade-up mb-6 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
                     {error}
                 </div>
             ) : null}
 
             {loading ? (
                 <div className="flex justify-center py-24">
-                    <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-indigo-500" />
+                    <div className="animate-spin rounded-full h-10 w-10 border-[3px] border-indigo-500/20 border-t-indigo-500" />
                 </div>
             ) : connections.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-line-strong bg-surface p-12 text-center">
+                <div className="animate-fade-up rounded-2xl border border-dashed border-line-strong bg-surface p-12 text-center">
                     <div className="text-xl font-bold text-fg">
                         No Pages connected yet
                     </div>
@@ -330,7 +330,7 @@ export default function ConnectionsPage() {
                     </button>
                 </div>
             ) : (
-                <div className="grid grid-cols-1 gap-6">
+                <div className="stagger grid grid-cols-1 gap-6">
                     {connections.map((connection) => (
                         <ConnectionCard
                             key={connection._id}

@@ -3,6 +3,8 @@
 import React, { useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { StatusBadge } from '@/components/Dashboards';
+import { EmptyState, ListSkeleton } from '@/components/Feedback';
+import { Tabs } from '@/components/Tabs';
 import { postsApi } from '@/lib/apiClient';
 import {
     connectionName,
@@ -11,11 +13,19 @@ import {
     type Post,
 } from '@/lib/types';
 
+const FILTERS = [
+    { key: 'all', label: 'All' },
+    { key: 'published', label: 'Published' },
+    { key: 'failed', label: 'Failed' },
+] as const;
+
+type FilterKey = (typeof FILTERS)[number]['key'];
+
 export default function ActivityPage() {
     const [posts, setPosts] = useState<Post[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
-    const [filter, setFilter] = useState<'all' | 'published' | 'failed'>('all');
+    const [filter, setFilter] = useState<FilterKey>('all');
 
     const load = async () => {
         try {
@@ -57,50 +67,33 @@ export default function ActivityPage() {
             subtitle="Publishing results and errors from Facebook and Instagram."
         >
             {error ? (
-                <div className="mb-6 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
+                <div className="animate-fade-up mb-6 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
                     {error}
                 </div>
             ) : null}
 
-            <div className="flex gap-2 mb-7">
-                {[
-                    { key: 'all', label: 'All' },
-                    { key: 'published', label: 'Published' },
-                    { key: 'failed', label: 'Failed' },
-                ].map((item) => (
-                    <button
-                        key={item.key}
-                        onClick={() => setFilter(item.key as typeof filter)}
-                        className={`px-4 py-2.5 rounded-xl text-xs font-bold border transition-all ${
-                            filter === item.key
-                                ? 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-500/20'
-                                : 'bg-surface text-muted border-line hover:text-fg'
-                        }`}
-                    >
-                        {item.label}
-                    </button>
-                ))}
-            </div>
+            <Tabs
+                label="Activity filter"
+                items={FILTERS}
+                value={filter}
+                onChange={setFilter}
+                className="mb-7"
+            />
 
             {loading ? (
-                <div className="flex justify-center py-24">
-                    <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-indigo-500" />
-                </div>
+                <ListSkeleton />
             ) : visible.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-line-strong bg-surface p-12 text-center">
-                    <div className="text-lg font-bold text-fg">
-                        No publishing activity yet
-                    </div>
-                    <p className="text-sm text-muted mt-2">
-                        Published and failed posts will appear here.
-                    </p>
-                </div>
+                <EmptyState
+                    key={filter}
+                    title={filter === 'all' ? 'No publishing activity yet' : `Nothing ${filter} yet`}
+                    body="Published and failed posts will appear here."
+                />
             ) : (
-                <div className="space-y-4">
+                <div key={filter} className="stagger space-y-4">
                     {visible.map((post) => (
                         <article
                             key={post._id}
-                            className="rounded-2xl border border-line bg-surface p-5 sm:p-6 shadow-card"
+                            className="rounded-2xl border border-line bg-surface p-5 sm:p-6 shadow-card transition-[border-color,box-shadow,translate] duration-200 hover:-translate-y-0.5 hover:border-line-strong hover:shadow-card-hover"
                         >
                             <div className="flex flex-col sm:flex-row gap-5">
                                 <div className="w-full sm:w-24 h-36 sm:h-24 rounded-2xl overflow-hidden bg-sunken shrink-0 border border-line">

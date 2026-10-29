@@ -3,8 +3,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { AppShell } from '@/components/AppShell';
+import { EmptyState, GridSkeleton } from '@/components/Feedback';
 import { Modal } from '@/components/Modal';
 import { StorageAssetCard } from '@/components/StorageAssetCard';
+import { Tabs } from '@/components/Tabs';
 import { mediaApi } from '@/lib/apiClient';
 import {
     formatBytes,
@@ -430,7 +432,7 @@ export default function StoragePage() {
             ) : null}
 
             {error ? (
-                <div className="mb-6 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
+                <div className="animate-fade-up mb-6 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
                     {error}
                     <Link
                         href="/settings"
@@ -441,11 +443,7 @@ export default function StoragePage() {
                 </div>
             ) : null}
 
-            {loading && !overview ? (
-                <div className="flex justify-center py-24">
-                    <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-indigo-500" />
-                </div>
-            ) : null}
+            {loading && !overview ? <GridSkeleton /> : null}
 
             {!needsSetup && overview ? (
                 <>
@@ -712,37 +710,21 @@ export default function StoragePage() {
                             </div>
 
                             <div className="flex flex-wrap items-center gap-2">
-                                <div className="flex gap-1 rounded-xl border border-line bg-surface-2 p-1">
-                                    {KINDS.map((item) => (
-                                        <button
-                                            key={item.key}
-                                            onClick={() => changeKind(item.key)}
-                                            className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all ${
-                                                kind === item.key
-                                                    ? 'bg-hover-strong text-fg'
-                                                    : 'text-subtle hover:text-fg'
-                                            }`}
-                                        >
-                                            {item.label}
-                                        </button>
-                                    ))}
-                                </div>
+                                <Tabs
+                                    label="File type"
+                                    variant="segmented"
+                                    items={KINDS}
+                                    value={kind}
+                                    onChange={changeKind}
+                                />
 
-                                {FILTERS.map((item) => (
-                                    <button
-                                        key={item.key}
-                                        onClick={() =>
-                                            changeFilter(item.key)
-                                        }
-                                        className={`px-3.5 py-2.5 rounded-xl text-xs font-bold border transition-all ${
-                                            filter === item.key
-                                                ? 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-500/20'
-                                                : 'bg-surface-2 text-muted border-line hover:text-fg'
-                                        }`}
-                                    >
-                                        {item.label}
-                                    </button>
-                                ))}
+                                <Tabs
+                                    label="File filter"
+                                    size="sm"
+                                    items={FILTERS}
+                                    value={filter}
+                                    onChange={changeFilter}
+                                />
 
                                 <select
                                     value={sort}
@@ -822,43 +804,41 @@ export default function StoragePage() {
                     </div>
 
                     {assets.length === 0 ? (
-                        <div className="rounded-2xl border border-dashed border-line-strong bg-surface p-12 text-center">
-                            <div className="text-lg font-bold text-fg">
-                                No Meta-Bru uploads yet
-                            </div>
-                            <p className="text-sm text-muted mt-2">
-                                Images from the Composer and videos from the
-                                Reels page will appear here.
-                            </p>
-                            <Link
-                                href="/composer"
-                                className="inline-flex mt-6 px-5 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold transition-all"
-                            >
-                                Open Composer
-                            </Link>
-                        </div>
+                        <EmptyState
+                            title="No Meta-Bru uploads yet"
+                            body="Images from the Composer and videos from the Reels page will appear here."
+                            action={
+                                <Link
+                                    href="/composer"
+                                    className="inline-flex px-5 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold transition-all"
+                                >
+                                    Open Composer
+                                </Link>
+                            }
+                        />
                     ) : filteredAssets.length === 0 ? (
-                        <div className="rounded-2xl border border-dashed border-line-strong bg-surface p-12 text-center">
-                            <div className="text-lg font-bold text-fg">
-                                No files match this view
-                            </div>
-                            <p className="text-sm text-muted mt-2">
-                                Try a different search or filter.
-                            </p>
-                            <button
-                                onClick={() => {
-                                    changeKind('all');
-                                    changeFilter('all');
-                                    changeSearch('');
-                                }}
-                                className="inline-flex mt-6 px-5 py-3 rounded-xl bg-hover hover:bg-hover-strong text-fg text-sm font-bold border border-line-strong transition-all"
-                            >
-                                Clear filters
-                            </button>
-                        </div>
+                        <EmptyState
+                            title="No files match this view"
+                            body="Try a different search or filter."
+                            action={
+                                <button
+                                    onClick={() => {
+                                        changeKind('all');
+                                        changeFilter('all');
+                                        changeSearch('');
+                                    }}
+                                    className="inline-flex px-5 py-3 rounded-xl bg-hover hover:bg-hover-strong text-fg text-sm font-bold border border-line-strong transition-all"
+                                >
+                                    Clear filters
+                                </button>
+                            }
+                        />
                     ) : (
                         <>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                            <div
+                                key={`${kind}-${filter}`}
+                                className="stagger grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4"
+                            >
                                 {visibleAssets.map((asset) => (
                                     <StorageAssetCard
                                         key={asset.assetId}

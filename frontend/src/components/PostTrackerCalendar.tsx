@@ -175,7 +175,7 @@ export function PostTrackerCalendar({
 
                 {loading ? (
                     <div className="flex justify-center py-16">
-                        <div className="h-8 w-8 animate-spin rounded-full border-t-2 border-indigo-500" />
+                        <div className="h-8 w-8 animate-spin rounded-full border-[3px] border-indigo-500/20 border-t-indigo-500" />
                     </div>
                 ) : (
                     <div className="grid grid-cols-7 gap-1">

@@ -67,13 +67,13 @@ export function StorageAssetCard({
 
     return (
         <article
-            className={`rounded-2xl border bg-surface overflow-hidden shadow-card transition-all ${
+            className={`group rounded-2xl border bg-surface overflow-hidden shadow-card transition-all duration-200 hover:-translate-y-0.5 hover:shadow-card-hover ${
                 selected
                     ? 'border-indigo-500/50 ring-2 ring-indigo-500/20'
-                    : 'border-line'
+                    : 'border-line hover:border-line-strong'
             }`}
         >
-            <div className="relative aspect-square bg-sunken">
+            <div className="relative aspect-square overflow-hidden bg-sunken">
                 <a
                     href={asset.secureUrl}
                     target="_blank"
@@ -96,7 +96,7 @@ export function StorageAssetCard({
                                 image.src = asset.secureUrl;
                             }
                         }}
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-105"
                     />
                 </a>
 

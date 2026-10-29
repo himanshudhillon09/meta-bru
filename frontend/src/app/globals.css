@@ -25,25 +25,31 @@
   --faint: #94a3b8;
   --hover: rgb(15 23 42 / 0.045);
   --hover-strong: rgb(15 23 42 / 0.08);
+  --focus: #6366f1;
   --card-shadow: 0 1px 2px rgb(15 23 42 / 0.04), 0 2px 6px rgb(15 23 42 / 0.04);
+  --card-shadow-hover: 0 4px 10px rgb(15 23 42 / 0.06), 0 12px 28px rgb(15 23 42 / 0.08);
 }
 
+/* Dark surfaces step up clearly from the canvas so cards, tabs, and outlined
+   buttons stay visible. */
 [data-theme="dark"] {
   color-scheme: dark;
-  --canvas: #0a0e17;
-  --surface: #111724;
-  --surface-2: #0d121d;
-  --sunken: #1a2131;
-  --line: #1e2635;
-  --line-strong: #2e3a4e;
+  --canvas: #0b0f19;
+  --surface: #141b2a;
+  --surface-2: #101622;
+  --sunken: #1d2537;
+  --line: #262f42;
+  --line-strong: #38455e;
   --fg: #f1f5f9;
   --fg-2: #cbd5e1;
-  --muted: #a3afc2;
-  --subtle: #8692a6;
-  --faint: #566277;
-  --hover: rgb(255 255 255 / 0.04);
-  --hover-strong: rgb(255 255 255 / 0.08);
-  --card-shadow: 0 1px 2px rgb(0 0 0 / 0.3);
+  --muted: #a7b2c5;
+  --subtle: #8b97ab;
+  --faint: #5f6b81;
+  --hover: rgb(255 255 255 / 0.06);
+  --hover-strong: rgb(255 255 255 / 0.1);
+  --focus: #818cf8;
+  --card-shadow: 0 1px 2px rgb(0 0 0 / 0.35);
+  --card-shadow-hover: 0 6px 16px rgb(0 0 0 / 0.35), 0 0 0 1px rgb(129 140 248 / 0.12);
 }
 
 @theme inline {
@@ -61,11 +67,90 @@
   --color-hover: var(--hover);
   --color-hover-strong: var(--hover-strong);
   --shadow-card: var(--card-shadow);
+  --shadow-card-hover: var(--card-shadow-hover);
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
 }
 
+/* Motion. Every entrance uses `backwards` fill so nothing keeps a transform
+   after it finishes (a lingering transform would trap fixed-position modals). */
+@theme {
+  --animate-fade-in: fade-in 0.25s ease-out backwards;
+  --animate-fade-up: fade-up 0.45s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  --animate-pop-in: pop-in 0.3s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  --animate-slide-in-left: slide-in-left 0.3s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  --animate-spin-in: spin-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  --animate-float: float 6s ease-in-out infinite;
+  --animate-gradient: gradient-pan 6s ease-in-out infinite;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+}
+
+@keyframes slide-in-left {
+  from {
+    transform: translateX(-100%);
+  }
+}
+
+@keyframes spin-in {
+  from {
+    opacity: 0;
+    transform: rotate(-90deg) scale(0.6);
+  }
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes gradient-pan {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
 @layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
   body {
     @apply bg-canvas text-fg antialiased;
     min-height: 100vh;
@@ -73,5 +158,113 @@
 
   ::selection {
     background: rgb(99 102 241 / 0.25);
+  }
+
+  /* Tailwind 4 resets buttons to the default arrow; show a hand on
+     everything clickable. */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  a[href],
+  summary,
+  select:not(:disabled),
+  input[type="checkbox"]:not(:disabled),
+  input[type="radio"]:not(:disabled),
+  input[type="file"]:not(:disabled),
+  input[type="color"]:not(:disabled),
+  input[type="range"]:not(:disabled),
+  label:has(input[type="checkbox"]:not(:disabled)),
+  label:has(input[type="radio"]:not(:disabled)),
+  label:has(input[type="file"]:not(:disabled)) {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  select:disabled,
+  input:disabled,
+  textarea:disabled {
+    cursor: not-allowed;
+  }
+
+  :where(a, button, summary, select, [role="button"], [role="tab"], [tabindex]):focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  /* A soft press on every button. Utilities such as transition-all win over
+     these base defaults. */
+  button {
+    transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+    transition-duration: 150ms;
+    transition-timing-function: ease;
+  }
+
+  button:not(:disabled):active {
+    transform: scale(0.97);
+  }
+}
+
+@layer components {
+  /* Children fade up one after another. */
+  .stagger > * {
+    animation: fade-up 0.45s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  }
+  .stagger > :nth-child(2) { animation-delay: 40ms; }
+  .stagger > :nth-child(3) { animation-delay: 80ms; }
+  .stagger > :nth-child(4) { animation-delay: 120ms; }
+  .stagger > :nth-child(5) { animation-delay: 160ms; }
+  .stagger > :nth-child(6) { animation-delay: 200ms; }
+  .stagger > :nth-child(7) { animation-delay: 240ms; }
+  .stagger > :nth-child(8) { animation-delay: 280ms; }
+  .stagger > :nth-child(9) { animation-delay: 320ms; }
+  .stagger > :nth-child(n + 10) { animation-delay: 360ms; }
+
+  /* Loading placeholder with a moving sheen. */
+  .skeleton {
+    background: linear-gradient(90deg, var(--sunken) 25%, var(--hover-strong) 50%, var(--sunken) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.6s linear infinite;
+  }
+
+  /* Landing page sections rise into view as they scroll in, where supported. */
+  @supports (animation-timeline: view()) {
+    .reveal {
+      animation: fade-up linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 35%;
+    }
+  }
+}
+
+/* Smooth colour change while switching theme; lib/theme.ts adds the class
+   for a moment. */
+.theme-switching,
+.theme-switching *,
+.theme-switching *::before,
+.theme-switching *::after {
+  transition:
+    background-color 0.3s ease,
+    border-color 0.3s ease,
+    color 0.3s ease,
+    fill 0.3s ease,
+    stroke 0.3s ease,
+    box-shadow 0.3s ease !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *:not(.animate-spin):not(.animate-pulse),
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .reveal {
+    animation: none !important;
   }
 }

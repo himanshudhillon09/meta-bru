@@ -41,7 +41,9 @@ export function ThemeToggle({ withLabel = false, className = '' }: ThemeTogglePr
                 withLabel ? 'px-3 py-2 text-sm font-semibold' : 'h-9 w-9 justify-center'
             } ${className}`}
         >
-            {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
+            <span key={theme} className="inline-flex animate-spin-in">
+                {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
+            </span>
             {withLabel ? <span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span> : null}
         </button>
     );

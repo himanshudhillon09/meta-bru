@@ -60,12 +60,12 @@ export function PasswordPromptModal({
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <div
-                className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm"
+                className="absolute inset-0 animate-fade-in bg-slate-950/50 backdrop-blur-sm"
                 onClick={loading ? undefined : onClose}
             />
             <form
                 onSubmit={submit}
-                className="relative w-full max-w-md rounded-3xl border border-line-strong bg-surface p-7 shadow-2xl"
+                className="relative w-full max-w-md animate-pop-in rounded-3xl border border-line-strong bg-surface p-7 shadow-2xl"
             >
                 <h3 className="text-xl font-bold text-fg">{title}</h3>
                 <p className="mt-2 text-sm text-muted">{description}</p>
@@ -82,7 +82,7 @@ export function PasswordPromptModal({
                 </div>
 
                 {error ? (
-                    <div className="mt-4 rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
+                    <div className="animate-fade-up mt-4 rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
                         {error}
                     </div>
                 ) : null}
