@@ -19,12 +19,12 @@ import {
 import { formatDailyTimes } from '@/lib/schedule';
 
 const STATUS_STYLES: Record<PostStatus, string> = {
-    draft: 'bg-slate-500/10 text-slate-300 border-slate-500/20',
-    queued: 'bg-indigo-500/10 text-indigo-300 border-indigo-500/20',
-    publishing: 'bg-sky-500/10 text-sky-300 border-sky-500/20',
-    published: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20',
-    partial: 'bg-amber-500/10 text-amber-300 border-amber-500/20',
-    failed: 'bg-rose-500/10 text-rose-300 border-rose-500/20',
+    draft: 'bg-slate-500/10 text-fg-2 border-slate-500/20',
+    queued: 'bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border-indigo-500/20',
+    publishing: 'bg-sky-500/10 text-sky-700 dark:text-sky-300 border-sky-500/20',
+    published: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20',
+    partial: 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20',
+    failed: 'bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/20',
 };
 
 export function StatusBadge({ status }: { status: PostStatus }) {
@@ -49,11 +49,11 @@ function StatCard({
     hint?: string;
 }) {
     return (
-        <div className={`rounded-3xl border p-6 shadow-xl ${accent}`}>
+        <div className={`rounded-2xl border p-6 shadow-card ${accent}`}>
             <div className="text-xs font-bold uppercase tracking-widest opacity-70">
                 {label}
             </div>
-            <div className="text-3xl font-black text-white mt-2">{value}</div>
+            <div className="text-3xl font-bold text-fg mt-2">{value}</div>
             {hint ? <div className="text-xs mt-2 opacity-60">{hint}</div> : null}
         </div>
     );
@@ -61,8 +61,8 @@ function StatCard({
 
 function RecentPostRow({ post }: { post: Post }) {
     return (
-        <div className="flex items-center gap-4 py-4 border-b border-white/5 last:border-0">
-            <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-800 shrink-0 border border-white/5">
+        <div className="flex items-center gap-4 py-4 border-b border-line last:border-0">
+            <div className="w-12 h-12 rounded-xl overflow-hidden bg-sunken shrink-0 border border-line">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                     src={postThumbnailUrl(post)}
@@ -71,10 +71,10 @@ function RecentPostRow({ post }: { post: Post }) {
                 />
             </div>
             <div className="min-w-0 flex-1">
-                <div className="text-sm font-semibold text-white truncate">
+                <div className="text-sm font-semibold text-fg truncate">
                     {post.caption || 'Untitled post'}
                 </div>
-                <div className="text-xs text-slate-500 mt-0.5">
+                <div className="text-xs text-subtle mt-0.5">
                     {connectionName(post)} · {formatDate(post.createdAt)}
                 </div>
             </div>
@@ -98,29 +98,29 @@ function NextSlotCard({ connections }: { connections: SocialConnection[] }) {
         )[0];
 
     return (
-        <div className="rounded-3xl border border-white/5 bg-slate-900/40 p-8 shadow-xl">
-            <div className="text-xs font-bold uppercase tracking-widest text-indigo-400">
+        <div className="rounded-2xl border border-line bg-surface p-8 shadow-card">
+            <div className="text-xs font-bold uppercase tracking-widest text-indigo-700 dark:text-indigo-400">
                 Next scheduled slot
             </div>
             {upcoming ? (
                 <>
-                    <div className="text-2xl font-black text-white mt-3">
+                    <div className="text-2xl font-bold text-fg mt-3">
                         {formatDate(upcoming.nextRunAt)}
                     </div>
-                    <div className="text-sm text-slate-400 mt-1">
+                    <div className="text-sm text-muted mt-1">
                         {upcoming.pageName} · {upcoming.timezone}
                     </div>
-                    <div className="text-xs text-slate-500 mt-4">
+                    <div className="text-xs text-subtle mt-4">
                         The next approved post in this queue will publish
                         automatically.
                     </div>
                 </>
             ) : (
                 <>
-                    <div className="text-2xl font-black text-white mt-3">
+                    <div className="text-2xl font-bold text-fg mt-3">
                         Nothing scheduled
                     </div>
-                    <div className="text-sm text-slate-400 mt-1">
+                    <div className="text-sm text-muted mt-1">
                         Connect a Page and add a post to the queue to start the
                         daily schedule.
                     </div>
@@ -185,7 +185,7 @@ export function UserDashboard() {
                     </Link>
                     <Link
                         href="/connections"
-                        className="bg-white/5 hover:bg-white/10 text-white border border-white/10 px-5 py-2.5 rounded-xl text-sm font-bold transition-all"
+                        className="bg-hover hover:bg-hover-strong text-fg border border-line-strong px-5 py-2.5 rounded-xl text-sm font-bold transition-all"
                     >
                         Connections
                     </Link>
@@ -193,7 +193,7 @@ export function UserDashboard() {
             }
         >
             {error ? (
-                <div className="mb-6 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
+                <div className="mb-6 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
                     {error}
                 </div>
             ) : null}
@@ -202,35 +202,35 @@ export function UserDashboard() {
                 <StatCard
                     label="Connections"
                     value={connections.length}
-                    accent="border-indigo-500/20 bg-indigo-500/10 text-indigo-300"
+                    accent="border-indigo-500/20 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300"
                 />
                 <StatCard
                     label="Queued"
                     value={queued}
-                    accent="border-sky-500/20 bg-sky-500/10 text-sky-300"
+                    accent="border-sky-500/20 bg-sky-500/10 text-sky-700 dark:text-sky-300"
                 />
                 <StatCard
                     label="Published"
                     value={published}
-                    accent="border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
+                    accent="border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
                 />
                 <StatCard
                     label="Needs reconnect"
                     value={needsReauth}
-                    accent="border-amber-500/20 bg-amber-500/10 text-amber-300"
+                    accent="border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300"
                 />
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
                 <NextSlotCard connections={connections} />
-                <div className="rounded-3xl border border-white/5 bg-slate-900/40 p-8 shadow-xl">
-                    <div className="text-xs font-bold uppercase tracking-widest text-purple-400">
+                <div className="rounded-2xl border border-line bg-surface p-8 shadow-card">
+                    <div className="text-xs font-bold uppercase tracking-widest text-purple-700 dark:text-purple-400">
                         Composer
                     </div>
-                    <div className="text-2xl font-black text-white mt-3">
+                    <div className="text-2xl font-bold text-fg mt-3">
                         Build your next post
                     </div>
-                    <div className="text-sm text-slate-400 mt-1">
+                    <div className="text-sm text-muted mt-1">
                         Write a caption, upload an image, or ask Gemini for a
                         draft. Then add it to a connection&apos;s daily queue.
                     </div>
@@ -243,12 +243,12 @@ export function UserDashboard() {
                 </div>
             </div>
 
-            <section className="rounded-3xl border border-white/5 bg-slate-900/40 p-6 sm:p-8 shadow-xl">
+            <section className="rounded-2xl border border-line bg-surface p-6 sm:p-8 shadow-card">
                 <div className="flex items-center justify-between mb-2">
-                    <h2 className="text-lg font-bold text-white">Recent posts</h2>
+                    <h2 className="text-lg font-bold text-fg">Recent posts</h2>
                     <Link
                         href="/queue"
-                        className="text-sm font-semibold text-indigo-400 hover:text-indigo-300"
+                        className="text-sm font-semibold text-indigo-700 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
                     >
                         View queue
                     </Link>
@@ -258,7 +258,7 @@ export function UserDashboard() {
                         <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-indigo-500" />
                     </div>
                 ) : posts.length === 0 ? (
-                    <div className="py-10 text-center text-sm text-slate-500">
+                    <div className="py-10 text-center text-sm text-subtle">
                         No posts yet. Create your first one in the composer.
                     </div>
                 ) : (
@@ -300,12 +300,12 @@ function ConnectionStatus({
         <span
             className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest border ${
                 isDisconnected
-                    ? 'bg-slate-500/10 text-slate-400 border-slate-500/20'
+                    ? 'bg-slate-500/10 text-muted border-slate-500/20'
                     : needsReauth
-                      ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                      ? 'bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20'
                       : !isActive
-                        ? 'bg-slate-500/10 text-slate-400 border-slate-500/20'
-                        : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                        ? 'bg-slate-500/10 text-muted border-slate-500/20'
+                        : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20'
             }`}
         >
             {isDisconnected
@@ -403,7 +403,7 @@ export function AdminDashboard() {
             actions={
                 <button
                     onClick={() => void load()}
-                    className="bg-white/5 hover:bg-white/10 text-white border border-white/10 px-5 py-2.5 rounded-xl text-sm font-bold transition-all"
+                    className="bg-hover hover:bg-hover-strong text-fg border border-line-strong px-5 py-2.5 rounded-xl text-sm font-bold transition-all"
                 >
                     Refresh
                 </button>
@@ -423,7 +423,7 @@ export function AdminDashboard() {
             ) : null}
 
             {error ? (
-                <div className="mb-6 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
+                <div className="mb-6 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
                     {error}
                 </div>
             ) : null}
@@ -432,32 +432,32 @@ export function AdminDashboard() {
                 <StatCard
                     label="Users"
                     value={stats?.users ?? users.length}
-                    accent="border-indigo-500/20 bg-indigo-500/10 text-indigo-300"
+                    accent="border-indigo-500/20 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300"
                 />
                 <StatCard
                     label="Connections"
                     value={stats?.connections ?? 0}
-                    accent="border-purple-500/20 bg-purple-500/10 text-purple-300"
+                    accent="border-purple-500/20 bg-purple-500/10 text-purple-700 dark:text-purple-300"
                 />
                 <StatCard
                     label="Queued"
                     value={stats?.queued ?? 0}
-                    accent="border-sky-500/20 bg-sky-500/10 text-sky-300"
+                    accent="border-sky-500/20 bg-sky-500/10 text-sky-700 dark:text-sky-300"
                 />
                 <StatCard
                     label="Published 7d"
                     value={stats?.publishedThisWeek ?? 0}
-                    accent="border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
+                    accent="border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
                 />
                 <StatCard
                     label="Reconnects"
                     value={stats?.needsReauth ?? 0}
-                    accent="border-amber-500/20 bg-amber-500/10 text-amber-300"
+                    accent="border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300"
                 />
             </div>
 
-            <section className="rounded-3xl border border-white/5 bg-slate-900/40 p-6 sm:p-8 shadow-xl mb-8">
-                <h2 className="text-lg font-bold text-white mb-2">
+            <section className="rounded-2xl border border-line bg-surface p-6 sm:p-8 shadow-card mb-8">
+                <h2 className="text-lg font-bold text-fg mb-2">
                     Recent platform activity
                 </h2>
                 {loading ? (
@@ -465,7 +465,7 @@ export function AdminDashboard() {
                         <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-indigo-500" />
                     </div>
                 ) : (overview?.recentPosts.length ?? 0) === 0 ? (
-                    <div className="py-8 text-center text-sm text-slate-500">
+                    <div className="py-8 text-center text-sm text-subtle">
                         No posts have been created yet.
                     </div>
                 ) : (
@@ -475,8 +475,8 @@ export function AdminDashboard() {
                 )}
             </section>
 
-            <section className="rounded-3xl border border-white/5 bg-slate-900/40 p-6 sm:p-8 shadow-xl mb-8">
-                <h2 className="text-lg font-bold text-white mb-6">
+            <section className="rounded-2xl border border-line bg-surface p-6 sm:p-8 shadow-card mb-8">
+                <h2 className="text-lg font-bold text-fg mb-6">
                     Connected Pages
                 </h2>
 
@@ -485,7 +485,7 @@ export function AdminDashboard() {
                         <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-indigo-500" />
                     </div>
                 ) : adminConnections.length === 0 ? (
-                    <div className="py-8 text-center text-sm text-slate-500">
+                    <div className="py-8 text-center text-sm text-subtle">
                         No Pages have been connected yet.
                     </div>
                 ) : (
@@ -493,7 +493,7 @@ export function AdminDashboard() {
                     <div className="hidden md:block overflow-x-auto">
                         <table className="w-full min-w-[840px] text-left">
                             <thead>
-                                <tr className="text-slate-500 text-xs font-bold uppercase tracking-wider border-b border-white/5">
+                                <tr className="text-subtle text-xs font-bold uppercase tracking-wider border-b border-line">
                                     <th className="pb-4 pl-4">User</th>
                                     <th className="pb-4">Page</th>
                                     <th className="pb-4">Instagram</th>
@@ -504,37 +504,37 @@ export function AdminDashboard() {
                                     </th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-white/5">
+                            <tbody className="divide-y divide-line">
                                 {adminConnections.map((connection) => (
                                     <tr
                                         key={connection._id}
-                                        className="hover:bg-white/5 transition-colors"
+                                        className="hover:bg-hover transition-colors"
                                     >
                                         <td className="py-4 pl-4">
-                                            <div className="text-sm font-semibold text-white">
+                                            <div className="text-sm font-semibold text-fg">
                                                 {connection.userId?.name ||
                                                     'Unknown user'}
                                             </div>
-                                            <div className="text-xs text-slate-500">
+                                            <div className="text-xs text-subtle">
                                                 {connection.userId?.email || ''}
                                             </div>
                                         </td>
                                         <td className="py-4">
-                                            <div className="text-sm text-white">
+                                            <div className="text-sm text-fg">
                                                 {connection.pageName}
                                             </div>
-                                            <div className="text-[11px] text-slate-500">
+                                            <div className="text-[11px] text-subtle">
                                                 {connection.pageId}
                                             </div>
                                         </td>
-                                        <td className="py-4 text-sm text-slate-400">
+                                        <td className="py-4 text-sm text-muted">
                                             {connection.instagram?.username
                                                 ? `@${connection.instagram.username}`
                                                 : 'Not linked'}
                                         </td>
-                                        <td className="py-4 text-sm text-slate-400">
+                                        <td className="py-4 text-sm text-muted">
                                             {formatDailyTimes(connection.dailyTimes)}
-                                            <div className="text-[11px] text-slate-500">
+                                            <div className="text-[11px] text-subtle">
                                                 {connection.timezone}
                                             </div>
                                         </td>
@@ -546,7 +546,7 @@ export function AdminDashboard() {
                                                 }
                                             />
                                         </td>
-                                        <td className="py-4 text-right pr-4 text-sm text-slate-400">
+                                        <td className="py-4 text-right pr-4 text-sm text-muted">
                                             {formatDate(connection.nextRunAt)}
                                         </td>
                                     </tr>
@@ -559,14 +559,14 @@ export function AdminDashboard() {
                         {adminConnections.map((connection) => (
                             <article
                                 key={connection._id}
-                                className="rounded-2xl border border-white/5 bg-slate-950/50 p-4"
+                                className="rounded-2xl border border-line bg-surface-2 p-4"
                             >
                                 <div className="flex items-start justify-between gap-3">
                                     <div className="min-w-0">
-                                        <div className="text-sm font-semibold text-white truncate">
+                                        <div className="text-sm font-semibold text-fg truncate">
                                             {connection.pageName}
                                         </div>
-                                        <div className="text-xs text-slate-500 truncate">
+                                        <div className="text-xs text-subtle truncate">
                                             {connection.userId?.name ||
                                                 'Unknown user'}{' '}
                                             {connection.userId?.email
@@ -581,29 +581,29 @@ export function AdminDashboard() {
                                 </div>
                                 <dl className="grid grid-cols-2 gap-3 mt-4 text-xs">
                                     <div>
-                                        <dt className="text-slate-500">
+                                        <dt className="text-subtle">
                                             Instagram
                                         </dt>
-                                        <dd className="text-slate-300 mt-0.5">
+                                        <dd className="text-fg-2 mt-0.5">
                                             {connection.instagram?.username
                                                 ? `@${connection.instagram.username}`
                                                 : 'Not linked'}
                                         </dd>
                                     </div>
                                     <div>
-                                        <dt className="text-slate-500">
+                                        <dt className="text-subtle">
                                             Daily schedule
                                         </dt>
-                                        <dd className="text-slate-300 mt-0.5">
+                                        <dd className="text-fg-2 mt-0.5">
                                             {formatDailyTimes(connection.dailyTimes)} ·{' '}
                                             {connection.timezone}
                                         </dd>
                                     </div>
                                     <div className="col-span-2">
-                                        <dt className="text-slate-500">
+                                        <dt className="text-subtle">
                                             Next slot
                                         </dt>
-                                        <dd className="text-slate-300 mt-0.5">
+                                        <dd className="text-fg-2 mt-0.5">
                                             {formatDate(connection.nextRunAt)}
                                         </dd>
                                     </div>
@@ -615,8 +615,8 @@ export function AdminDashboard() {
                 )}
             </section>
 
-            <section className="rounded-3xl border border-white/5 bg-slate-900/40 p-6 sm:p-8 shadow-xl">
-                <h2 className="text-lg font-bold text-white mb-6">
+            <section className="rounded-2xl border border-line bg-surface p-6 sm:p-8 shadow-card">
+                <h2 className="text-lg font-bold text-fg mb-6">
                     User Management
                 </h2>
 
@@ -629,40 +629,40 @@ export function AdminDashboard() {
                     <div className="hidden md:block overflow-x-auto">
                         <table className="w-full min-w-[620px] text-left">
                             <thead>
-                                <tr className="text-slate-500 text-xs font-bold uppercase tracking-wider border-b border-white/5">
+                                <tr className="text-subtle text-xs font-bold uppercase tracking-wider border-b border-line">
                                     <th className="pb-4 pl-4">User</th>
                                     <th className="pb-4">Role</th>
                                     <th className="pb-4">Status</th>
                                     <th className="pb-4 text-right pr-4">Actions</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-white/5">
+                            <tbody className="divide-y divide-line">
                                 {users.map((item) => (
                                     <tr
                                         key={item._id}
-                                        className="group hover:bg-white/5 transition-colors"
+                                        className="group hover:bg-hover transition-colors"
                                     >
                                         <td className="py-5 pl-4">
                                             <div className="flex items-center gap-4">
-                                                <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center font-bold text-indigo-400 border border-white/5">
+                                                <div className="w-10 h-10 rounded-xl bg-sunken flex items-center justify-center font-bold text-indigo-700 dark:text-indigo-400 border border-line">
                                                     {item.name[0]?.toUpperCase() || 'U'}
                                                 </div>
                                                 <div>
-                                                    <div className="text-white font-semibold">
+                                                    <div className="text-fg font-semibold">
                                                         {item.name}
                                                     </div>
-                                                    <div className="text-slate-500 text-xs">
+                                                    <div className="text-subtle text-xs">
                                                         {item.email}
                                                     </div>
                                                 </div>
                                             </div>
                                         </td>
                                         <td className="py-5 text-sm">
-                                            <div className="capitalize text-slate-400">
+                                            <div className="capitalize text-muted">
                                                 {item.role}
                                             </div>
                                             {item.mustChangePassword ? (
-                                                <span className="mt-1.5 inline-flex rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-amber-300">
+                                                <span className="mt-1.5 inline-flex rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-amber-700 dark:text-amber-300">
                                                     Password reset required
                                                 </span>
                                             ) : null}
@@ -671,8 +671,8 @@ export function AdminDashboard() {
                                             <span
                                                 className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest border ${
                                                     item.isActive
-                                                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                                                        : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                                                        ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20'
+                                                        : 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20'
                                                 }`}
                                             >
                                                 {item.isActive ? 'Active' : 'Pending'}
@@ -693,8 +693,8 @@ export function AdminDashboard() {
                                                     }
                                                     className={`px-3 py-2 rounded-xl text-xs font-bold transition-all ${
                                                         item._id === user.id
-                                                            ? 'opacity-30 cursor-not-allowed bg-slate-800 text-slate-500 border border-white/5'
-                                                            : 'bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 border border-amber-500/10'
+                                                            ? 'opacity-30 cursor-not-allowed bg-sunken text-subtle border border-line'
+                                                            : 'bg-amber-500/10 text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 border border-amber-500/10'
                                                     }`}
                                                 >
                                                     Reset password
@@ -706,9 +706,9 @@ export function AdminDashboard() {
                                                     disabled={item._id === user.id}
                                                     className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
                                                         item._id === user.id
-                                                            ? 'opacity-30 cursor-not-allowed bg-slate-800 text-slate-500 border border-white/5'
+                                                            ? 'opacity-30 cursor-not-allowed bg-sunken text-subtle border border-line'
                                                             : item.isActive
-                                                              ? 'bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/10'
+                                                              ? 'bg-rose-500/10 text-rose-700 dark:text-rose-400 hover:bg-rose-500/20 border border-rose-500/10'
                                                               : 'bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg shadow-indigo-500/20'
                                                     }`}
                                                 >
@@ -730,17 +730,17 @@ export function AdminDashboard() {
                         {users.map((item) => (
                             <article
                                 key={item._id}
-                                className="rounded-2xl border border-white/5 bg-slate-950/50 p-4"
+                                className="rounded-2xl border border-line bg-surface-2 p-4"
                             >
                                 <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center font-bold text-indigo-400 border border-white/5 shrink-0">
+                                    <div className="w-10 h-10 rounded-xl bg-sunken flex items-center justify-center font-bold text-indigo-700 dark:text-indigo-400 border border-line shrink-0">
                                         {item.name[0]?.toUpperCase() || 'U'}
                                     </div>
                                     <div className="min-w-0">
-                                        <div className="text-sm font-semibold text-white truncate">
+                                        <div className="text-sm font-semibold text-fg truncate">
                                             {item.name}
                                         </div>
-                                        <div className="text-xs text-slate-500 truncate">
+                                        <div className="text-xs text-subtle truncate">
                                             {item.email}
                                         </div>
                                     </div>
@@ -748,14 +748,14 @@ export function AdminDashboard() {
                                 <div className="flex flex-wrap items-center justify-between gap-3 mt-4">
                                     <div className="flex flex-col gap-2">
                                         <div className="flex items-center gap-2">
-                                            <span className="text-xs capitalize text-slate-400">
+                                            <span className="text-xs capitalize text-muted">
                                                 {item.role}
                                             </span>
                                             <span
                                                 className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest border ${
                                                     item.isActive
-                                                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                                                        : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                                                        ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20'
+                                                        : 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20'
                                                 }`}
                                             >
                                                 {item.isActive
@@ -764,7 +764,7 @@ export function AdminDashboard() {
                                             </span>
                                         </div>
                                         {item.mustChangePassword ? (
-                                            <span className="inline-flex w-fit rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-amber-300">
+                                            <span className="inline-flex w-fit rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-amber-700 dark:text-amber-300">
                                                 Password reset required
                                             </span>
                                         ) : null}
@@ -781,8 +781,8 @@ export function AdminDashboard() {
                                             }
                                             className={`px-3 py-2 rounded-xl text-xs font-bold transition-all ${
                                                 item._id === user.id
-                                                    ? 'opacity-30 cursor-not-allowed bg-slate-800 text-slate-500 border border-white/5'
-                                                    : 'bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 border border-amber-500/10'
+                                                    ? 'opacity-30 cursor-not-allowed bg-sunken text-subtle border border-line'
+                                                    : 'bg-amber-500/10 text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 border border-amber-500/10'
                                             }`}
                                         >
                                             Reset
@@ -794,9 +794,9 @@ export function AdminDashboard() {
                                             disabled={item._id === user.id}
                                             className={`px-3 py-2 rounded-xl text-xs font-bold transition-all ${
                                                 item._id === user.id
-                                                    ? 'opacity-30 cursor-not-allowed bg-slate-800 text-slate-500 border border-white/5'
+                                                    ? 'opacity-30 cursor-not-allowed bg-sunken text-subtle border border-line'
                                                     : item.isActive
-                                                      ? 'bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/10'
+                                                      ? 'bg-rose-500/10 text-rose-700 dark:text-rose-400 hover:bg-rose-500/20 border border-rose-500/10'
                                                       : 'bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg shadow-indigo-500/20'
                                             }`}
                                         >

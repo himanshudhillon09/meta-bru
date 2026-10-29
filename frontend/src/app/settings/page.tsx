@@ -37,8 +37,8 @@ function StatusPill({ configured }: { configured: boolean }) {
         <span
             className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-wider border ${
                 configured
-                    ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
-                    : 'bg-amber-500/10 text-amber-300 border-amber-500/20'
+                    ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20'
+                    : 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20'
             }`}
         >
             <span
@@ -53,17 +53,17 @@ function StatusPill({ configured }: { configured: boolean }) {
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
     return (
-        <label className="text-xs font-bold uppercase tracking-widest text-slate-500">
+        <label className="text-xs font-bold uppercase tracking-widest text-subtle">
             {children}
         </label>
     );
 }
 
 const inputClass =
-    'mt-2 w-full bg-slate-950/80 border border-white/10 rounded-xl px-4 py-3.5 text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50';
+    'mt-2 w-full bg-surface-2 border border-line-strong rounded-xl px-4 py-3.5 text-fg placeholder:text-faint focus:outline-none focus:ring-2 focus:ring-indigo-500/50';
 
 const fieldInputClass =
-    'w-full bg-slate-950/80 border border-white/10 rounded-xl px-4 py-3.5 text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50';
+    'w-full bg-surface-2 border border-line-strong rounded-xl px-4 py-3.5 text-fg placeholder:text-faint focus:outline-none focus:ring-2 focus:ring-indigo-500/50';
 
 function EyeIcon({ visible }: { visible: boolean }) {
     if (visible) {
@@ -137,7 +137,7 @@ function SecretInput({
                 onClick={onToggle}
                 aria-label={show ? 'Hide saved credential' : 'Reveal saved credential'}
                 title={show ? 'Hide' : 'Reveal'}
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 transition-colors hover:text-slate-300"
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-subtle transition-colors hover:text-fg-2"
             >
                 <EyeIcon visible={show} />
             </button>
@@ -146,7 +146,7 @@ function SecretInput({
 }
 
 const secondaryButtonClass =
-    'bg-white/5 hover:bg-white/10 disabled:opacity-60 text-white border border-white/10 px-4 py-2.5 rounded-xl text-xs font-bold transition-all';
+    'bg-hover hover:bg-hover-strong disabled:opacity-60 text-fg border border-line-strong px-4 py-2.5 rounded-xl text-xs font-bold transition-all';
 
 export default function SettingsPage() {
     const { user, updateUser, updateSession } = useAuth();
@@ -536,12 +536,12 @@ export default function SettingsPage() {
             subtitle="Your account, brand context, and the integrations that belong only to you."
         >
             {notice ? (
-                <div className="mb-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
+                <div className="mb-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-300">
                     {notice}
                 </div>
             ) : null}
             {error ? (
-                <div className="mb-6 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
+                <div className="mb-6 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
                     {error}
                 </div>
             ) : null}
@@ -550,8 +550,8 @@ export default function SettingsPage() {
                 onSubmit={save}
                 className="grid grid-cols-1 lg:grid-cols-[0.8fr_1.2fr] gap-6 items-start"
             >
-                <section className="rounded-3xl border border-white/5 bg-slate-900/40 p-6 sm:p-8 shadow-xl">
-                    <h2 className="text-lg font-bold text-white mb-6">Account</h2>
+                <section className="rounded-2xl border border-line bg-surface p-6 sm:p-8 shadow-card">
+                    <h2 className="text-lg font-bold text-fg mb-6">Account</h2>
 
                     <div className="space-y-5">
                         <div>
@@ -587,7 +587,7 @@ export default function SettingsPage() {
                                         wrapperClassName="mt-2"
                                         required
                                     />
-                                    <p className="text-xs text-slate-500 mt-2">
+                                    <p className="text-xs text-subtle mt-2">
                                         Required so a stolen session cannot
                                         change your sign-in email.
                                     </p>
@@ -608,7 +608,7 @@ export default function SettingsPage() {
                                     </option>
                                 ))}
                             </select>
-                            <p className="text-xs text-slate-500 mt-2">
+                            <p className="text-xs text-subtle mt-2">
                                 Every Page posts at its scheduled times in this
                                 timezone. Changing it reschedules all Pages.
                             </p>
@@ -623,16 +623,16 @@ export default function SettingsPage() {
                         {saving ? 'Saving...' : 'Save account'}
                     </button>
 
-                    <div className="mt-8 pt-6 border-t border-white/5 text-xs text-slate-500">
+                    <div className="mt-8 pt-6 border-t border-line text-xs text-subtle">
                         Role:{' '}
-                        <span className="capitalize text-slate-300">{user.role}</span>
+                        <span className="capitalize text-fg-2">{user.role}</span>
                         <br />
                         Status:{' '}
                         <span
                             className={
                                 user.isActive === false
-                                    ? 'text-rose-400'
-                                    : 'text-emerald-400'
+                                    ? 'text-rose-700 dark:text-rose-400'
+                                    : 'text-emerald-700 dark:text-emerald-400'
                             }
                         >
                             {user.isActive === false ? 'Inactive' : 'Active'}
@@ -640,9 +640,9 @@ export default function SettingsPage() {
                     </div>
                 </section>
 
-                <section className="rounded-3xl border border-white/5 bg-slate-900/40 p-6 sm:p-8 shadow-xl">
-                    <h2 className="text-lg font-bold text-white">Brand profile</h2>
-                    <p className="text-sm text-slate-400 mt-1 mb-6">
+                <section className="rounded-2xl border border-line bg-surface p-6 sm:p-8 shadow-card">
+                    <h2 className="text-lg font-bold text-fg">Brand profile</h2>
+                    <p className="text-sm text-muted mt-1 mb-6">
                         Gemini uses this to write captions that sound like your
                         brand.
                     </p>
@@ -703,9 +703,9 @@ export default function SettingsPage() {
 
             <AiModelsSection onNotice={setNotice} onError={setError} />
 
-            <section className="mt-6 rounded-3xl border border-white/5 bg-slate-900/40 p-6 sm:p-8 shadow-xl">
-                <h2 className="text-lg font-bold text-white">Password</h2>
-                <p className="mt-1 mb-6 text-sm text-slate-400">
+            <section className="mt-6 rounded-2xl border border-line bg-surface p-6 sm:p-8 shadow-card">
+                <h2 className="text-lg font-bold text-fg">Password</h2>
+                <p className="mt-1 mb-6 text-sm text-muted">
                     Change your password. Every other signed-in session will be
                     logged out; this session stays active.
                 </p>
@@ -726,10 +726,10 @@ export default function SettingsPage() {
             <section className="mt-10">
                 <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
                     <div>
-                        <h2 className="text-xl font-bold text-white">
+                        <h2 className="text-xl font-bold text-fg">
                             Integration credentials
                         </h2>
-                        <p className="text-sm text-slate-400 mt-1 max-w-2xl">
+                        <p className="text-sm text-muted mt-1 max-w-2xl">
                             Each user brings their own Meta app, Cloudinary
                             account, and Gemini API key. Secrets are encrypted
                             at rest. Use the eye icons to reveal saved secrets
@@ -741,14 +741,14 @@ export default function SettingsPage() {
                             <button
                                 type="button"
                                 onClick={lockSecrets}
-                                className="text-xs font-bold text-amber-300 hover:text-amber-200"
+                                className="text-xs font-bold text-amber-700 dark:text-amber-300 hover:text-amber-800 dark:hover:text-amber-200"
                             >
                                 Lock revealed secrets
                             </button>
                         ) : null}
                         <Link
                             href="/connections"
-                            className="text-sm font-bold text-indigo-400 hover:text-indigo-300"
+                            className="text-sm font-bold text-indigo-700 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
                         >
                             Manage Page connections →
                         </Link>
@@ -763,21 +763,21 @@ export default function SettingsPage() {
                     <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
                         <form
                             onSubmit={saveMeta}
-                            className="lg:col-span-2 rounded-3xl border border-white/5 bg-slate-900/40 p-6 sm:p-8 shadow-xl"
+                            className="lg:col-span-2 rounded-2xl border border-line bg-surface p-6 sm:p-8 shadow-card"
                         >
                             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                                 <div>
-                                    <h3 className="text-lg font-bold text-white">
+                                    <h3 className="text-lg font-bold text-fg">
                                         Meta app
                                     </h3>
-                                    <p className="text-sm text-slate-400 mt-1">
+                                    <p className="text-sm text-muted mt-1">
                                         Used for Facebook Login and Page
                                         connections. Create an app at{' '}
                                         <a
                                             href="https://developers.facebook.com/apps"
                                             target="_blank"
                                             rel="noreferrer"
-                                            className="text-indigo-400 hover:text-indigo-300"
+                                            className="text-indigo-700 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
                                         >
                                             developers.facebook.com
                                         </a>
@@ -835,7 +835,7 @@ export default function SettingsPage() {
                             <div className="mt-5">
                                 <FieldLabel>OAuth callback URL</FieldLabel>
                                 <div className="mt-2 flex flex-col sm:flex-row gap-2">
-                                    <div className="flex-1 bg-slate-950/40 border border-white/5 rounded-xl px-4 py-3.5 text-xs text-slate-300 break-all font-mono">
+                                    <div className="flex-1 bg-surface-2 border border-line rounded-xl px-4 py-3.5 text-xs text-fg-2 break-all font-mono">
                                         {credentialStatus?.meta.redirectUri ||
                                             'Set META_REDIRECT_URI on the backend'}
                                     </div>
@@ -847,7 +847,7 @@ export default function SettingsPage() {
                                         Copy
                                     </button>
                                 </div>
-                                <p className="text-xs text-slate-500 mt-2">
+                                <p className="text-xs text-subtle mt-2">
                                     Add this exact URL under Facebook Login →
                                     Settings → Valid OAuth Redirect URIs in your
                                     Meta app.
@@ -861,7 +861,7 @@ export default function SettingsPage() {
                                         (scope) => (
                                             <span
                                                 key={scope}
-                                                className="rounded-lg border border-white/5 bg-slate-950/40 px-2.5 py-1.5 text-[11px] font-mono text-slate-400"
+                                                className="rounded-lg border border-line bg-surface-2 px-2.5 py-1.5 text-[11px] font-mono text-muted"
                                             >
                                                 {scope}
                                             </span>
@@ -877,7 +877,7 @@ export default function SettingsPage() {
                                 !credentialStatus.meta.scopes.includes(
                                     'instagram_manage_insights'
                                 )) ? (
-                                <div className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-200">
+                                <div className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-700 dark:text-amber-200">
                                     Add <code>read_insights</code> and{' '}
                                     <code>instagram_manage_insights</code> to
                                     your Meta app and reconnect your Pages to
@@ -886,7 +886,7 @@ export default function SettingsPage() {
                             ) : null}
 
                             {credentialStatus?.meta.needsReauthCount ? (
-                                <div className="mt-5 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-200">
+                                <div className="mt-5 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-700 dark:text-amber-200">
                                     {credentialStatus.meta.needsReauthCount} Page
                                     {credentialStatus.meta.needsReauthCount === 1
                                         ? ''
@@ -911,7 +911,7 @@ export default function SettingsPage() {
                                         type="button"
                                         onClick={() => setRemoveTarget('meta')}
                                         disabled={savingCredential === 'meta'}
-                                        className="bg-rose-500/10 hover:bg-rose-500/20 disabled:opacity-60 text-rose-300 border border-rose-500/20 px-5 py-3 rounded-xl text-sm font-bold transition-all"
+                                        className="bg-rose-500/10 hover:bg-rose-500/20 disabled:opacity-60 text-rose-700 dark:text-rose-300 border border-rose-500/20 px-5 py-3 rounded-xl text-sm font-bold transition-all"
                                     >
                                         Remove
                                     </button>
@@ -921,14 +921,14 @@ export default function SettingsPage() {
 
                         <form
                             onSubmit={saveCloudinary}
-                            className="rounded-3xl border border-white/5 bg-slate-900/40 p-6 sm:p-8 shadow-xl"
+                            className="rounded-2xl border border-line bg-surface p-6 sm:p-8 shadow-card"
                         >
                             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                                 <div>
-                                    <h3 className="text-lg font-bold text-white">
+                                    <h3 className="text-lg font-bold text-fg">
                                         Cloudinary
                                     </h3>
-                                    <p className="text-sm text-slate-400 mt-1">
+                                    <p className="text-sm text-muted mt-1">
                                         Stores the images you upload and the
                                         images Gemini creates.
                                     </p>
@@ -1034,7 +1034,7 @@ export default function SettingsPage() {
                                             setRemoveTarget('cloudinary')
                                         }
                                         disabled={savingCredential === 'cloudinary'}
-                                        className="bg-rose-500/10 hover:bg-rose-500/20 disabled:opacity-60 text-rose-300 border border-rose-500/20 px-5 py-3 rounded-xl text-sm font-bold transition-all"
+                                        className="bg-rose-500/10 hover:bg-rose-500/20 disabled:opacity-60 text-rose-700 dark:text-rose-300 border border-rose-500/20 px-5 py-3 rounded-xl text-sm font-bold transition-all"
                                     >
                                         Remove
                                     </button>
@@ -1044,14 +1044,14 @@ export default function SettingsPage() {
 
                         <form
                             onSubmit={saveGemini}
-                            className="rounded-3xl border border-white/5 bg-slate-900/40 p-6 sm:p-8 shadow-xl"
+                            className="rounded-2xl border border-line bg-surface p-6 sm:p-8 shadow-card"
                         >
                             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                                 <div>
-                                    <h3 className="text-lg font-bold text-white">
+                                    <h3 className="text-lg font-bold text-fg">
                                         Gemini
                                     </h3>
-                                    <p className="text-sm text-slate-400 mt-1">
+                                    <p className="text-sm text-muted mt-1">
                                         Writes captions and generates images for
                                         your posts.
                                     </p>
@@ -1084,7 +1084,7 @@ export default function SettingsPage() {
                                             : 'Paste your Gemini API key'
                                     }
                                 />
-                                <p className="text-xs text-slate-500 mt-2">
+                                <p className="text-xs text-subtle mt-2">
                                     Create a key in Google AI Studio. It is used
                                     only for your account.
                                 </p>
@@ -1105,7 +1105,7 @@ export default function SettingsPage() {
                                         type="button"
                                         onClick={() => setRemoveTarget('gemini')}
                                         disabled={savingCredential === 'gemini'}
-                                        className="bg-rose-500/10 hover:bg-rose-500/20 disabled:opacity-60 text-rose-300 border border-rose-500/20 px-5 py-3 rounded-xl text-sm font-bold transition-all"
+                                        className="bg-rose-500/10 hover:bg-rose-500/20 disabled:opacity-60 text-rose-700 dark:text-rose-300 border border-rose-500/20 px-5 py-3 rounded-xl text-sm font-bold transition-all"
                                     >
                                         Remove
                                     </button>

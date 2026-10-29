@@ -91,7 +91,7 @@ export function PasswordInput({
                 onClick={() => setVisible((current) => !current)}
                 aria-label={visible ? 'Hide password' : 'Show password'}
                 title={visible ? 'Hide password' : 'Show password'}
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 transition-colors hover:text-slate-300"
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-subtle transition-colors hover:text-fg-2"
             >
                 <EyeIcon visible={visible} />
             </button>

@@ -64,11 +64,11 @@ function SummaryCard({
     action?: React.ReactNode;
 }) {
     return (
-        <div className={`rounded-3xl border p-5 shadow-xl ${accent}`}>
+        <div className={`rounded-2xl border p-5 shadow-card ${accent}`}>
             <div className="text-[11px] font-bold uppercase tracking-widest opacity-70">
                 {label}
             </div>
-            <div className="text-2xl font-black text-white mt-2">
+            <div className="text-2xl font-bold text-fg mt-2">
                 {value}
             </div>
             <div className="text-xs mt-1 opacity-60">{hint}</div>
@@ -403,18 +403,18 @@ export default function StoragePage() {
                         void load(false);
                     }}
                     disabled={loading || refreshing || deleting}
-                    className="px-4 py-2.5 rounded-xl text-xs font-bold border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 disabled:opacity-50 transition-all"
+                    className="px-4 py-2.5 rounded-xl text-xs font-bold border border-line-strong bg-hover text-fg hover:bg-hover-strong disabled:opacity-50 transition-all"
                 >
                     {refreshing ? 'Refreshing...' : 'Refresh'}
                 </button>
             }
         >
             {needsSetup ? (
-                <div className="rounded-3xl border border-amber-500/20 bg-amber-500/5 p-8 text-center">
-                    <div className="text-lg font-bold text-white">
+                <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-8 text-center">
+                    <div className="text-lg font-bold text-fg">
                         Connect Cloudinary to manage storage
                     </div>
-                    <p className="text-sm text-slate-400 mt-2 max-w-xl mx-auto">
+                    <p className="text-sm text-muted mt-2 max-w-xl mx-auto">
                         Add your Cloudinary cloud name, API key, and API
                         secret under Profile. Meta-Bru uses your own
                         Cloudinary account, so only you can see and manage
@@ -430,7 +430,7 @@ export default function StoragePage() {
             ) : null}
 
             {error ? (
-                <div className="mb-6 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
+                <div className="mb-6 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
                     {error}
                     <Link
                         href="/settings"
@@ -453,8 +453,8 @@ export default function StoragePage() {
                         <div
                             className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${
                                 noticeKind === 'success'
-                                    ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300'
-                                    : 'border-amber-500/20 bg-amber-500/10 text-amber-300'
+                                    ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                                    : 'border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300'
                             }`}
                         >
                             {notice}
@@ -463,13 +463,13 @@ export default function StoragePage() {
 
                     {summary ? (
                         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-                            <div className="sm:col-span-2 rounded-3xl border border-white/5 bg-slate-900/40 p-5 sm:p-6 shadow-xl">
+                            <div className="sm:col-span-2 rounded-2xl border border-line bg-surface p-5 sm:p-6 shadow-card">
                                 <div className="flex items-start justify-between gap-3">
                                     <div>
-                                        <div className="text-[11px] font-bold uppercase tracking-widest text-indigo-400">
+                                        <div className="text-[11px] font-bold uppercase tracking-widest text-indigo-700 dark:text-indigo-400">
                                             Cloudinary account
                                         </div>
-                                        <div className="text-2xl font-black text-white mt-2">
+                                        <div className="text-2xl font-bold text-fg mt-2">
                                             {summary.account.error
                                                 ? 'Usage unavailable'
                                                 : formatBytes(
@@ -479,7 +479,7 @@ export default function StoragePage() {
                                             {!summary.account.error &&
                                             summary.account.storageLimit >
                                                 0 ? (
-                                                <span className="text-sm font-semibold text-slate-500">
+                                                <span className="text-sm font-semibold text-subtle">
                                                     {' / '}
                                                     {formatBytes(
                                                         summary.account
@@ -489,7 +489,7 @@ export default function StoragePage() {
                                             ) : null}
                                         </div>
                                     </div>
-                                    <span className="shrink-0 rounded-full border border-indigo-500/20 bg-indigo-500/10 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-indigo-300">
+                                    <span className="shrink-0 rounded-full border border-indigo-500/20 bg-indigo-500/10 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-300">
                                         {summary.account.plan ||
                                             'Cloudinary'}
                                     </span>
@@ -498,7 +498,7 @@ export default function StoragePage() {
                                 {!summary.account.error ? (
                                     <>
                                         {summary.account.storageLimit > 0 ? (
-                                            <div className="mt-4 h-2.5 rounded-full bg-slate-950 overflow-hidden border border-white/5">
+                                            <div className="mt-4 h-2.5 rounded-full bg-canvas overflow-hidden border border-line">
                                                 <div
                                                     className={`h-full rounded-full transition-all ${
                                                         storagePercent >= 90
@@ -515,7 +515,7 @@ export default function StoragePage() {
                                             </div>
                                         ) : null}
 
-                                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500 mt-2">
+                                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-subtle mt-2">
                                             <span>
                                                 {summary.account
                                                     .storageLimit > 0
@@ -556,12 +556,12 @@ export default function StoragePage() {
                                         </div>
                                     </>
                                 ) : (
-                                    <div className="mt-3 text-[11px] text-amber-300">
+                                    <div className="mt-3 text-[11px] text-amber-700 dark:text-amber-300">
                                         {summary.account.error}
                                     </div>
                                 )}
 
-                                <p className="mt-3 text-[11px] text-slate-500">
+                                <p className="mt-3 text-[11px] text-subtle">
                                     This is your whole Cloudinary account.
                                     The folder totals below include only
                                     Meta-Bru uploads.
@@ -574,7 +574,7 @@ export default function StoragePage() {
                                 hint={`${imageCount} image${
                                     imageCount === 1 ? '' : 's'
                                 } · ${videoCount} reel${videoCount === 1 ? '' : 's'}`}
-                                accent="border-white/5 bg-slate-900/40"
+                                accent="border-line bg-surface"
                             />
 
                             <SummaryCard
@@ -600,7 +600,7 @@ export default function StoragePage() {
                                     <button
                                         onClick={selectExtraCopies}
                                         disabled={exactExtraCount === 0}
-                                        className="text-[11px] font-bold text-indigo-300 hover:text-indigo-200 disabled:opacity-40 transition-all"
+                                        className="text-[11px] font-bold text-indigo-700 dark:text-indigo-300 hover:text-indigo-800 dark:hover:text-indigo-200 disabled:opacity-40 transition-all"
                                     >
                                         Select exact extras
                                     </button>
@@ -618,7 +618,7 @@ export default function StoragePage() {
                                         disabled={
                                             unusedDeletableCount === 0
                                         }
-                                        className="text-[11px] font-bold text-emerald-300 hover:text-emerald-200 disabled:opacity-40 transition-all"
+                                        className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 hover:text-emerald-800 dark:hover:text-emerald-200 disabled:opacity-40 transition-all"
                                     >
                                         Select unused
                                     </button>
@@ -632,11 +632,11 @@ export default function StoragePage() {
                                 accent="border-amber-500/15 bg-amber-500/5"
                             />
 
-                            <div className="sm:col-span-2 rounded-3xl border border-white/5 bg-slate-900/30 p-5">
-                                <div className="text-[11px] font-bold uppercase tracking-widest text-slate-500">
+                            <div className="sm:col-span-2 rounded-2xl border border-line bg-surface p-5">
+                                <div className="text-[11px] font-bold uppercase tracking-widest text-subtle">
                                     How this works
                                 </div>
-                                <ul className="mt-3 space-y-2 text-xs text-slate-400">
+                                <ul className="mt-3 space-y-2 text-xs text-muted">
                                     <li>
                                         Only images and reels in your own
                                         meta-bru/your-user-id/ folder are
@@ -665,7 +665,7 @@ export default function StoragePage() {
                     ) : null}
 
                     {summary?.folder.truncated ? (
-                        <div className="mb-4 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-300">
+                        <div className="mb-4 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-700 dark:text-amber-300">
                             Showing the first{' '}
                             {summary.folder.assetCount.toLocaleString()}{' '}
                             uploads. Older uploads are not included in this
@@ -674,7 +674,7 @@ export default function StoragePage() {
                     ) : null}
 
                     {summary && summary.duplicates.likelyGroups > 0 ? (
-                        <div className="mb-4 rounded-2xl border border-indigo-500/20 bg-indigo-500/10 px-4 py-3 text-xs text-indigo-200">
+                        <div className="mb-4 rounded-2xl border border-indigo-500/20 bg-indigo-500/10 px-4 py-3 text-xs text-indigo-700 dark:text-indigo-200">
                             {summary.duplicates.likelyGroups} possible
                             duplicate group
                             {summary.duplicates.likelyGroups === 1
@@ -685,7 +685,7 @@ export default function StoragePage() {
                         </div>
                     ) : null}
 
-                    <div className="rounded-3xl border border-white/5 bg-slate-900/40 p-4 sm:p-5 shadow-xl mb-6">
+                    <div className="rounded-2xl border border-line bg-surface p-4 sm:p-5 shadow-card mb-6">
                         <div className="flex flex-col xl:flex-row xl:items-center gap-3">
                             <div className="relative flex-1 min-w-0">
                                 <svg
@@ -695,7 +695,7 @@ export default function StoragePage() {
                                     strokeWidth="2"
                                     strokeLinecap="round"
                                     strokeLinejoin="round"
-                                    className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500"
+                                    className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-subtle"
                                 >
                                     <circle cx="11" cy="11" r="7" />
                                     <path d="m20 20-3.5-3.5" />
@@ -707,20 +707,20 @@ export default function StoragePage() {
                                     }
                                     placeholder="Search by public ID or folder"
                                     aria-label="Search files"
-                                    className="w-full bg-slate-950/80 border border-white/10 rounded-xl pl-10 pr-4 py-3 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                                    className="w-full bg-surface-2 border border-line-strong rounded-xl pl-10 pr-4 py-3 text-sm text-fg placeholder:text-faint focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
                                 />
                             </div>
 
                             <div className="flex flex-wrap items-center gap-2">
-                                <div className="flex gap-1 rounded-xl border border-white/5 bg-slate-950/40 p-1">
+                                <div className="flex gap-1 rounded-xl border border-line bg-surface-2 p-1">
                                     {KINDS.map((item) => (
                                         <button
                                             key={item.key}
                                             onClick={() => changeKind(item.key)}
                                             className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all ${
                                                 kind === item.key
-                                                    ? 'bg-white/10 text-white'
-                                                    : 'text-slate-500 hover:text-white'
+                                                    ? 'bg-hover-strong text-fg'
+                                                    : 'text-subtle hover:text-fg'
                                             }`}
                                         >
                                             {item.label}
@@ -736,8 +736,8 @@ export default function StoragePage() {
                                         }
                                         className={`px-3.5 py-2.5 rounded-xl text-xs font-bold border transition-all ${
                                             filter === item.key
-                                                ? 'bg-indigo-500/15 text-indigo-300 border-indigo-500/20'
-                                                : 'bg-slate-950/40 text-slate-400 border-white/5 hover:text-white'
+                                                ? 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-500/20'
+                                                : 'bg-surface-2 text-muted border-line hover:text-fg'
                                         }`}
                                     >
                                         {item.label}
@@ -753,7 +753,7 @@ export default function StoragePage() {
                                                 .value as StorageSort
                                         )
                                     }
-                                    className="bg-slate-950/80 border border-white/10 rounded-xl px-3 py-2.5 text-xs font-semibold text-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                                    className="bg-surface-2 border border-line-strong rounded-xl px-3 py-2.5 text-xs font-semibold text-fg-2 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
                                 >
                                     <option value="newest">
                                         Newest first
@@ -771,33 +771,33 @@ export default function StoragePage() {
                             </div>
                         </div>
 
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mt-4 pt-4 border-t border-white/5">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mt-4 pt-4 border-t border-line">
                             <div className="flex flex-wrap items-center gap-2">
                                 <button
                                     onClick={selectExtraCopies}
                                     disabled={exactExtraCount === 0}
-                                    className="px-3.5 py-2 rounded-xl text-[11px] font-bold border border-indigo-500/20 bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/15 disabled:opacity-40 transition-all"
+                                    className="px-3.5 py-2 rounded-xl text-[11px] font-bold border border-indigo-500/20 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-500/15 disabled:opacity-40 transition-all"
                                 >
                                     Select extra copies
                                 </button>
                                 <button
                                     onClick={selectUnused}
                                     disabled={unusedDeletableCount === 0}
-                                    className="px-3.5 py-2 rounded-xl text-[11px] font-bold border border-emerald-500/20 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/15 disabled:opacity-40 transition-all"
+                                    className="px-3.5 py-2 rounded-xl text-[11px] font-bold border border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/15 disabled:opacity-40 transition-all"
                                 >
                                     Select unused
                                 </button>
                                 <button
                                     onClick={clearSelection}
                                     disabled={selected.size === 0}
-                                    className="px-3.5 py-2 rounded-xl text-[11px] font-bold border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 disabled:opacity-40 transition-all"
+                                    className="px-3.5 py-2 rounded-xl text-[11px] font-bold border border-line-strong bg-hover text-fg-2 hover:bg-hover-strong disabled:opacity-40 transition-all"
                                 >
                                     Clear selection
                                 </button>
                             </div>
 
                             <div className="flex items-center gap-3">
-                                <div className="text-xs text-slate-400">
+                                <div className="text-xs text-muted">
                                     {selected.size > 0
                                         ? `${selected.size} selected · ${formatBytes(
                                               selectedBytes
@@ -822,11 +822,11 @@ export default function StoragePage() {
                     </div>
 
                     {assets.length === 0 ? (
-                        <div className="rounded-3xl border border-dashed border-white/10 bg-slate-900/30 p-12 text-center">
-                            <div className="text-lg font-bold text-white">
+                        <div className="rounded-2xl border border-dashed border-line-strong bg-surface p-12 text-center">
+                            <div className="text-lg font-bold text-fg">
                                 No Meta-Bru uploads yet
                             </div>
-                            <p className="text-sm text-slate-400 mt-2">
+                            <p className="text-sm text-muted mt-2">
                                 Images from the Composer and videos from the
                                 Reels page will appear here.
                             </p>
@@ -838,11 +838,11 @@ export default function StoragePage() {
                             </Link>
                         </div>
                     ) : filteredAssets.length === 0 ? (
-                        <div className="rounded-3xl border border-dashed border-white/10 bg-slate-900/30 p-12 text-center">
-                            <div className="text-lg font-bold text-white">
+                        <div className="rounded-2xl border border-dashed border-line-strong bg-surface p-12 text-center">
+                            <div className="text-lg font-bold text-fg">
                                 No files match this view
                             </div>
-                            <p className="text-sm text-slate-400 mt-2">
+                            <p className="text-sm text-muted mt-2">
                                 Try a different search or filter.
                             </p>
                             <button
@@ -851,7 +851,7 @@ export default function StoragePage() {
                                     changeFilter('all');
                                     changeSearch('');
                                 }}
-                                className="inline-flex mt-6 px-5 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-white text-sm font-bold border border-white/10 transition-all"
+                                className="inline-flex mt-6 px-5 py-3 rounded-xl bg-hover hover:bg-hover-strong text-fg text-sm font-bold border border-line-strong transition-all"
                             >
                                 Clear filters
                             </button>
@@ -880,7 +880,7 @@ export default function StoragePage() {
                                                     count + PAGE_SIZE
                                             )
                                         }
-                                        className="px-5 py-3 rounded-xl text-xs font-bold border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 transition-all"
+                                        className="px-5 py-3 rounded-xl text-xs font-bold border border-line-strong bg-hover text-fg hover:bg-hover-strong transition-all"
                                     >
                                         Load more (
                                         {filteredAssets.length -

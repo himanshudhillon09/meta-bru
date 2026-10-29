@@ -503,17 +503,17 @@ export default function AnalyticsPage() {
             }
         >
             {notice ? (
-                <div className="mb-5 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
+                <div className="mb-5 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-300">
                     {notice}
                 </div>
             ) : null}
             {error ? (
-                <div className="mb-5 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
+                <div className="mb-5 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
                     {error}
                 </div>
             ) : null}
             {reconnectPages.length > 0 ? (
-                <div className="mb-5 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+                <div className="mb-5 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-200">
                     {reconnectPages.join(', ')}{' '}
                     {reconnectPages.length === 1 ? 'needs' : 'need'}{' '}
                     reconnecting to load engagement insights.
@@ -534,7 +534,7 @@ export default function AnalyticsPage() {
                 return (
                     <div
                         key={item.connectionId}
-                        className="mb-5 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-200"
+                        className="mb-5 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-200"
                     >
                         <div>
                             Meta still blocks insights for{' '}
@@ -549,8 +549,8 @@ export default function AnalyticsPage() {
                                 </>
                             ) : null}
                         </div>
-                        <details className="mt-2 text-xs text-amber-100/80">
-                            <summary className="cursor-pointer font-bold text-amber-200">
+                        <details className="mt-2 text-xs text-amber-700/80 dark:text-amber-100/80">
+                            <summary className="cursor-pointer font-bold text-amber-700 dark:text-amber-200">
                                 What to check in Meta
                             </summary>
                             <ul className="mt-2 list-disc space-y-1 pl-5">
@@ -595,8 +595,8 @@ export default function AnalyticsPage() {
                         onClick={() => setRange(value)}
                         className={`rounded-xl border px-3 py-2 text-xs font-bold ${
                             range === value
-                                ? 'border-indigo-500/20 bg-indigo-500/15 text-indigo-300'
-                                : 'border-white/5 bg-slate-900/40 text-slate-400'
+                                ? 'border-indigo-500/20 bg-indigo-500/15 text-indigo-700 dark:text-indigo-300'
+                                : 'border-line bg-surface text-muted'
                         }`}
                     >
                         {value} days
@@ -606,8 +606,8 @@ export default function AnalyticsPage() {
                     onClick={() => setRange('custom')}
                     className={`rounded-xl border px-3 py-2 text-xs font-bold ${
                         range === 'custom'
-                            ? 'border-indigo-500/20 bg-indigo-500/15 text-indigo-300'
-                            : 'border-white/5 bg-slate-900/40 text-slate-400'
+                            ? 'border-indigo-500/20 bg-indigo-500/15 text-indigo-700 dark:text-indigo-300'
+                            : 'border-line bg-surface text-muted'
                     }`}
                 >
                     Custom
@@ -621,7 +621,7 @@ export default function AnalyticsPage() {
                             onChange={(event) =>
                                 setCustomFrom(event.target.value)
                             }
-                            className="rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 text-xs text-white"
+                            className="rounded-xl border border-line-strong bg-surface-2 px-3 py-2 text-xs text-fg"
                         />
                         <input
                             type="date"
@@ -630,7 +630,7 @@ export default function AnalyticsPage() {
                             onChange={(event) =>
                                 setCustomTo(event.target.value)
                             }
-                            className="rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 text-xs text-white"
+                            className="rounded-xl border border-line-strong bg-surface-2 px-3 py-2 text-xs text-fg"
                         />
                     </>
                 ) : null}
@@ -638,7 +638,7 @@ export default function AnalyticsPage() {
                     aria-label="Page filter"
                     value={connectionId}
                     onChange={(event) => setConnectionId(event.target.value)}
-                    className="rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 text-xs text-white"
+                    className="rounded-xl border border-line-strong bg-surface-2 px-3 py-2 text-xs text-fg"
                 >
                     <option value="">All Pages</option>
                     {connections.map((connection) => (
@@ -651,13 +651,13 @@ export default function AnalyticsPage() {
                     aria-label="Platform filter"
                     value={platform}
                     onChange={(event) => setPlatform(event.target.value)}
-                    className="rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 text-xs text-white"
+                    className="rounded-xl border border-line-strong bg-surface-2 px-3 py-2 text-xs text-fg"
                 >
                     <option value="">All platforms</option>
                     <option value="facebook">Facebook</option>
                     <option value="instagram">Instagram</option>
                 </select>
-                <span className="ml-auto text-xs text-slate-500">
+                <span className="ml-auto text-xs text-subtle">
                     {overview?.sync.lastSyncedAt
                         ? `Last synced ${
                               formatElapsed(
@@ -676,8 +676,8 @@ export default function AnalyticsPage() {
                         onClick={() => setTab(item.key)}
                         className={`whitespace-nowrap rounded-xl border px-4 py-2.5 text-xs font-bold ${
                             tab === item.key
-                                ? 'border-indigo-500/20 bg-indigo-500/15 text-indigo-300'
-                                : 'border-white/5 bg-slate-900/40 text-slate-400'
+                                ? 'border-indigo-500/20 bg-indigo-500/15 text-indigo-700 dark:text-indigo-300'
+                                : 'border-line bg-surface text-muted'
                         }`}
                     >
                         {item.label}
@@ -720,8 +720,8 @@ export default function AnalyticsPage() {
                             tone="amber"
                         />
                     </div>
-                    <section className="rounded-3xl border border-white/5 bg-slate-900/40 p-5">
-                        <h2 className="mb-4 text-sm font-bold text-white">
+                    <section className="rounded-2xl border border-line bg-surface p-5">
+                        <h2 className="mb-4 text-sm font-bold text-fg">
                             Facebook vs Instagram
                         </h2>
                         <div className="grid gap-3 sm:grid-cols-2">
@@ -739,52 +739,52 @@ export default function AnalyticsPage() {
                             ].map((platform) => (
                                 <div
                                     key={platform.label}
-                                    className="rounded-2xl border border-white/5 bg-slate-950/40 p-4"
+                                    className="rounded-2xl border border-line bg-surface-2 p-4"
                                 >
                                     <div className="flex items-center gap-2">
                                         <span
                                             className={`h-2 w-2 rounded-full ${platform.dot}`}
                                         />
-                                        <span className="text-xs font-bold text-white">
+                                        <span className="text-xs font-bold text-fg">
                                             {platform.label}
                                         </span>
                                     </div>
                                     <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
                                         <div>
-                                            <span className="text-slate-500">
+                                            <span className="text-subtle">
                                                 Posts
                                             </span>
-                                            <div className="font-bold text-white">
+                                            <div className="font-bold text-fg">
                                                 {formatNumber(
                                                     platform.summary.posts
                                                 )}
                                             </div>
                                         </div>
                                         <div>
-                                            <span className="text-slate-500">
+                                            <span className="text-subtle">
                                                 Reach
                                             </span>
-                                            <div className="font-bold text-white">
+                                            <div className="font-bold text-fg">
                                                 {formatNumber(
                                                     platform.summary.reach
                                                 )}
                                             </div>
                                         </div>
                                         <div>
-                                            <span className="text-slate-500">
+                                            <span className="text-subtle">
                                                 Interactions
                                             </span>
-                                            <div className="font-bold text-white">
+                                            <div className="font-bold text-fg">
                                                 {formatNumber(
                                                     platform.summary.interactions
                                                 )}
                                             </div>
                                         </div>
                                         <div>
-                                            <span className="text-slate-500">
+                                            <span className="text-subtle">
                                                 Rate
                                             </span>
-                                            <div className="font-bold text-emerald-300">
+                                            <div className="font-bold text-emerald-700 dark:text-emerald-300">
                                                 {formatMetric(
                                                     platform.summary
                                                         .engagementRate,
@@ -798,8 +798,8 @@ export default function AnalyticsPage() {
                         </div>
                     </section>
                     <div className="grid gap-5 lg:grid-cols-2">
-                        <section className="rounded-3xl border border-white/5 bg-slate-900/40 p-5">
-                            <h2 className="mb-4 text-sm font-bold text-white">
+                        <section className="rounded-2xl border border-line bg-surface p-5">
+                            <h2 className="mb-4 text-sm font-bold text-fg">
                                 Publishing activity
                             </h2>
                             <AnalyticsBarChart
@@ -812,8 +812,8 @@ export default function AnalyticsPage() {
                                 secondaryLabel="Instagram"
                             />
                         </section>
-                        <section className="rounded-3xl border border-white/5 bg-slate-900/40 p-5">
-                            <h2 className="mb-4 text-sm font-bold text-white">
+                        <section className="rounded-2xl border border-line bg-surface p-5">
+                            <h2 className="mb-4 text-sm font-bold text-fg">
                                 Engagement by publish date
                             </h2>
                             <AnalyticsBarChart
@@ -828,31 +828,31 @@ export default function AnalyticsPage() {
                             />
                         </section>
                     </div>
-                    <section className="rounded-3xl border border-white/5 bg-slate-900/40 p-5">
-                        <h2 className="mb-4 text-sm font-bold text-white">
+                    <section className="rounded-2xl border border-line bg-surface p-5">
+                        <h2 className="mb-4 text-sm font-bold text-fg">
                             Best posting times (IST)
                         </h2>
                         <AnalyticsHeatmap buckets={overview.bestTimes} />
                     </section>
                     <AnalyticsTips tips={tips?.ruleBased || []} />
-                    <section className="rounded-3xl border border-white/5 bg-slate-900/40 p-5">
+                    <section className="rounded-2xl border border-line bg-surface p-5">
                         <div className="mb-3 flex flex-wrap items-center gap-2">
-                            <h2 className="text-sm font-bold text-white">
+                            <h2 className="text-sm font-bold text-fg">
                                 AI tips
                             </h2>
-                            <span className="rounded-full bg-indigo-500/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest text-indigo-300">
+                            <span className="rounded-full bg-indigo-500/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest text-indigo-700 dark:text-indigo-300">
                                 Gemini
                             </span>
                             <button
                                 onClick={() => setTab('ai')}
-                                className="ml-auto text-xs font-bold text-indigo-300"
+                                className="ml-auto text-xs font-bold text-indigo-700 dark:text-indigo-300"
                             >
                                 Open AI analysis
                             </button>
                         </div>
                         {tips?.ai ? (
                             <div>
-                                <p className="text-[11px] text-slate-500">
+                                <p className="text-[11px] text-subtle">
                                     Cached result from{' '}
                                     {formatIstDateTime(tips.ai.generatedAt)}
                                 </p>
@@ -860,12 +860,12 @@ export default function AnalyticsPage() {
                                     {tips.ai.tips.slice(0, 2).map((tip, index) => (
                                         <div
                                             key={`${tip.title}-${index}`}
-                                            className="rounded-xl border border-white/5 bg-slate-950/40 p-3"
+                                            className="rounded-xl border border-line bg-surface-2 p-3"
                                         >
-                                            <div className="text-xs font-bold text-white">
+                                            <div className="text-xs font-bold text-fg">
                                                 {tip.title}
                                             </div>
-                                            <p className="mt-1 text-[11px] text-slate-400">
+                                            <p className="mt-1 text-[11px] text-muted">
                                                 {tip.body}
                                             </p>
                                         </div>
@@ -873,7 +873,7 @@ export default function AnalyticsPage() {
                                 </div>
                             </div>
                         ) : (
-                            <p className="text-xs text-slate-500">
+                            <p className="text-xs text-subtle">
                                 Run an AI analysis in the AI tab to turn your
                                 stored engagement data into recommendations.
                             </p>
@@ -881,11 +881,11 @@ export default function AnalyticsPage() {
                     </section>
                     <div className="space-y-4">
                         {posts.length === 0 ? (
-                            <div className="rounded-3xl border border-dashed border-white/10 bg-slate-900/30 p-12 text-center text-sm text-slate-400">
+                            <div className="rounded-2xl border border-dashed border-line-strong bg-surface p-12 text-center text-sm text-muted">
                                 No published posts in this range.{' '}
                                 <Link
                                     href="/composer"
-                                    className="font-bold text-indigo-300"
+                                    className="font-bold text-indigo-700 dark:text-indigo-300"
                                 >
                                     Create a post
                                 </Link>
@@ -905,14 +905,14 @@ export default function AnalyticsPage() {
                         <button
                             onClick={loadMore}
                             disabled={loadingMore}
-                            className="w-full rounded-xl border border-white/10 bg-slate-900/40 px-4 py-3 text-sm font-bold text-slate-300 disabled:opacity-50"
+                            className="w-full rounded-xl border border-line-strong bg-surface px-4 py-3 text-sm font-bold text-fg-2 disabled:opacity-50"
                         >
                             {loadingMore ? 'Loading...' : 'Load more'}
                         </button>
                     ) : null}
                 </div>
             ) : tab === 'overview' ? (
-                <div className="rounded-3xl border border-dashed border-white/10 bg-slate-900/30 p-12 text-center text-sm text-slate-400">
+                <div className="rounded-2xl border border-dashed border-line-strong bg-surface p-12 text-center text-sm text-muted">
                     Could not load the overview. Use Refresh insights to try
                     again.
                 </div>
@@ -927,7 +927,7 @@ export default function AnalyticsPage() {
                         now={now}
                     />
                 ) : (
-                    <div className="rounded-3xl border border-dashed border-white/10 bg-slate-900/30 p-12 text-center text-sm text-slate-400">
+                    <div className="rounded-2xl border border-dashed border-line-strong bg-surface p-12 text-center text-sm text-muted">
                         {monitorLoading
                             ? 'Loading live monitor...'
                             : 'Turn on the live monitor to build engagement history.'}

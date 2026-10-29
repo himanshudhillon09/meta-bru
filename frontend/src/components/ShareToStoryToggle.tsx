@@ -23,12 +23,12 @@ export function ShareToStoryToggle({
             className={`mt-4 w-full flex items-start gap-3 rounded-2xl border px-4 py-3 text-left transition-all ${
                 checked
                     ? 'border-amber-500/30 bg-amber-500/10'
-                    : 'border-white/5 bg-slate-950/40 hover:border-white/10'
+                    : 'border-line bg-surface-2 hover:border-line-strong'
             }`}
         >
             <span
                 className={`mt-0.5 relative inline-flex h-5 w-9 shrink-0 rounded-full transition-all ${
-                    checked ? 'bg-amber-500' : 'bg-slate-700'
+                    checked ? 'bg-amber-500' : 'bg-line-strong'
                 }`}
             >
                 <span
@@ -38,10 +38,10 @@ export function ShareToStoryToggle({
                 />
             </span>
             <span>
-                <span className="block text-xs font-bold text-white">
+                <span className="block text-xs font-bold text-fg">
                     Also share to Story
                 </span>
-                <span className="block text-[11px] text-slate-400 mt-0.5">
+                <span className="block text-[11px] text-muted mt-0.5">
                     {detail}
                 </span>
             </span>

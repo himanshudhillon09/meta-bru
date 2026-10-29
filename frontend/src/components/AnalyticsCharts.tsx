@@ -15,21 +15,21 @@ export function MetricCard({
     tone?: 'indigo' | 'emerald' | 'amber' | 'sky';
 }) {
     const tones = {
-        indigo: 'text-indigo-300',
-        emerald: 'text-emerald-300',
-        amber: 'text-amber-300',
-        sky: 'text-sky-300',
+        indigo: 'text-indigo-700 dark:text-indigo-300',
+        emerald: 'text-emerald-700 dark:text-emerald-300',
+        amber: 'text-amber-700 dark:text-amber-300',
+        sky: 'text-sky-700 dark:text-sky-300',
     };
     return (
-        <div className="rounded-2xl border border-white/5 bg-slate-900/40 p-4">
-            <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">
+        <div className="rounded-2xl border border-line bg-surface p-4">
+            <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-subtle">
                 {label}
             </div>
-            <div className={`mt-2 text-2xl font-black ${tones[tone]}`}>
+            <div className={`mt-2 text-2xl font-bold ${tones[tone]}`}>
                 {value}
             </div>
             {hint ? (
-                <div className="mt-1 text-xs text-slate-500">{hint}</div>
+                <div className="mt-1 text-xs text-subtle">{hint}</div>
             ) : null}
         </div>
     );
@@ -85,14 +85,14 @@ export function AnalyticsBarChart({
                                 />
                             ) : null}
                         </div>
-                        <span className="h-3 text-[9px] text-slate-600">
+                        <span className="h-3 text-[9px] text-faint">
                             {index % labelEvery === 0 ? item.label : ''}
                         </span>
                     </div>
                 ))}
             </div>
             {hasSecondary ? (
-                <div className="mt-1 flex flex-wrap gap-4 text-[10px] text-slate-500">
+                <div className="mt-1 flex flex-wrap gap-4 text-[10px] text-subtle">
                     <span className="flex items-center gap-1.5">
                         <span className="h-2 w-2 rounded-sm bg-indigo-500/80" />
                         {primaryLabel || valueLabel}
@@ -120,14 +120,14 @@ export function AnalyticsLineChart({
 }) {
     if (points.length === 0) {
         return (
-            <div className="py-16 text-center text-sm text-slate-500">
+            <div className="py-16 text-center text-sm text-subtle">
                 No history yet.
             </div>
         );
     }
     if (points.length === 1) {
         return (
-            <div className="py-16 text-center text-sm text-slate-500">
+            <div className="py-16 text-center text-sm text-subtle">
                 One data point captured. Keep the monitor open to build
                 history.
             </div>
@@ -191,7 +191,7 @@ export function AnalyticsLineChart({
                     fill={color}
                 />
             </svg>
-            <div className="mt-1 flex flex-wrap justify-between gap-1 text-[10px] text-slate-600">
+            <div className="mt-1 flex flex-wrap justify-between gap-1 text-[10px] text-faint">
                 <span>{points[0]?.label}</span>
                 <span>
                     Latest: {lastPoint.value.toLocaleString('en-IN')}
@@ -222,7 +222,7 @@ export function AnalyticsHeatmap({
                         (hour) => (
                             <div
                                 key={hour}
-                                className="text-center text-[9px] text-slate-600"
+                                className="text-center text-[9px] text-faint"
                             >
                                 {hour}
                             </div>
@@ -234,7 +234,7 @@ export function AnalyticsHeatmap({
                         key={day}
                         className="mb-1 grid grid-cols-[44px_repeat(8,1fr)] gap-1"
                     >
-                        <div className="text-[10px] font-bold text-slate-500">
+                        <div className="text-[10px] font-bold text-subtle">
                             {day}
                         </div>
                         {Array.from({ length: 8 }, (_, block) => {
@@ -255,7 +255,7 @@ export function AnalyticsHeatmap({
                                             ? `${day} ${bucket.label}: ${bucket.posts} posts${rate ? `, ${rate}% avg` : ''}`
                                             : ''
                                     }
-                                    className="h-7 rounded-md border border-white/5"
+                                    className="h-7 rounded-md border border-line"
                                     style={{
                                         backgroundColor: `rgba(129, 140, 248, ${opacity})`,
                                     }}

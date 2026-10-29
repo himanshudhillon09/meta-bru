@@ -57,12 +57,12 @@ export const Modal: React.FC<ModalProps> = ({
         <div className={`fixed inset-0 z-[100] flex items-center justify-center p-4 transition-all duration-300 ${isOpen ? 'opacity-100 scale-100' : 'opacity-0 scale-95 pointer-events-none'}`}>
             {/* Backdrop */}
             <div
-                className={`absolute inset-0 bg-slate-950/80 backdrop-blur-sm transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'opacity-0'}`}
+                className={`absolute inset-0 bg-slate-950/50 backdrop-blur-sm transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'opacity-0'}`}
                 onClick={onClose}
             />
 
             {/* Modal Content */}
-            <div className="relative w-full max-w-md bg-slate-900/90 border border-white/10 rounded-[32px] p-8 shadow-2xl backdrop-blur-xl">
+            <div className="relative w-full max-w-md bg-surface border border-line-strong rounded-3xl p-8 shadow-2xl backdrop-blur-xl">
                 <div className="flex flex-col items-center text-center">
                     {/* Icon */}
                     <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-6 border ${typeIconColors[type]}`}>
@@ -83,14 +83,14 @@ export const Modal: React.FC<ModalProps> = ({
                         )}
                     </div>
 
-                    <h3 className="text-2xl font-bold text-white mb-3 tracking-tight">{title}</h3>
-                    <p className={`text-slate-400 leading-relaxed ${children ? 'mb-4' : 'mb-8'}`}>{message}</p>
+                    <h3 className="text-2xl font-bold text-fg mb-3 tracking-tight">{title}</h3>
+                    <p className={`text-muted leading-relaxed ${children ? 'mb-4' : 'mb-8'}`}>{message}</p>
                     {children ? <div className="mb-8 w-full text-left">{children}</div> : null}
 
                     <div className="flex items-center gap-3 w-full">
                         <button
                             onClick={onClose}
-                            className="flex-1 bg-white/5 hover:bg-white/10 text-white font-semibold py-4 rounded-2xl border border-white/5 transition-all text-sm"
+                            className="flex-1 bg-hover hover:bg-hover-strong text-fg font-semibold py-4 rounded-2xl border border-line transition-all text-sm"
                         >
                             {cancelText}
                         </button>

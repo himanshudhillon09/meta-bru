@@ -54,7 +54,7 @@ export function StoryShareModal({
                     return (
                         <div
                             key={platform}
-                            className="rounded-2xl border border-white/5 bg-slate-950/40 px-4 py-3"
+                            className="rounded-2xl border border-line bg-surface-2 px-4 py-3"
                         >
                             <label
                                 className={`flex items-center gap-3 ${
@@ -68,16 +68,16 @@ export function StoryShareModal({
                                     onChange={() => onToggle(platform)}
                                     className="h-4 w-4 accent-indigo-500"
                                 />
-                                <span className="flex-1 text-sm font-semibold text-white">
+                                <span className="flex-1 text-sm font-semibold text-fg">
                                     {PLATFORM_LABELS[platform]}
                                 </span>
                                 <span
                                     className={`text-[10px] font-bold uppercase tracking-widest ${
                                         shared
-                                            ? 'text-emerald-300'
+                                            ? 'text-emerald-700 dark:text-emerald-300'
                                             : story?.status === 'failed'
-                                              ? 'text-rose-300'
-                                              : 'text-slate-500'
+                                              ? 'text-rose-700 dark:text-rose-300'
+                                              : 'text-subtle'
                                     }`}
                                 >
                                     {shared
@@ -88,7 +88,7 @@ export function StoryShareModal({
                                 </span>
                             </label>
                             {story?.status === 'failed' && story.error ? (
-                                <p className="mt-2 text-[11px] text-rose-300/80">
+                                <p className="mt-2 text-[11px] text-rose-700/80 dark:text-rose-300/80">
                                     {story.error}
                                 </p>
                             ) : null}

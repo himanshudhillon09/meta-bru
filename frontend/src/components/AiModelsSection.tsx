@@ -28,7 +28,7 @@ function ModelPicker({ label, hint, value, defaultModel, options, onChange }: Pi
 
     return (
         <div>
-            <label className="text-xs font-bold uppercase tracking-widest text-slate-500">
+            <label className="text-xs font-bold uppercase tracking-widest text-subtle">
                 {label}
             </label>
             <select
@@ -41,7 +41,7 @@ function ModelPicker({ label, hint, value, defaultModel, options, onChange }: Pi
                     setCustom(false);
                     onChange(event.target.value);
                 }}
-                className="mt-2 w-full bg-slate-950/80 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                className="mt-2 w-full bg-surface-2 border border-line-strong rounded-xl px-4 py-3 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
             >
                 <option value="">Default ({defaultModel || 'deployment setting'})</option>
                 {options.map((option) => (
@@ -57,10 +57,10 @@ function ModelPicker({ label, hint, value, defaultModel, options, onChange }: Pi
                     onChange={(event) => onChange(event.target.value.trim())}
                     placeholder="e.g. gemini-2.5-flash"
                     maxLength={80}
-                    className="mt-2 w-full bg-slate-950/80 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                    className="mt-2 w-full bg-surface-2 border border-line-strong rounded-xl px-4 py-3 text-sm text-fg placeholder:text-faint focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
                 />
             ) : null}
-            <p className="text-xs text-slate-500 mt-2">{hint}</p>
+            <p className="text-xs text-subtle mt-2">{hint}</p>
         </div>
     );
 }
@@ -115,11 +115,11 @@ export function AiModelsSection({ onNotice, onError }: AiModelsSectionProps) {
     };
 
     return (
-        <section className="mt-6 rounded-3xl border border-white/5 bg-slate-900/40 p-6 sm:p-8 shadow-xl">
+        <section className="mt-6 rounded-2xl border border-line bg-surface p-6 sm:p-8 shadow-card">
             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                 <div>
-                    <h2 className="text-lg font-bold text-white">AI models</h2>
-                    <p className="mt-1 text-sm text-slate-400">
+                    <h2 className="text-lg font-bold text-fg">AI models</h2>
+                    <p className="mt-1 text-sm text-muted">
                         Choose which Gemini model handles each AI feature. The list
                         shows the models your own Gemini key can use.
                     </p>
@@ -128,14 +128,14 @@ export function AiModelsSection({ onNotice, onError }: AiModelsSectionProps) {
                     type="button"
                     onClick={() => void load()}
                     disabled={loading}
-                    className="self-start px-4 py-2.5 rounded-xl text-xs font-bold border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 disabled:opacity-50 transition-all"
+                    className="self-start px-4 py-2.5 rounded-xl text-xs font-bold border border-line-strong bg-hover text-fg hover:bg-hover-strong disabled:opacity-50 transition-all"
                 >
                     {loading ? 'Loading...' : 'Refresh list'}
                 </button>
             </div>
 
             {loadError ? (
-                <div className="mt-4 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-200">
+                <div className="mt-4 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-700 dark:text-amber-200">
                     {loadError} You can still type a model ID with “Other model ID…”.
                 </div>
             ) : null}

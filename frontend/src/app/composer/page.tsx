@@ -473,12 +473,12 @@ export default function ComposerPage() {
             }
         >
             {notice ? (
-                <div className="mb-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
+                <div className="mb-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-300">
                     {notice}
                 </div>
             ) : null}
             {error ? (
-                <div className="mb-6 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
+                <div className="mb-6 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
                     {error}
                 </div>
             ) : null}
@@ -488,11 +488,11 @@ export default function ComposerPage() {
                     <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-indigo-500" />
                 </div>
             ) : activeConnections.length === 0 ? (
-                <div className="rounded-3xl border border-dashed border-white/10 bg-slate-900/30 p-12 text-center">
-                    <div className="text-xl font-bold text-white">
+                <div className="rounded-2xl border border-dashed border-line-strong bg-surface p-12 text-center">
+                    <div className="text-xl font-bold text-fg">
                         No active Pages
                     </div>
-                    <p className="text-sm text-slate-400 mt-2">
+                    <p className="text-sm text-muted mt-2">
                         Reconnect a Page under Connections to create and publish
                         a new post.
                     </p>
@@ -506,8 +506,8 @@ export default function ComposerPage() {
             ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-[1.15fr_0.85fr] gap-6 items-start">
                     <div className="space-y-6">
-                        <section className="rounded-3xl border border-white/5 bg-slate-900/40 p-6 sm:p-8 shadow-xl">
-                            <label className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                        <section className="rounded-2xl border border-line bg-surface p-6 sm:p-8 shadow-card">
+                            <label className="text-xs font-bold uppercase tracking-widest text-subtle">
                                 Publishing as
                             </label>
                             <select
@@ -518,7 +518,7 @@ export default function ComposerPage() {
                                     );
                                     if (connection) selectConnection(connection);
                                 }}
-                                className="mt-2 w-full bg-slate-950/80 border border-white/10 rounded-xl px-4 py-3.5 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                                className="mt-2 w-full bg-surface-2 border border-line-strong rounded-xl px-4 py-3.5 text-fg focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
                             >
                                 <option value="">Select a Page</option>
                                 {activeConnections.map((connection) => (
@@ -532,13 +532,13 @@ export default function ComposerPage() {
                             </select>
 
                             {selectedConnection?.tokenStatus === 'needs_reauth' ? (
-                                <div className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-200">
+                                <div className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-700 dark:text-amber-200">
                                     This Page needs to be reconnected before it
                                     can publish.
                                 </div>
                             ) : null}
                             {selectedConnection && !selectedConnection.isActive ? (
-                                <div className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-200">
+                                <div className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-700 dark:text-amber-200">
                                     This Page is paused. Scheduled posts wait
                                     until you reactivate it under Connections.
                                 </div>
@@ -550,8 +550,8 @@ export default function ComposerPage() {
                                     onClick={() => setFacebook((value) => !value)}
                                     className={`px-4 py-2.5 rounded-xl text-xs font-bold border transition-all ${
                                         facebook
-                                            ? 'bg-blue-500/15 text-blue-300 border-blue-500/30'
-                                            : 'bg-slate-950/50 text-slate-500 border-white/5'
+                                            ? 'bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30'
+                                            : 'bg-surface-2 text-subtle border-line'
                                     }`}
                                 >
                                     Facebook
@@ -562,8 +562,8 @@ export default function ComposerPage() {
                                     onClick={() => setInstagram((value) => !value)}
                                     className={`px-4 py-2.5 rounded-xl text-xs font-bold border transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
                                         instagram
-                                            ? 'bg-rose-500/15 text-rose-300 border-rose-500/30'
-                                            : 'bg-slate-950/50 text-slate-500 border-white/5'
+                                            ? 'bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30'
+                                            : 'bg-surface-2 text-subtle border-line'
                                     }`}
                                 >
                                     Instagram
@@ -577,12 +577,12 @@ export default function ComposerPage() {
                             />
                         </section>
 
-                        <section className="rounded-3xl border border-white/5 bg-slate-900/40 p-6 sm:p-8 shadow-xl">
+                        <section className="rounded-2xl border border-line bg-surface p-6 sm:p-8 shadow-card">
                             <div className="flex items-center justify-between gap-3">
-                                <label className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                                <label className="text-xs font-bold uppercase tracking-widest text-subtle">
                                     Caption
                                 </label>
-                                <span className="text-xs text-slate-500">
+                                <span className="text-xs text-subtle">
                                     {caption.length}/2200
                                 </span>
                             </div>
@@ -591,7 +591,7 @@ export default function ComposerPage() {
                                 onChange={(event) => setCaption(event.target.value.slice(0, 2200))}
                                 rows={8}
                                 placeholder="Write your post..."
-                                className="mt-2 w-full bg-slate-950/80 border border-white/10 rounded-2xl px-4 py-3.5 text-white leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500/50 resize-y"
+                                className="mt-2 w-full bg-surface-2 border border-line-strong rounded-2xl px-4 py-3.5 text-fg leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500/50 resize-y"
                             />
 
                             <div className="mt-4 flex flex-col sm:flex-row gap-3">
@@ -599,7 +599,7 @@ export default function ComposerPage() {
                                     value={topic}
                                     onChange={(event) => setTopic(event.target.value)}
                                     placeholder="Topic for AI (optional)"
-                                    className="flex-1 bg-slate-950/80 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                                    className="flex-1 bg-surface-2 border border-line-strong rounded-xl px-4 py-3 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
                                 />
                                 <button
                                     onClick={draftCaption}
@@ -609,23 +609,23 @@ export default function ComposerPage() {
                                     {drafting ? 'Drafting...' : 'AI draft caption'}
                                 </button>
                             </div>
-                            <p className="text-xs text-slate-500 mt-2">
+                            <p className="text-xs text-subtle mt-2">
                                 AI uses the uploaded image when present, plus your
                                 brand profile from{' '}
-                                <Link href="/settings" className="text-indigo-400">
+                                <Link href="/settings" className="text-indigo-700 dark:text-indigo-400">
                                     Profile
                                 </Link>
                                 .
                             </p>
                         </section>
 
-                        <section className="rounded-3xl border border-white/5 bg-slate-900/40 p-6 sm:p-8 shadow-xl">
-                            <label className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                        <section className="rounded-2xl border border-line bg-surface p-6 sm:p-8 shadow-card">
+                            <label className="text-xs font-bold uppercase tracking-widest text-subtle">
                                 Image
                             </label>
 
                             <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                <label className="cursor-pointer rounded-2xl border border-dashed border-white/10 bg-slate-950/40 px-4 py-6 text-center hover:border-indigo-500/40 transition-all">
+                                <label className="cursor-pointer rounded-2xl border border-dashed border-line-strong bg-surface-2 px-4 py-6 text-center hover:border-indigo-500/40 transition-all">
                                     <input
                                         type="file"
                                         accept="image/jpeg,image/png,image/webp"
@@ -634,13 +634,13 @@ export default function ComposerPage() {
                                             handleFile(event.target.files?.[0])
                                         }
                                     />
-                                    <div className="text-sm font-bold text-white">
+                                    <div className="text-sm font-bold text-fg">
                                         {uploading ? 'Uploading...' : 'Upload image'}
                                     </div>
-                                    <div className="text-xs text-slate-500 mt-1">
+                                    <div className="text-xs text-subtle mt-1">
                                         JPEG, PNG or WebP · max 10 MB
                                     </div>
-                                    <div className="text-[11px] text-slate-500 mt-2">
+                                    <div className="text-[11px] text-subtle mt-2">
                                         Auto-sized for the Instagram and Facebook feed
                                         {user?.hasBrandLogo
                                             ? ' and framed with your logo'
@@ -649,13 +649,13 @@ export default function ComposerPage() {
                                     </div>
                                 </label>
 
-                                <div className="rounded-2xl border border-white/5 bg-slate-950/40 px-4 py-4">
+                                <div className="rounded-2xl border border-line bg-surface-2 px-4 py-4">
                                     <input
                                         value={imagePrompt}
                                         onChange={(event) => setImagePrompt(event.target.value)}
                                         maxLength={1000}
                                         placeholder="Describe an image..."
-                                        className="w-full bg-transparent text-sm text-white placeholder:text-slate-600 focus:outline-none"
+                                        className="w-full bg-transparent text-sm text-fg placeholder:text-faint focus:outline-none"
                                     />
                                     <button
                                         onClick={generateImage}
@@ -668,31 +668,31 @@ export default function ComposerPage() {
                             </div>
 
                             {media ? (
-                                <div className="mt-4 flex items-center gap-4 rounded-2xl border border-white/5 bg-slate-950/40 p-3">
+                                <div className="mt-4 flex items-center gap-4 rounded-2xl border border-line bg-surface-2 p-3">
                                     {/* eslint-disable-next-line @next/next/no-img-element */}
                                     <img
                                         src={media.url}
                                         alt="Post preview"
-                                        className="w-20 h-20 rounded-xl object-cover border border-white/5"
+                                        className="w-20 h-20 rounded-xl object-cover border border-line"
                                     />
                                     <div className="min-w-0 flex-1">
-                                        <div className="text-xs font-bold text-white truncate">
+                                        <div className="text-xs font-bold text-fg truncate">
                                             {media.width} × {media.height}
                                             {aspectLabel(media.width, media.height)
                                                 ? ` · ${aspectLabel(media.width, media.height)}`
                                                 : ''}{' '}
                                             · {media.format.toUpperCase()}
                                         </div>
-                                        <div className="text-[11px] text-slate-500 truncate">
+                                        <div className="text-[11px] text-subtle truncate">
                                             {media.publicId}
                                         </div>
-                                        <div className="text-[11px] text-slate-500 mt-1">
+                                        <div className="text-[11px] text-subtle mt-1">
                                             {user?.hasBrandLogo ? (
                                                 'Feed-sized with your logo frame.'
                                             ) : (
                                                 <>
                                                     Feed-sized for Instagram and Facebook.{' '}
-                                                    <Link href="/settings" className="text-indigo-400">
+                                                    <Link href="/settings" className="text-indigo-700 dark:text-indigo-400">
                                                         Add a logo
                                                     </Link>{' '}
                                                     to frame new posts.
@@ -702,7 +702,7 @@ export default function ComposerPage() {
                                     </div>
                                     <button
                                         onClick={() => setMedia(null)}
-                                        className="text-xs font-bold text-rose-400 px-3 py-2 rounded-lg hover:bg-rose-500/10"
+                                        className="text-xs font-bold text-rose-700 dark:text-rose-400 px-3 py-2 rounded-lg hover:bg-rose-500/10"
                                     >
                                         Remove
                                     </button>
@@ -710,13 +710,13 @@ export default function ComposerPage() {
                             ) : null}
 
                             {media ? (
-                                <div className="mt-4 rounded-2xl border border-white/5 bg-slate-950/40 p-4">
+                                <div className="mt-4 rounded-2xl border border-line bg-surface-2 p-4">
                                     <div className="flex items-start justify-between gap-3">
                                         <div>
-                                            <div className="text-xs font-bold text-white">
+                                            <div className="text-xs font-bold text-fg">
                                                 Text on image
                                             </div>
-                                            <div className="text-[11px] text-slate-500 mt-0.5">
+                                            <div className="text-[11px] text-subtle mt-0.5">
                                                 A bold line across the bottom of the photo, like a reel caption.
                                             </div>
                                         </div>
@@ -727,7 +727,7 @@ export default function ComposerPage() {
                                             aria-label="Text on image"
                                             onClick={() => setOverlayEnabled((value) => !value)}
                                             className={`mt-0.5 relative inline-flex h-5 w-9 shrink-0 rounded-full transition-all ${
-                                                overlayEnabled ? 'bg-amber-500' : 'bg-slate-700'
+                                                overlayEnabled ? 'bg-amber-500' : 'bg-line-strong'
                                             }`}
                                         >
                                             <span
@@ -749,7 +749,7 @@ export default function ComposerPage() {
                                                         )
                                                     }
                                                     placeholder="Real life wali bandi *ko* pata chal gaya"
-                                                    className="flex-1 bg-slate-950/80 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                                                    className="flex-1 bg-surface-2 border border-line-strong rounded-xl px-4 py-3 text-sm text-fg placeholder:text-faint focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
                                                 />
                                                 <button
                                                     type="button"
@@ -760,7 +760,7 @@ export default function ComposerPage() {
                                                     {writingOverlay ? 'Writing...' : 'AI write'}
                                                 </button>
                                             </div>
-                                            <div className="mt-2 flex items-center justify-between gap-3 text-[11px] text-slate-500">
+                                            <div className="mt-2 flex items-center justify-between gap-3 text-[11px] text-subtle">
                                                 <span>
                                                     Wrap words in *stars* to make them yellow. English letters only; write Hindi as Hinglish.
                                                 </span>
@@ -769,7 +769,7 @@ export default function ComposerPage() {
                                                 </span>
                                             </div>
                                             {overlayError ? (
-                                                <p className="mt-2 text-[11px] text-rose-300">
+                                                <p className="mt-2 text-[11px] text-rose-700 dark:text-rose-300">
                                                     {overlayError}
                                                 </p>
                                             ) : null}
@@ -783,7 +783,7 @@ export default function ComposerPage() {
                             <button
                                 onClick={() => submit('draft')}
                                 disabled={submitDisabled}
-                                className="flex-1 bg-white/5 hover:bg-white/10 disabled:opacity-60 text-white border border-white/10 px-5 py-3.5 rounded-2xl text-sm font-bold transition-all"
+                                className="flex-1 bg-hover hover:bg-hover-strong disabled:opacity-60 text-fg border border-line-strong px-5 py-3.5 rounded-2xl text-sm font-bold transition-all"
                             >
                                 {submitting === 'draft' ? 'Saving...' : 'Save draft'}
                             </button>
@@ -804,20 +804,20 @@ export default function ComposerPage() {
                         </div>
                     </div>
 
-                    <aside className="rounded-3xl border border-white/5 bg-slate-900/40 p-6 shadow-xl lg:sticky lg:top-8">
-                        <div className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-4">
+                    <aside className="rounded-2xl border border-line bg-surface p-6 shadow-card lg:sticky lg:top-8">
+                        <div className="text-xs font-bold uppercase tracking-widest text-subtle mb-4">
                             Preview
                         </div>
-                        <div className="rounded-2xl overflow-hidden border border-white/10 bg-slate-950">
-                            <div className="flex items-center gap-3 px-4 py-3 border-b border-white/5">
-                                <div className="w-9 h-9 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-sm font-black text-indigo-300">
+                        <div className="rounded-2xl overflow-hidden border border-line-strong bg-canvas">
+                            <div className="flex items-center gap-3 px-4 py-3 border-b border-line">
+                                <div className="w-9 h-9 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-sm font-bold text-indigo-700 dark:text-indigo-300">
                                     {selectedConnection?.pageName[0]?.toUpperCase() || 'P'}
                                 </div>
                                 <div>
-                                    <div className="text-sm font-bold text-white">
+                                    <div className="text-sm font-bold text-fg">
                                         {selectedConnection?.pageName || 'Your Page'}
                                     </div>
-                                    <div className="text-[10px] uppercase tracking-widest text-slate-500">
+                                    <div className="text-[10px] uppercase tracking-widest text-subtle">
                                         {facebook && instagram
                                             ? 'Facebook + Instagram'
                                             : instagram
@@ -835,20 +835,20 @@ export default function ComposerPage() {
                                         className="w-full h-auto"
                                     />
                                     {overlayActive && previewingOverlay ? (
-                                        <span className="absolute top-2 right-2 rounded-full bg-slate-950/80 px-2.5 py-1 text-[10px] font-bold text-slate-300 backdrop-blur">
+                                        <span className="absolute top-2 right-2 rounded-full bg-surface-2 px-2.5 py-1 text-[10px] font-bold text-fg-2 backdrop-blur">
                                             Updating text...
                                         </span>
                                     ) : null}
                                 </div>
                             ) : (
-                                <div className="aspect-square flex items-center justify-center text-sm text-slate-600 bg-slate-900/40">
+                                <div className="aspect-square flex items-center justify-center text-sm text-faint bg-surface">
                                     Image preview
                                 </div>
                             )}
                             <div className="px-4 py-4">
-                                <div className="text-sm text-slate-300 whitespace-pre-wrap leading-relaxed">
+                                <div className="text-sm text-fg-2 whitespace-pre-wrap leading-relaxed">
                                     {caption || (
-                                        <span className="text-slate-600">
+                                        <span className="text-faint">
                                             Your caption will appear here.
                                         </span>
                                     )}
@@ -856,7 +856,7 @@ export default function ComposerPage() {
                             </div>
                         </div>
                         {user?.brandProfile?.niche ? (
-                            <div className="mt-4 text-[11px] text-slate-500">
+                            <div className="mt-4 text-[11px] text-subtle">
                                 Brand niche: {user.brandProfile.niche}
                             </div>
                         ) : null}

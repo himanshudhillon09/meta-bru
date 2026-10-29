@@ -61,12 +61,12 @@ function destinationStatus(post: Post): TokenStatus | null {
 
 function targetChipClass(status: TargetStatus): string {
     if (status === 'published') {
-        return 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20';
+        return 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20';
     }
     if (status === 'failed') {
-        return 'bg-rose-500/10 text-rose-300 border-rose-500/20';
+        return 'bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/20';
     }
-    return 'bg-slate-500/10 text-slate-400 border-slate-500/20';
+    return 'bg-slate-500/10 text-muted border-slate-500/20';
 }
 
 export default function QueuePage() {
@@ -268,7 +268,7 @@ export default function QueuePage() {
                 <>
                     <Link
                         href="/reels"
-                        className="bg-white/5 hover:bg-white/10 text-white border border-white/10 px-5 py-2.5 rounded-xl text-sm font-bold transition-all"
+                        className="bg-hover hover:bg-hover-strong text-fg border border-line-strong px-5 py-2.5 rounded-xl text-sm font-bold transition-all"
                     >
                         New reel
                     </Link>
@@ -282,12 +282,12 @@ export default function QueuePage() {
             }
         >
             {notice ? (
-                <div className="mb-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
+                <div className="mb-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-300">
                     {notice}
                 </div>
             ) : null}
             {error ? (
-                <div className="mb-6 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
+                <div className="mb-6 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
                     {error}
                 </div>
             ) : null}
@@ -300,27 +300,27 @@ export default function QueuePage() {
                             onClick={() => setTab(item.key)}
                             className={`whitespace-nowrap px-4 py-2.5 rounded-xl text-xs font-bold border transition-all ${
                                 tab === item.key
-                                    ? 'bg-indigo-500/15 text-indigo-300 border-indigo-500/20'
-                                    : 'bg-slate-900/40 text-slate-400 border-white/5 hover:text-white'
+                                    ? 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-500/20'
+                                    : 'bg-surface text-muted border-line hover:text-fg'
                             }`}
                         >
                             {item.label}
-                            <span className="ml-2 text-slate-500">
+                            <span className="ml-2 text-subtle">
                                 {kindPosts.filter((post) => matchesTab(post, item.key)).length}
                             </span>
                         </button>
                     ))}
                 </div>
 
-                <div className="flex gap-1 rounded-xl border border-white/5 bg-slate-900/40 p-1 self-start">
+                <div className="flex gap-1 rounded-xl border border-line bg-surface p-1 self-start">
                     {KINDS.map((item) => (
                         <button
                             key={item.key}
                             onClick={() => setKind(item.key)}
                             className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all ${
                                 kind === item.key
-                                    ? 'bg-white/10 text-white'
-                                    : 'text-slate-500 hover:text-white'
+                                    ? 'bg-hover-strong text-fg'
+                                    : 'text-subtle hover:text-fg'
                             }`}
                         >
                             {item.label}
@@ -334,11 +334,11 @@ export default function QueuePage() {
                     <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-indigo-500" />
                 </div>
             ) : visible.length === 0 ? (
-                <div className="rounded-3xl border border-dashed border-white/10 bg-slate-900/30 p-12 text-center">
-                    <div className="text-lg font-bold text-white">
+                <div className="rounded-2xl border border-dashed border-line-strong bg-surface p-12 text-center">
+                    <div className="text-lg font-bold text-fg">
                         Nothing in {TABS.find((item) => item.key === tab)?.label.toLowerCase()}
                     </div>
-                    <p className="text-sm text-slate-400 mt-2">
+                    <p className="text-sm text-muted mt-2">
                         Posts from the Composer and reels from the Reels page show up here.
                     </p>
                 </div>
@@ -356,10 +356,10 @@ export default function QueuePage() {
                         return (
                             <article
                                 key={post._id}
-                                className="rounded-3xl border border-white/5 bg-slate-900/40 p-5 sm:p-6 shadow-xl"
+                                className="rounded-2xl border border-line bg-surface p-5 sm:p-6 shadow-card"
                             >
                                 <div className="flex flex-col sm:flex-row gap-5">
-                                    <div className="relative w-full sm:w-28 h-40 sm:h-28 rounded-2xl overflow-hidden bg-slate-800 shrink-0 border border-white/5">
+                                    <div className="relative w-full sm:w-28 h-40 sm:h-28 rounded-2xl overflow-hidden bg-sunken shrink-0 border border-line">
                                         {thumbnail ? (
                                             // eslint-disable-next-line @next/next/no-img-element
                                             <img
@@ -369,7 +369,7 @@ export default function QueuePage() {
                                             />
                                         ) : null}
                                         {isReel(post) ? (
-                                            <span className="absolute bottom-1.5 left-1.5 rounded-md bg-slate-950/80 px-1.5 py-0.5 text-[10px] font-bold text-white backdrop-blur">
+                                            <span className="absolute bottom-1.5 left-1.5 rounded-md bg-surface-2 px-1.5 py-0.5 text-[10px] font-bold text-fg backdrop-blur">
                                                 ▶ {formatDuration(post.mediaDuration ?? 0)}
                                             </span>
                                         ) : null}
@@ -379,11 +379,11 @@ export default function QueuePage() {
                                         <div className="flex flex-wrap items-center gap-2 mb-2">
                                             <StatusBadge status={post.status} />
                                             {isReel(post) ? (
-                                                <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full border bg-fuchsia-500/10 text-fuchsia-300 border-fuchsia-500/20">
+                                                <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full border bg-fuchsia-500/10 text-fuchsia-700 dark:text-fuchsia-300 border-fuchsia-500/20">
                                                     Reel
                                                 </span>
                                             ) : null}
-                                            <span className="text-xs text-slate-500">
+                                            <span className="text-xs text-subtle">
                                                 {connectionName(post)}
                                             </span>
                                             {status === 'disconnected' ||
@@ -392,8 +392,8 @@ export default function QueuePage() {
                                                     href="/connections"
                                                     className={`text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full border ${
                                                         status === 'disconnected'
-                                                            ? 'bg-slate-500/10 text-slate-300 border-slate-500/20'
-                                                            : 'bg-amber-500/10 text-amber-300 border-amber-500/20'
+                                                            ? 'bg-slate-500/10 text-fg-2 border-slate-500/20'
+                                                            : 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20'
                                                     }`}
                                                 >
                                                     {status === 'disconnected'
@@ -401,8 +401,8 @@ export default function QueuePage() {
                                                         : 'Reconnect needed'}
                                                 </Link>
                                             ) : null}
-                                            <span className="text-xs text-slate-600">·</span>
-                                            <span className="text-xs text-slate-500">
+                                            <span className="text-xs text-faint">·</span>
+                                            <span className="text-xs text-subtle">
                                                 {post.status === 'published' ||
                                                 post.status === 'partial' ? (
                                                     latestPublishedAt(post) ? (
@@ -423,7 +423,7 @@ export default function QueuePage() {
                                                 )}
                                             </span>
                                             {post.attempts > 0 ? (
-                                                <span className="text-xs text-slate-600">
+                                                <span className="text-xs text-faint">
                                                     attempts: {post.attempts}
                                                 </span>
                                             ) : null}
@@ -439,7 +439,7 @@ export default function QueuePage() {
                                                         )
                                                     }
                                                     rows={5}
-                                                    className="w-full bg-slate-950/80 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                                                    className="w-full bg-surface-2 border border-line-strong rounded-xl px-4 py-3 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
                                                 />
                                                 <div className="flex gap-3 mt-2">
                                                     <button
@@ -451,14 +451,14 @@ export default function QueuePage() {
                                                     </button>
                                                     <button
                                                         onClick={() => setEditingId('')}
-                                                        className="text-slate-400 px-4 py-2 rounded-lg text-xs font-bold hover:text-white"
+                                                        className="text-muted px-4 py-2 rounded-lg text-xs font-bold hover:text-fg"
                                                     >
                                                         Cancel
                                                     </button>
                                                 </div>
                                             </div>
                                         ) : (
-                                            <p className="text-sm text-slate-300 whitespace-pre-wrap line-clamp-3">
+                                            <p className="text-sm text-fg-2 whitespace-pre-wrap line-clamp-3">
                                                 {post.caption}
                                             </p>
                                         )}
@@ -484,7 +484,7 @@ export default function QueuePage() {
                                         </div>
 
                                         {post.lastError ? (
-                                            <div className="mt-3 text-xs text-rose-400">
+                                            <div className="mt-3 text-xs text-rose-700 dark:text-rose-400">
                                                 {post.lastError}
                                             </div>
                                         ) : null}
@@ -539,7 +539,7 @@ export default function QueuePage() {
                                                           ? 'Already shared to Story on every published platform.'
                                                           : undefined
                                                 }
-                                                className="bg-amber-500/10 hover:bg-amber-500/20 text-amber-200 border border-amber-500/20 disabled:opacity-40 disabled:cursor-not-allowed px-4 py-2.5 rounded-xl text-xs font-bold transition-all"
+                                                className="bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-200 border border-amber-500/20 disabled:opacity-40 disabled:cursor-not-allowed px-4 py-2.5 rounded-xl text-xs font-bold transition-all"
                                             >
                                                 {sharingId === post._id
                                                     ? 'Sharing...'
@@ -554,14 +554,14 @@ export default function QueuePage() {
                                                 <>
                                                     <button
                                                         onClick={() => startEdit(post)}
-                                                        className="bg-white/5 hover:bg-white/10 text-white border border-white/10 px-4 py-2.5 rounded-xl text-xs font-bold transition-all"
+                                                        className="bg-hover hover:bg-hover-strong text-fg border border-line-strong px-4 py-2.5 rounded-xl text-xs font-bold transition-all"
                                                     >
                                                         Edit
                                                     </button>
                                                     <button
                                                         onClick={() => setDeleteTarget(post)}
                                                         disabled={busyId === post._id}
-                                                        className="bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/10 px-4 py-2.5 rounded-xl text-xs font-bold transition-all"
+                                                        className="bg-rose-500/10 hover:bg-rose-500/20 text-rose-700 dark:text-rose-300 border border-rose-500/10 px-4 py-2.5 rounded-xl text-xs font-bold transition-all"
                                                     >
                                                         Delete
                                                     </button>

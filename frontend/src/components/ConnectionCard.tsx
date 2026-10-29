@@ -87,7 +87,7 @@ export function ConnectionCard({
     };
 
     return (
-        <div className="rounded-3xl border border-white/5 bg-slate-900/40 p-6 sm:p-8 shadow-xl">
+        <div className="rounded-2xl border border-line bg-surface p-6 sm:p-8 shadow-card">
             <Modal
                 isOpen={confirmOpen}
                 onClose={() => setConfirmOpen(false)}
@@ -100,40 +100,40 @@ export function ConnectionCard({
 
             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                 <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-2xl bg-indigo-500/15 border border-indigo-500/20 flex items-center justify-center text-lg font-black text-indigo-300">
+                    <div className="w-12 h-12 rounded-2xl bg-indigo-500/15 border border-indigo-500/20 flex items-center justify-center text-lg font-bold text-indigo-700 dark:text-indigo-300">
                         {connection.pageName[0]?.toUpperCase() || 'P'}
                     </div>
                     <div>
-                        <h3 className="font-bold text-white">{connection.pageName}</h3>
-                        <div className="text-xs text-slate-500 mt-0.5">
+                        <h3 className="font-bold text-fg">{connection.pageName}</h3>
+                        <div className="text-xs text-subtle mt-0.5">
                             Page ID {connection.pageId}
                         </div>
                         <div className="flex flex-wrap items-center gap-2 mt-2">
                             {connection.instagram ? (
-                                <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full bg-rose-500/10 text-rose-300 border border-rose-500/20">
+                                <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full bg-rose-500/10 text-rose-700 dark:text-rose-300 border border-rose-500/20">
                                     IG @{connection.instagram.username || connection.instagram.id}
                                 </span>
                             ) : (
-                                <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full bg-slate-500/10 text-slate-400 border border-slate-500/20">
+                                <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full bg-slate-500/10 text-muted border border-slate-500/20">
                                     No Instagram linked
                                 </span>
                             )}
                             {isDisconnected ? (
-                                <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full bg-slate-500/10 text-slate-300 border border-slate-500/20">
+                                <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full bg-slate-500/10 text-fg-2 border border-slate-500/20">
                                     Disconnected
                                 </span>
                             ) : null}
                             {needsReauth ? (
-                                <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/20">
+                                <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/20">
                                     Reconnect needed
                                 </span>
                             ) : null}
                             {!connection.isActive && !isDisconnected ? (
-                                <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full bg-slate-500/10 text-slate-400 border border-slate-500/20">
+                                <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full bg-slate-500/10 text-muted border border-slate-500/20">
                                     Paused
                                 </span>
                             ) : null}
-                            <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
+                            <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border border-indigo-500/20">
                                 {queuedLabel}
                             </span>
                         </div>
@@ -143,14 +143,14 @@ export function ConnectionCard({
                 {isDisconnected ? (
                     <button
                         onClick={onReconnect}
-                        className="self-start text-xs font-bold text-indigo-300 hover:text-indigo-200 px-3 py-2 rounded-lg hover:bg-indigo-500/10 transition-all"
+                        className="self-start text-xs font-bold text-indigo-700 dark:text-indigo-300 hover:text-indigo-800 dark:hover:text-indigo-200 px-3 py-2 rounded-lg hover:bg-indigo-500/10 transition-all"
                     >
                         Reconnect
                     </button>
                 ) : (
                     <button
                         onClick={() => setConfirmOpen(true)}
-                        className="self-start text-xs font-bold text-rose-400 hover:text-rose-300 px-3 py-2 rounded-lg hover:bg-rose-500/10 transition-all"
+                        className="self-start text-xs font-bold text-rose-700 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 px-3 py-2 rounded-lg hover:bg-rose-500/10 transition-all"
                     >
                         Disconnect
                     </button>
@@ -158,14 +158,14 @@ export function ConnectionCard({
             </div>
 
             {isDisconnected ? (
-                <div className="mt-5 rounded-2xl border border-slate-500/20 bg-slate-500/10 px-4 py-3 text-sm text-slate-300 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="mt-5 rounded-2xl border border-slate-500/20 bg-slate-500/10 px-4 py-3 text-sm text-fg-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <span>
                         This Page is disconnected. Reconnect the Facebook
                         account that manages it to resume.
                     </span>
                     <button
                         onClick={onReconnect}
-                        className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl text-xs font-black"
+                        className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl text-xs font-bold"
                     >
                         Reconnect
                     </button>
@@ -173,14 +173,14 @@ export function ConnectionCard({
             ) : null}
 
             {needsReauth ? (
-                <div className="mt-5 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="mt-5 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <span>
                         Meta rejected this Page token. Reconnect to resume
                         scheduled posting.
                     </span>
                     <button
                         onClick={onReconnect}
-                        className="bg-amber-500 hover:bg-amber-400 text-slate-950 px-4 py-2 rounded-xl text-xs font-black"
+                        className="bg-amber-500 hover:bg-amber-400 text-slate-950 px-4 py-2 rounded-xl text-xs font-bold"
                     >
                         Reconnect
                     </button>
@@ -188,7 +188,7 @@ export function ConnectionCard({
             ) : null}
 
             {connection.lastError && connection.tokenStatus === 'active' ? (
-                <div className="mt-5 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">
+                <div className="mt-5 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-xs text-rose-700 dark:text-rose-300">
                     Last error: {connection.lastError}
                 </div>
             ) : null}
@@ -198,11 +198,11 @@ export function ConnectionCard({
                     <div className="flex flex-wrap items-center justify-between gap-3">
                         <label
                             htmlFor={`posts-per-day-${connection._id}`}
-                            className="text-xs font-bold uppercase tracking-widest text-slate-500"
+                            className="text-xs font-bold uppercase tracking-widest text-subtle"
                         >
                             Posting schedule
                         </label>
-                        <div className="flex items-center gap-2 text-xs text-slate-400">
+                        <div className="flex items-center gap-2 text-xs text-muted">
                             <select
                                 id={`posts-per-day-${connection._id}`}
                                 value={times.length}
@@ -211,7 +211,7 @@ export function ConnectionCard({
                                         suggestDailyTimes(Number(event.target.value))
                                     )
                                 }
-                                className="bg-slate-950/80 border border-white/10 rounded-lg px-2 py-1.5 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                                className="bg-surface-2 border border-line-strong rounded-lg px-2 py-1.5 text-fg focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
                             >
                                 {Array.from(
                                     { length: MAX_DAILY_SLOTS },
@@ -232,7 +232,7 @@ export function ConnectionCard({
                         {times.map((time, index) => (
                             <div
                                 key={index}
-                                className="flex items-center rounded-xl border border-white/10 bg-slate-950/80 focus-within:ring-2 focus-within:ring-indigo-500/50"
+                                className="flex items-center rounded-xl border border-line-strong bg-surface-2 focus-within:ring-2 focus-within:ring-indigo-500/50"
                             >
                                 <input
                                     type="time"
@@ -247,7 +247,7 @@ export function ConnectionCard({
                                             )
                                         )
                                     }
-                                    className="bg-transparent pl-3 py-2.5 text-white focus:outline-none"
+                                    className="bg-transparent pl-3 py-2.5 text-fg focus:outline-none"
                                 />
                                 <button
                                     type="button"
@@ -260,7 +260,7 @@ export function ConnectionCard({
                                             )
                                         )
                                     }
-                                    className="px-3 py-2.5 text-slate-500 hover:text-rose-300 disabled:opacity-30 disabled:cursor-not-allowed"
+                                    className="px-3 py-2.5 text-subtle hover:text-rose-700 dark:hover:text-rose-300 disabled:opacity-30 disabled:cursor-not-allowed"
                                 >
                                     ×
                                 </button>
@@ -270,7 +270,7 @@ export function ConnectionCard({
                             <button
                                 type="button"
                                 onClick={() => setTimes(addSlot)}
-                                className="rounded-xl border border-dashed border-white/15 px-3 py-2.5 text-xs font-bold text-indigo-300 hover:bg-indigo-500/10"
+                                className="rounded-xl border border-dashed border-line-strong px-3 py-2.5 text-xs font-bold text-indigo-700 dark:text-indigo-300 hover:bg-indigo-500/10"
                             >
                                 + Add time
                             </button>
@@ -278,15 +278,15 @@ export function ConnectionCard({
                     </div>
 
                     {scheduleError ? (
-                        <div className="mt-2 text-xs text-rose-400">
+                        <div className="mt-2 text-xs text-rose-700 dark:text-rose-400">
                             {scheduleError}
                         </div>
                     ) : null}
-                    <p className="mt-2 text-xs text-slate-500">
+                    <p className="mt-2 text-xs text-subtle">
                         Times use your Profile timezone ({connection.timezone}).{' '}
                         <Link
                             href="/settings"
-                            className="font-bold text-indigo-300 hover:text-indigo-200"
+                            className="font-bold text-indigo-700 dark:text-indigo-300 hover:text-indigo-800 dark:hover:text-indigo-200"
                         >
                             Change it in Profile
                         </Link>
@@ -294,10 +294,10 @@ export function ConnectionCard({
                 </div>
 
                 <div>
-                    <label className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                    <label className="text-xs font-bold uppercase tracking-widest text-subtle">
                         Next slot
                     </label>
-                    <div className="mt-2 w-full bg-slate-950/40 border border-white/5 rounded-xl px-4 py-3 text-sm text-slate-300">
+                    <div className="mt-2 w-full bg-surface-2 border border-line rounded-xl px-4 py-3 text-sm text-fg-2">
                         {isDisconnected
                             ? 'Waiting for reconnect'
                             : connection.isActive
@@ -313,8 +313,8 @@ export function ConnectionCard({
                     onClick={() => setFacebook((value) => !value)}
                     className={`px-4 py-2.5 rounded-xl text-xs font-bold border transition-all ${
                         facebook
-                            ? 'bg-blue-500/15 text-blue-300 border-blue-500/30'
-                            : 'bg-slate-950/50 text-slate-500 border-white/5'
+                            ? 'bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30'
+                            : 'bg-surface-2 text-subtle border-line'
                     }`}
                 >
                     Facebook {facebook ? 'on' : 'off'}
@@ -326,8 +326,8 @@ export function ConnectionCard({
                     onClick={() => setInstagram((value) => !value)}
                     className={`px-4 py-2.5 rounded-xl text-xs font-bold border transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
                         instagram
-                            ? 'bg-rose-500/15 text-rose-300 border-rose-500/30'
-                            : 'bg-slate-950/50 text-slate-500 border-white/5'
+                            ? 'bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30'
+                            : 'bg-surface-2 text-subtle border-line'
                     }`}
                 >
                     Instagram {instagram ? 'on' : 'off'}
@@ -338,8 +338,8 @@ export function ConnectionCard({
                     onClick={() => setActive((value) => !value)}
                     className={`px-4 py-2.5 rounded-xl text-xs font-bold border transition-all ${
                         active
-                            ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
-                            : 'bg-slate-950/50 text-slate-500 border-white/5'
+                            ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30'
+                            : 'bg-surface-2 text-subtle border-line'
                     }`}
                 >
                     {active ? 'Schedule active' : 'Schedule paused'}
@@ -348,13 +348,13 @@ export function ConnectionCard({
                 <button
                     onClick={save}
                     disabled={saving || Boolean(scheduleError)}
-                    className="ml-auto bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white px-5 py-2.5 rounded-xl text-xs font-black transition-all"
+                    className="ml-auto bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-all"
                 >
                     {saving ? 'Saving...' : 'Save changes'}
                 </button>
             </div>
 
-            {error ? <div className="mt-4 text-xs text-rose-400">{error}</div> : null}
+            {error ? <div className="mt-4 text-xs text-rose-700 dark:text-rose-400">{error}</div> : null}
         </div>
     );
 }

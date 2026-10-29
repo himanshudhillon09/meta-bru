@@ -253,12 +253,12 @@ export default function ConnectionsPage() {
                 message="Facebook will ask which Pages and Instagram accounts Meta-Bru can use, then which permissions to allow."
                 confirmText="Continue to Facebook"
             >
-                <ul className="space-y-2 text-sm text-slate-300 list-disc pl-5">
+                <ul className="space-y-2 text-sm text-fg-2 list-disc pl-5">
                     {connectedPageNames.length > 0 ? (
                         <li>
                             Keep every Page you already use selected (
                             {connectedPageNames.join(', ')}), or choose{' '}
-                            <strong className="text-white">
+                            <strong className="text-fg">
                                 all current and future Pages
                             </strong>
                             . Facebook removes Meta-Bru&apos;s access to any
@@ -280,13 +280,13 @@ export default function ConnectionsPage() {
             </Modal>
 
             {notice ? (
-                <div className="mb-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="mb-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-300 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <span>{notice}</span>
                     {returnTo && !connecting ? (
                         <Link
                             href={returnTo}
                             onClick={leave}
-                            className="self-start sm:self-auto shrink-0 rounded-xl bg-emerald-500/15 px-4 py-2 text-xs font-bold text-emerald-200 hover:bg-emerald-500/25"
+                            className="self-start sm:self-auto shrink-0 rounded-xl bg-emerald-500/15 px-4 py-2 text-xs font-bold text-emerald-700 dark:text-emerald-200 hover:bg-emerald-500/25"
                         >
                             {RETURN_LABELS[returnTo]}
                         </Link>
@@ -296,13 +296,13 @@ export default function ConnectionsPage() {
             {warnings.map((warning) => (
                 <div
                     key={warning}
-                    className="mb-6 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-200"
+                    className="mb-6 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-200"
                 >
                     {warning}
                 </div>
             ))}
             {error ? (
-                <div className="mb-6 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
+                <div className="mb-6 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
                     {error}
                 </div>
             ) : null}
@@ -312,11 +312,11 @@ export default function ConnectionsPage() {
                     <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-indigo-500" />
                 </div>
             ) : connections.length === 0 ? (
-                <div className="rounded-3xl border border-dashed border-white/10 bg-slate-900/30 p-12 text-center">
-                    <div className="text-xl font-bold text-white">
+                <div className="rounded-2xl border border-dashed border-line-strong bg-surface p-12 text-center">
+                    <div className="text-xl font-bold text-fg">
                         No Pages connected yet
                     </div>
-                    <p className="text-sm text-slate-400 mt-2 max-w-md mx-auto">
+                    <p className="text-sm text-muted mt-2 max-w-md mx-auto">
                         Connect a Facebook Page you manage. If it has an
                         Instagram Business account linked, Meta-Bru will detect
                         it automatically.

@@ -385,12 +385,12 @@ export default function ReelsPage() {
             }
         >
             {notice ? (
-                <div className="mb-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
+                <div className="mb-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-300">
                     {notice}
                 </div>
             ) : null}
             {error ? (
-                <div className="mb-6 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
+                <div className="mb-6 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
                     {error}
                 </div>
             ) : null}
@@ -400,9 +400,9 @@ export default function ReelsPage() {
                     <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-indigo-500" />
                 </div>
             ) : activeConnections.length === 0 ? (
-                <div className="rounded-3xl border border-dashed border-white/10 bg-slate-900/30 p-12 text-center">
-                    <div className="text-xl font-bold text-white">No active Pages</div>
-                    <p className="text-sm text-slate-400 mt-2">
+                <div className="rounded-2xl border border-dashed border-line-strong bg-surface p-12 text-center">
+                    <div className="text-xl font-bold text-fg">No active Pages</div>
+                    <p className="text-sm text-muted mt-2">
                         Reconnect a Page under Connections to create and publish a reel.
                     </p>
                     <Link
@@ -415,8 +415,8 @@ export default function ReelsPage() {
             ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-[1.15fr_0.85fr] gap-6 items-start">
                     <div className="space-y-6">
-                        <section className="rounded-3xl border border-white/5 bg-slate-900/40 p-6 sm:p-8 shadow-xl">
-                            <label className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                        <section className="rounded-2xl border border-line bg-surface p-6 sm:p-8 shadow-card">
+                            <label className="text-xs font-bold uppercase tracking-widest text-subtle">
                                 Publishing as
                             </label>
                             <select
@@ -427,7 +427,7 @@ export default function ReelsPage() {
                                     );
                                     if (connection) selectConnection(connection);
                                 }}
-                                className="mt-2 w-full bg-slate-950/80 border border-white/10 rounded-xl px-4 py-3.5 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                                className="mt-2 w-full bg-surface-2 border border-line-strong rounded-xl px-4 py-3.5 text-fg focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
                             >
                                 <option value="">Select a Page</option>
                                 {activeConnections.map((connection) => (
@@ -441,7 +441,7 @@ export default function ReelsPage() {
                             </select>
 
                             {selectedConnection && !selectedConnection.isActive ? (
-                                <div className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-200">
+                                <div className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-700 dark:text-amber-200">
                                     This Page is paused. Scheduled reels wait until you
                                     reactivate it under Connections.
                                 </div>
@@ -459,8 +459,8 @@ export default function ReelsPage() {
                                     }
                                     className={`px-4 py-2.5 rounded-xl text-xs font-bold border transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
                                         publishFacebook
-                                            ? 'bg-blue-500/15 text-blue-300 border-blue-500/30'
-                                            : 'bg-slate-950/50 text-slate-500 border-white/5'
+                                            ? 'bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30'
+                                            : 'bg-surface-2 text-subtle border-line'
                                     }`}
                                 >
                                     Facebook
@@ -471,8 +471,8 @@ export default function ReelsPage() {
                                     onClick={() => setInstagram((value) => !value)}
                                     className={`px-4 py-2.5 rounded-xl text-xs font-bold border transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
                                         instagram
-                                            ? 'bg-rose-500/15 text-rose-300 border-rose-500/30'
-                                            : 'bg-slate-950/50 text-slate-500 border-white/5'
+                                            ? 'bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30'
+                                            : 'bg-surface-2 text-subtle border-line'
                                     }`}
                                 >
                                     Instagram
@@ -480,7 +480,7 @@ export default function ReelsPage() {
                             </div>
 
                             {!facebookAllowed ? (
-                                <p className="mt-3 text-[11px] text-amber-300">
+                                <p className="mt-3 text-[11px] text-amber-700 dark:text-amber-300">
                                     This reel is over 90 seconds. Facebook Reels stop at
                                     90 seconds, so it can only go to Instagram.
                                 </p>
@@ -493,14 +493,14 @@ export default function ReelsPage() {
                             />
                         </section>
 
-                        <section className="rounded-3xl border border-white/5 bg-slate-900/40 p-6 sm:p-8 shadow-xl">
-                            <label className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                        <section className="rounded-2xl border border-line bg-surface p-6 sm:p-8 shadow-card">
+                            <label className="text-xs font-bold uppercase tracking-widest text-subtle">
                                 Video
                             </label>
 
                             {uploading ? (
                                 <div className="mt-3 rounded-2xl border border-indigo-500/20 bg-indigo-500/5 px-4 py-5">
-                                    <div className="flex items-center justify-between gap-3 text-xs font-bold text-white">
+                                    <div className="flex items-center justify-between gap-3 text-xs font-bold text-fg">
                                         <span>
                                             {(uploadProgress ?? 0) < 1
                                                 ? `Uploading to Cloudinary... ${Math.round(
@@ -512,13 +512,13 @@ export default function ReelsPage() {
                                             <button
                                                 type="button"
                                                 onClick={() => uploadRef.current?.abort()}
-                                                className="text-rose-400 hover:text-rose-300"
+                                                className="text-rose-700 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300"
                                             >
                                                 Cancel
                                             </button>
                                         ) : null}
                                     </div>
-                                    <div className="mt-3 h-2 rounded-full bg-slate-950 overflow-hidden border border-white/5">
+                                    <div className="mt-3 h-2 rounded-full bg-canvas overflow-hidden border border-line">
                                         <div
                                             className="h-full rounded-full bg-indigo-500 transition-all"
                                             style={{
@@ -528,7 +528,7 @@ export default function ReelsPage() {
                                     </div>
                                 </div>
                             ) : (
-                                <label className="mt-3 block cursor-pointer rounded-2xl border border-dashed border-white/10 bg-slate-950/40 px-4 py-6 text-center hover:border-indigo-500/40 transition-all">
+                                <label className="mt-3 block cursor-pointer rounded-2xl border border-dashed border-line-strong bg-surface-2 px-4 py-6 text-center hover:border-indigo-500/40 transition-all">
                                     <input
                                         type="file"
                                         accept={REEL_ACCEPT}
@@ -540,13 +540,13 @@ export default function ReelsPage() {
                                             void handleFile(file);
                                         }}
                                     />
-                                    <div className="text-sm font-bold text-white">
+                                    <div className="text-sm font-bold text-fg">
                                         {video ? 'Replace video' : 'Upload video'}
                                     </div>
-                                    <div className="text-xs text-slate-500 mt-1">
+                                    <div className="text-xs text-subtle mt-1">
                                         MP4 or MOV · 3 seconds to 15 minutes · max 100 MB
                                     </div>
-                                    <div className="text-[11px] text-slate-500 mt-2">
+                                    <div className="text-[11px] text-subtle mt-2">
                                         Uploads straight to your Cloudinary account. Facebook
                                         takes reels up to 90 seconds.
                                     </div>
@@ -554,23 +554,23 @@ export default function ReelsPage() {
                             )}
 
                             {video ? (
-                                <div className="mt-4 flex items-center gap-4 rounded-2xl border border-white/5 bg-slate-950/40 p-3">
+                                <div className="mt-4 flex items-center gap-4 rounded-2xl border border-line bg-surface-2 p-3">
                                     {/* eslint-disable-next-line @next/next/no-img-element */}
                                     <img
                                         src={video.coverUrl}
                                         alt="Reel cover"
-                                        className="w-12 h-20 rounded-lg object-cover border border-white/5 bg-slate-800"
+                                        className="w-12 h-20 rounded-lg object-cover border border-line bg-sunken"
                                     />
                                     <div className="min-w-0 flex-1">
-                                        <div className="text-xs font-bold text-white truncate">
+                                        <div className="text-xs font-bold text-fg truncate">
                                             {formatDuration(video.duration)} · {video.width} ×{' '}
                                             {video.height} · {video.format.toUpperCase()} ·{' '}
                                             {formatBytes(video.bytes)}
                                         </div>
-                                        <div className="text-[11px] text-slate-500 truncate">
+                                        <div className="text-[11px] text-subtle truncate">
                                             {video.publicId}
                                         </div>
-                                        <div className="text-[11px] text-slate-500 mt-1">
+                                        <div className="text-[11px] text-subtle mt-1">
                                             {isNineBySixteen(video.width, video.height)
                                                 ? 'Vertical 9:16, ready for Reels.'
                                                 : 'Not 9:16, so it will be padded to 9:16 with a blurred background.'}
@@ -578,7 +578,7 @@ export default function ReelsPage() {
                                     </div>
                                     <button
                                         onClick={() => setVideo(null)}
-                                        className="text-xs font-bold text-rose-400 px-3 py-2 rounded-lg hover:bg-rose-500/10"
+                                        className="text-xs font-bold text-rose-700 dark:text-rose-400 px-3 py-2 rounded-lg hover:bg-rose-500/10"
                                     >
                                         Remove
                                     </button>
@@ -586,12 +586,12 @@ export default function ReelsPage() {
                             ) : null}
                         </section>
 
-                        <section className="rounded-3xl border border-white/5 bg-slate-900/40 p-6 sm:p-8 shadow-xl">
+                        <section className="rounded-2xl border border-line bg-surface p-6 sm:p-8 shadow-card">
                             <div className="flex items-center justify-between gap-3">
-                                <label className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                                <label className="text-xs font-bold uppercase tracking-widest text-subtle">
                                     Caption
                                 </label>
-                                <span className="text-xs text-slate-500">
+                                <span className="text-xs text-subtle">
                                     {caption.length}/2200
                                 </span>
                             </div>
@@ -600,7 +600,7 @@ export default function ReelsPage() {
                                 onChange={(event) => setCaption(event.target.value.slice(0, 2200))}
                                 rows={6}
                                 placeholder="Write your reel caption..."
-                                className="mt-2 w-full bg-slate-950/80 border border-white/10 rounded-2xl px-4 py-3.5 text-white leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500/50 resize-y"
+                                className="mt-2 w-full bg-surface-2 border border-line-strong rounded-2xl px-4 py-3.5 text-fg leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500/50 resize-y"
                             />
 
                             <div className="mt-4 flex flex-col sm:flex-row gap-3">
@@ -608,7 +608,7 @@ export default function ReelsPage() {
                                     value={topic}
                                     onChange={(event) => setTopic(event.target.value)}
                                     placeholder="What is the reel about? (for AI)"
-                                    className="flex-1 bg-slate-950/80 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                                    className="flex-1 bg-surface-2 border border-line-strong rounded-xl px-4 py-3 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
                                 />
                                 <button
                                     onClick={draftCaption}
@@ -618,9 +618,9 @@ export default function ReelsPage() {
                                     {drafting ? 'Drafting...' : 'AI draft caption'}
                                 </button>
                             </div>
-                            <p className="text-xs text-slate-500 mt-2">
+                            <p className="text-xs text-subtle mt-2">
                                 AI uses your topic and the brand profile from{' '}
-                                <Link href="/settings" className="text-indigo-400">
+                                <Link href="/settings" className="text-indigo-700 dark:text-indigo-400">
                                     Profile
                                 </Link>
                                 . It does not watch the video.
@@ -631,7 +631,7 @@ export default function ReelsPage() {
                             <button
                                 onClick={() => submit('draft')}
                                 disabled={submitDisabled}
-                                className="flex-1 bg-white/5 hover:bg-white/10 disabled:opacity-60 text-white border border-white/10 px-5 py-3.5 rounded-2xl text-sm font-bold transition-all"
+                                className="flex-1 bg-hover hover:bg-hover-strong disabled:opacity-60 text-fg border border-line-strong px-5 py-3.5 rounded-2xl text-sm font-bold transition-all"
                             >
                                 {submitting === 'draft' ? 'Saving...' : 'Save draft'}
                             </button>
@@ -654,12 +654,12 @@ export default function ReelsPage() {
                         </div>
                     </div>
 
-                    <aside className="rounded-3xl border border-white/5 bg-slate-900/40 p-6 shadow-xl lg:sticky lg:top-8">
-                        <div className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-4">
+                    <aside className="rounded-2xl border border-line bg-surface p-6 shadow-card lg:sticky lg:top-8">
+                        <div className="text-xs font-bold uppercase tracking-widest text-subtle mb-4">
                             Preview
                         </div>
-                        <div className="mx-auto max-w-[280px] rounded-[28px] overflow-hidden border border-white/10 bg-slate-950">
-                            <div className="relative aspect-[9/16] bg-slate-900/40">
+                        <div className="mx-auto max-w-[280px] rounded-3xl overflow-hidden border border-line-strong bg-canvas">
+                            <div className="relative aspect-[9/16] bg-surface">
                                 {video && previewSrc ? (
                                     <video
                                         key={previewSrc}
@@ -673,25 +673,25 @@ export default function ReelsPage() {
                                         className="w-full h-full object-contain bg-black"
                                     />
                                 ) : (
-                                    <div className="absolute inset-0 flex items-center justify-center text-sm text-slate-600">
+                                    <div className="absolute inset-0 flex items-center justify-center text-sm text-faint">
                                         9:16 video preview
                                     </div>
                                 )}
                             </div>
                             <div className="px-4 py-4">
-                                <div className="text-sm font-bold text-white">
+                                <div className="text-sm font-bold text-fg">
                                     {selectedConnection?.pageName || 'Your Page'}
                                 </div>
-                                <div className="text-[10px] uppercase tracking-widest text-slate-500">
+                                <div className="text-[10px] uppercase tracking-widest text-subtle">
                                     {publishFacebook && instagram
                                         ? 'Facebook + Instagram Reels'
                                         : instagram
                                           ? 'Instagram Reels'
                                           : 'Facebook Reels'}
                                 </div>
-                                <div className="mt-3 text-sm text-slate-300 whitespace-pre-wrap leading-relaxed line-clamp-6">
+                                <div className="mt-3 text-sm text-fg-2 whitespace-pre-wrap leading-relaxed line-clamp-6">
                                     {caption || (
-                                        <span className="text-slate-600">
+                                        <span className="text-faint">
                                             Your caption will appear here.
                                         </span>
                                     )}
@@ -699,7 +699,7 @@ export default function ReelsPage() {
                             </div>
                         </div>
                         {video && previewFailedFor === video.publicId ? (
-                            <p className="mt-3 text-[11px] text-slate-500 text-center">
+                            <p className="mt-3 text-[11px] text-subtle text-center">
                                 Cloudinary is still preparing the 9:16 version. Showing
                                 the original upload.
                             </p>
