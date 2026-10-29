@@ -1,8 +1,8 @@
 'use client';
 
 import React from 'react';
-import Image from 'next/image';
 import Link from 'next/link';
+import { LogoMark } from '@/components/LogoMark';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useAuth } from '@/context/AuthContext';
 
@@ -163,7 +163,7 @@ export default function Home() {
             <header className="sticky top-0 z-40 border-b border-line bg-canvas/80 backdrop-blur">
                 <div className="mx-auto flex max-w-6xl items-center gap-6 px-4 py-3 sm:px-6">
                     <Link href="/" className="flex items-center gap-2.5">
-                        <Image src="/icon.png" alt="" width={32} height={32} className="rounded-lg" />
+                        <LogoMark size={32} />
                         <span className="text-base font-bold tracking-tight">Meta-Bru</span>
                     </Link>
                     <nav className="hidden items-center gap-6 text-sm font-medium text-muted md:flex">

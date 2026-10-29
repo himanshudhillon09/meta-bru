@@ -1,8 +1,8 @@
 'use client';
 
 import React from 'react';
-import Image from 'next/image';
 import Link from 'next/link';
+import { LogoMark } from '@/components/LogoMark';
 import { ThemeToggle } from '@/components/ThemeToggle';
 
 interface AuthFrameProps {
@@ -19,7 +19,7 @@ export function AuthFrame({ title, subtitle, width = 'narrow', children }: AuthF
         <div className="flex min-h-screen flex-col bg-canvas">
             <header className="flex items-center justify-between px-4 py-4 sm:px-6">
                 <Link href="/" className="flex items-center gap-2.5">
-                    <Image src="/icon.png" alt="" width={32} height={32} className="rounded-lg" />
+                    <LogoMark size={32} />
                     <span className="text-base font-bold tracking-tight text-fg">Meta-Bru</span>
                 </Link>
                 <ThemeToggle />

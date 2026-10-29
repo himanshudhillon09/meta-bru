@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { LogoMark } from '@/components/LogoMark';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useAuth } from '@/context/AuthContext';
 
@@ -141,7 +141,7 @@ function Icon({ name, className = 'w-5 h-5' }: { name: IconName; className?: str
 function Brand() {
     return (
         <Link href="/dashboard" className="flex items-center gap-3">
-            <Image src="/icon.png" alt="" width={36} height={36} className="rounded-xl" />
+            <LogoMark size={36} />
             <div className="leading-tight">
                 <div className="text-base font-bold tracking-tight text-fg">Meta-Bru</div>
                 <div className="text-[11px] font-medium text-subtle">Auto poster</div>
@@ -300,7 +300,7 @@ export function AppShell({ title, subtitle, actions, children }: AppShellProps) 
                             <h1 className="text-2xl font-bold tracking-tight text-fg sm:text-3xl">{title}</h1>
                             {subtitle ? <p className="mt-1.5 max-w-2xl text-sm text-muted sm:text-base">{subtitle}</p> : null}
                         </div>
-                        {actions ? <div className="flex flex-wrap gap-3">{actions}</div> : null}
+                        {actions ? <div className="flex shrink-0 flex-wrap gap-3 whitespace-nowrap">{actions}</div> : null}
                     </div>
                     {children}
                 </main>
