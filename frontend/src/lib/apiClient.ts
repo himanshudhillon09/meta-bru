@@ -1,14 +1,17 @@
 import type {
+    AiModels,
     AnalyticsMonitor,
     AnalyticsOverview,
     AnalyticsPostsResponse,
     AnalyticsTipsResponse,
     BrandLogoDetails,
     DeleteMediaResult,
+    GeminiModelList,
     MetaLoginResult,
     Platform,
     Post,
     StorageOverview,
+    TextArea,
     VideoMedia,
     VideoUploadSignature,
 } from './types';
@@ -239,6 +242,7 @@ export const authApi = {
             audience?: string;
             keywords?: string;
         };
+        aiModels?: Partial<AiModels>;
     }) => api.patch('/auth/profile', data),
     changePassword: (data: {
         currentPassword: string;
@@ -328,12 +332,22 @@ export const mediaApi = {
         api.post<{ success: boolean; media: VideoMedia }>('/media/videos', {
             publicId,
         }),
+    textPreview: (publicId: string, text: string, textArea?: TextArea) =>
+        api.post<{ success: boolean; dataUrl: string }>('/media/text-preview', {
+            publicId,
+            text,
+            ...(textArea ? { textArea } : {}),
+        }),
 };
 
 export const aiApi = {
     caption: (data: { topic?: string; platform?: string; mediaPublicId?: string }) =>
         api.post('/ai/caption', data),
     image: (data: { prompt: string }) => api.post('/ai/image', data),
+    models: () =>
+        api.get<{ success: boolean } & GeminiModelList>('/ai/models'),
+    overlayText: (data: { topic?: string; caption?: string; prompt?: string }) =>
+        api.post<{ success: boolean; text: string }>('/ai/overlay-text', data),
 };
 
 export const adminApi = {

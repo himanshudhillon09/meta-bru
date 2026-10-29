@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AppShell } from '@/components/AppShell';
+import { AiModelsSection } from '@/components/AiModelsSection';
 import { BrandLogoSection } from '@/components/BrandLogoSection';
 import { Modal } from '@/components/Modal';
 import { PasswordChangeForm } from '@/components/PasswordChangeForm';
@@ -699,6 +700,8 @@ export default function SettingsPage() {
             </form>
 
             <BrandLogoSection onNotice={setNotice} onError={setError} />
+
+            <AiModelsSection onNotice={setNotice} onError={setError} />
 
             <section className="mt-6 rounded-3xl border border-white/5 bg-slate-900/40 p-6 sm:p-8 shadow-xl">
                 <h2 className="text-lg font-bold text-white">Password</h2>

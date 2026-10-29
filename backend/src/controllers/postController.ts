@@ -19,12 +19,14 @@ import {
 } from '../services/connectionLifecycleService.js';
 import { deletePostMediaIfUnused } from '../services/cloudinaryStorageService.js';
 import { getCloudinaryCredentials } from '../services/credentialService.js';
+import { applyImageText } from '../services/imageTextService.js';
 import { REEL_LIMITS } from '../services/mediaDerivativeService.js';
 import { publishPost, sharePostToStory } from '../services/publishService.js';
 import { storyPlatforms } from '../services/storyService.js';
+import { parseOverlayText } from '../services/textOverlayService.js';
 import { loadReelVideo } from '../services/videoUploadService.js';
 import { AppError } from '../utils/errors.js';
-import { parseBody } from '../utils/validation.js';
+import { parseBody, textAreaSchema } from '../utils/validation.js';
 
 const platformSchema = z.object({
     facebook: z.boolean().default(true),
@@ -55,6 +57,9 @@ const createImagePostSchema = z.object({
     mediaUrl: publicUrl('mediaUrl'),
     mediaJpegUrl: publicUrl('mediaJpegUrl').optional().default(''),
     mediaPublicId: z.string().max(300).optional().default(''),
+    /** Burned into the image when the post is created; `*word*` is highlighted. */
+    overlayText: z.string().max(500).optional().default(''),
+    mediaTextArea: textAreaSchema.optional(),
 });
 
 // A reel's URLs and duration are read back from Cloudinary, never taken from
@@ -82,6 +87,8 @@ interface PostMediaFields {
     mediaPublicId: string;
     mediaDuration: number;
     mediaCoverUrl: string;
+    /** The plain image the overlay replaced; cleaned up once the post exists. */
+    replacedPublicId?: string;
 }
 
 async function resolvePostMedia(
@@ -89,13 +96,36 @@ async function resolvePostMedia(
     parsed: CreatePostInput
 ): Promise<PostMediaFields> {
     if (parsed.mediaType === 'image') {
-        return {
+        const image: PostMediaFields = {
             mediaType: 'image',
             mediaUrl: parsed.mediaUrl,
             mediaJpegUrl: parsed.mediaJpegUrl,
             mediaPublicId: parsed.mediaPublicId,
             mediaDuration: 0,
             mediaCoverUrl: '',
+        };
+        if (parseOverlayText(parsed.overlayText).length === 0) return image;
+
+        if (!parsed.mediaPublicId) {
+            throw new AppError(
+                400,
+                'Upload or generate the image in Meta-Bru to add text to it.',
+                'OVERLAY_MEDIA_REQUIRED'
+            );
+        }
+
+        const withText = await applyImageText(
+            userId,
+            parsed.mediaPublicId,
+            parsed.overlayText,
+            parsed.mediaTextArea
+        );
+        return {
+            ...image,
+            mediaUrl: withText.url,
+            mediaJpegUrl: withText.jpegUrl,
+            mediaPublicId: withText.publicId,
+            replacedPublicId: parsed.mediaPublicId,
         };
     }
 
@@ -321,7 +351,20 @@ export async function createPost(req: Request, res: Response): Promise<void> {
         }
     }
 
-    const media = await resolvePostMedia(req.user.id, parsed);
+    const { replacedPublicId, ...media } = await resolvePostMedia(req.user.id, parsed);
+    // The plain image is only a Composer working copy once the text is burned in.
+    const cleanUpReplaced = async () => {
+        if (!replacedPublicId) return;
+        const cleanup = await deletePostMediaIfUnused(req.user.id, {
+            publicId: replacedPublicId,
+            resourceType: 'image',
+        });
+        if (cleanup.mediaError) {
+            console.error(
+                `[posts] Could not remove replaced image ${replacedPublicId}: ${cleanup.mediaError}`
+            );
+        }
+    };
 
     if (parsed.action === 'now') {
         const { connection: claimedConnection, lockedAt } =
@@ -341,6 +384,7 @@ export async function createPost(req: Request, res: Response): Promise<void> {
                 status: 'publishing',
                 targets: buildTargets(parsed.platforms),
             });
+            await cleanUpReplaced();
 
             await publishPost(post, claimedConnection);
             res.status(201).json({ success: true, post });
@@ -363,6 +407,7 @@ export async function createPost(req: Request, res: Response): Promise<void> {
         status: parsed.action === 'draft' ? 'draft' : 'queued',
         targets: buildTargets(parsed.platforms),
     });
+    await cleanUpReplaced();
 
     res.status(201).json({ success: true, post });
 }

@@ -50,6 +50,11 @@ const userSchema = new mongoose.Schema({
         audience: { type: String, default: '' },
         keywords: { type: String, default: '' }
     },
+    /** Gemini model per AI feature; empty means the deployment default. */
+    aiModels: {
+        text: { type: String, default: '' },
+        image: { type: String, default: '' }
+    },
     /**
      * Normalised PNG logo embedded in the frame of every new post image.
      * Stored here rather than in Cloudinary so the storage manager can never

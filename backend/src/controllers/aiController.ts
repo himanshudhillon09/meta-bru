@@ -1,6 +1,12 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
-import { generateCaption, generateImage } from '../services/aiService.js';
+import {
+    generateCaption,
+    generateImage,
+    generateOverlayText,
+    listGeminiModels,
+} from '../services/aiService.js';
+import { AppError } from '../utils/errors.js';
 import { parseBody } from '../utils/validation.js';
 
 const captionSchema = z.object({
@@ -10,9 +16,21 @@ const captionSchema = z.object({
     mediaPublicId: z.string().trim().min(1).max(500).optional(),
 });
 
+const overlayTextSchema = z.object({
+    topic: z.string().trim().max(500).optional(),
+    caption: z.string().trim().max(2200).optional(),
+    prompt: z.string().trim().max(1_000).optional(),
+});
+
 const imageSchema = z.object({
     prompt: z.string().trim().min(3, 'Describe the image you want').max(1_000),
 });
+
+/** The user's chosen model for a feature, or nothing for the deployment default. */
+function chosenModel(req: Request, feature: 'text' | 'image'): string {
+    const model = req.user?.aiModels?.[feature];
+    return typeof model === 'string' ? model : '';
+}
 
 export async function draftCaption(req: Request, res: Response): Promise<void> {
     const parsed = parseBody(captionSchema, req);
@@ -22,6 +40,7 @@ export async function draftCaption(req: Request, res: Response): Promise<void> {
         platform: parsed.platform,
         brandProfile: req.user.brandProfile || {},
         ...(parsed.mediaPublicId ? { mediaPublicId: parsed.mediaPublicId } : {}),
+        ...(chosenModel(req, 'text') ? { model: chosenModel(req, 'text') } : {}),
     });
 
     res.json({ success: true, caption });
@@ -29,7 +48,33 @@ export async function draftCaption(req: Request, res: Response): Promise<void> {
 
 export async function createAiImage(req: Request, res: Response): Promise<void> {
     const parsed = parseBody(imageSchema, req);
-    const media = await generateImage(req.user.id, parsed.prompt);
+    const media = await generateImage(req.user.id, parsed.prompt, chosenModel(req, 'image'));
 
     res.status(201).json({ success: true, media });
+}
+
+export async function draftOverlayText(req: Request, res: Response): Promise<void> {
+    const parsed = parseBody(overlayTextSchema, req);
+    if (!parsed.topic && !parsed.caption && !parsed.prompt) {
+        throw new AppError(
+            400,
+            'Write a topic, caption, or image description first.',
+            'VALIDATION_ERROR'
+        );
+    }
+
+    const text = await generateOverlayText(req.user.id, {
+        ...(parsed.topic ? { topic: parsed.topic } : {}),
+        ...(parsed.caption ? { caption: parsed.caption } : {}),
+        ...(parsed.prompt ? { prompt: parsed.prompt } : {}),
+        brandProfile: req.user.brandProfile || {},
+        ...(chosenModel(req, 'text') ? { model: chosenModel(req, 'text') } : {}),
+    });
+
+    res.json({ success: true, text });
+}
+
+/** The Gemini models the user's key can use, for the Profile model pickers. */
+export async function listModels(req: Request, res: Response): Promise<void> {
+    res.json({ success: true, ...(await listGeminiModels(req.user.id)) });
 }

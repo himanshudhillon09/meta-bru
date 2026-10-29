@@ -36,7 +36,11 @@ interface ComposerDraft {
     facebook: boolean;
     instagram: boolean;
     shareToStory: boolean;
+    overlayEnabled: boolean;
+    overlayText: string;
 }
+
+const OVERLAY_MAX_CHARS = 90;
 
 export default function ComposerPage() {
     const router = useRouter();
@@ -51,6 +55,12 @@ export default function ComposerPage() {
     const [facebook, setFacebook] = useState(true);
     const [instagram, setInstagram] = useState(false);
     const [shareToStory, setShareToStory] = useState(false);
+    const [overlayEnabled, setOverlayEnabled] = useState(false);
+    const [overlayText, setOverlayText] = useState('');
+    const [overlayPreview, setOverlayPreview] = useState('');
+    const [overlayError, setOverlayError] = useState('');
+    const [previewingOverlay, setPreviewingOverlay] = useState(false);
+    const [writingOverlay, setWritingOverlay] = useState(false);
     const [loading, setLoading] = useState(true);
     const [uploading, setUploading] = useState(false);
     const [drafting, setDrafting] = useState(false);
@@ -64,6 +74,8 @@ export default function ComposerPage() {
     const draftClearedRef = useRef(false);
     const submitDisabled =
         Boolean(submitting) || uploading || generatingImage;
+    const overlayActive =
+        overlayEnabled && Boolean(media) && overlayText.trim().length > 0;
 
     useEffect(() => {
         if (!draftKey || hydratedDraftKey === draftKey) return;
@@ -79,6 +91,8 @@ export default function ComposerPage() {
             setFacebook(true);
             setInstagram(false);
             setShareToStory(false);
+            setOverlayEnabled(false);
+            setOverlayText('');
         }
 
         try {
@@ -114,6 +128,12 @@ export default function ComposerPage() {
                 }
                 if (typeof draft.shareToStory === 'boolean') {
                     setShareToStory(draft.shareToStory);
+                }
+                if (typeof draft.overlayEnabled === 'boolean') {
+                    setOverlayEnabled(draft.overlayEnabled);
+                }
+                if (typeof draft.overlayText === 'string') {
+                    setOverlayText(draft.overlayText.slice(0, OVERLAY_MAX_CHARS));
                 }
             }
         } catch {
@@ -188,6 +208,8 @@ export default function ComposerPage() {
             facebook,
             instagram,
             shareToStory,
+            overlayEnabled,
+            overlayText,
         };
 
         try {
@@ -206,7 +228,47 @@ export default function ComposerPage() {
         facebook,
         instagram,
         shareToStory,
+        overlayEnabled,
+        overlayText,
     ]);
+
+    // Render the exact overlay on the server a moment after typing stops.
+    useEffect(() => {
+        if (!overlayActive || !media) {
+            setOverlayPreview('');
+            return;
+        }
+
+        let cancelled = false;
+        const timer = setTimeout(async () => {
+            setPreviewingOverlay(true);
+            try {
+                const data = await mediaApi.textPreview(
+                    media.publicId,
+                    overlayText,
+                    media.textArea
+                );
+                if (!cancelled) {
+                    setOverlayPreview(data.dataUrl);
+                    setOverlayError('');
+                }
+            } catch (err: any) {
+                if (!cancelled) {
+                    setOverlayPreview('');
+                    setOverlayError(
+                        typeof err === 'string' ? err : 'Could not preview the image text'
+                    );
+                }
+            } finally {
+                if (!cancelled) setPreviewingOverlay(false);
+            }
+        }, 900);
+
+        return () => {
+            cancelled = true;
+            clearTimeout(timer);
+        };
+    }, [overlayActive, media, overlayText]);
 
     const selectedConnection = useMemo(
         () => connections.find((connection) => connection._id === connectionId),
@@ -259,6 +321,31 @@ export default function ComposerPage() {
         }
     };
 
+    const writeOverlay = async (imageDescription = imagePrompt) => {
+        const request = {
+            ...(topic.trim() ? { topic: topic.trim().slice(0, 500) } : {}),
+            ...(caption.trim() ? { caption: caption.trim().slice(0, 2200) } : {}),
+            ...(imageDescription.trim()
+                ? { prompt: imageDescription.trim().slice(0, 1000) }
+                : {}),
+        };
+        if (Object.keys(request).length === 0) {
+            setOverlayError('Write a topic or caption first, then let AI write the text.');
+            return;
+        }
+
+        setWritingOverlay(true);
+        setOverlayError('');
+        try {
+            const data = await aiApi.overlayText(request);
+            setOverlayText(data.text.slice(0, OVERLAY_MAX_CHARS));
+        } catch (err: any) {
+            setOverlayError(typeof err === 'string' ? err : 'AI could not write the text');
+        } finally {
+            setWritingOverlay(false);
+        }
+    };
+
     const generateImage = async () => {
         const prompt = (imagePrompt || topic || caption).trim().slice(0, 1000);
         if (!prompt) {
@@ -270,6 +357,9 @@ export default function ComposerPage() {
         try {
             const data: any = await aiApi.image({ prompt });
             setMedia(data.media);
+            // AI images get a bold text line by default.
+            setOverlayEnabled(true);
+            void writeOverlay(prompt);
         } catch (err: any) {
             setError(typeof err === 'string' ? err : 'AI image failed');
         } finally {
@@ -318,6 +408,12 @@ export default function ComposerPage() {
                 mediaUrl: media.url,
                 mediaJpegUrl: media.jpegUrl || '',
                 mediaPublicId: media.publicId,
+                ...(overlayActive
+                    ? {
+                          overlayText: overlayText.trim(),
+                          ...(media.textArea ? { mediaTextArea: media.textArea } : {}),
+                      }
+                    : {}),
                 platforms: { facebook, instagram },
                 shareToStory,
                 action,
@@ -612,6 +708,75 @@ export default function ComposerPage() {
                                     </button>
                                 </div>
                             ) : null}
+
+                            {media ? (
+                                <div className="mt-4 rounded-2xl border border-white/5 bg-slate-950/40 p-4">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div>
+                                            <div className="text-xs font-bold text-white">
+                                                Text on image
+                                            </div>
+                                            <div className="text-[11px] text-slate-500 mt-0.5">
+                                                A bold line across the bottom of the photo, like a reel caption.
+                                            </div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            role="switch"
+                                            aria-checked={overlayEnabled}
+                                            aria-label="Text on image"
+                                            onClick={() => setOverlayEnabled((value) => !value)}
+                                            className={`mt-0.5 relative inline-flex h-5 w-9 shrink-0 rounded-full transition-all ${
+                                                overlayEnabled ? 'bg-amber-500' : 'bg-slate-700'
+                                            }`}
+                                        >
+                                            <span
+                                                className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ${
+                                                    overlayEnabled ? 'left-[18px]' : 'left-0.5'
+                                                }`}
+                                            />
+                                        </button>
+                                    </div>
+
+                                    {overlayEnabled ? (
+                                        <>
+                                            <div className="mt-3 flex flex-col sm:flex-row gap-2">
+                                                <input
+                                                    value={overlayText}
+                                                    onChange={(event) =>
+                                                        setOverlayText(
+                                                            event.target.value.slice(0, OVERLAY_MAX_CHARS)
+                                                        )
+                                                    }
+                                                    placeholder="Real life wali bandi *ko* pata chal gaya"
+                                                    className="flex-1 bg-slate-950/80 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => void writeOverlay()}
+                                                    disabled={writingOverlay}
+                                                    className="bg-purple-600 hover:bg-purple-500 disabled:opacity-60 text-white px-4 py-3 rounded-xl text-xs font-bold transition-all"
+                                                >
+                                                    {writingOverlay ? 'Writing...' : 'AI write'}
+                                                </button>
+                                            </div>
+                                            <div className="mt-2 flex items-center justify-between gap-3 text-[11px] text-slate-500">
+                                                <span>
+                                                    Wrap words in *stars* to make them yellow. English letters only; write Hindi as Hinglish.
+                                                </span>
+                                                <span className="shrink-0">
+                                                    {overlayText.length}/{OVERLAY_MAX_CHARS}
+                                                </span>
+                                            </div>
+                                            {overlayError ? (
+                                                <p className="mt-2 text-[11px] text-rose-300">
+                                                    {overlayError}
+                                                </p>
+                                            ) : null}
+                                        </>
+                                    ) : null}
+                                </div>
+                            ) : null}
                         </section>
 
                         <div className="flex flex-col sm:flex-row gap-3">
@@ -662,12 +827,19 @@ export default function ComposerPage() {
                                 </div>
                             </div>
                             {media ? (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img
-                                    src={media.url}
-                                    alt=""
-                                    className="w-full h-auto"
-                                />
+                                <div className="relative">
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img
+                                        src={overlayActive && overlayPreview ? overlayPreview : media.url}
+                                        alt=""
+                                        className="w-full h-auto"
+                                    />
+                                    {overlayActive && previewingOverlay ? (
+                                        <span className="absolute top-2 right-2 rounded-full bg-slate-950/80 px-2.5 py-1 text-[10px] font-bold text-slate-300 backdrop-blur">
+                                            Updating text...
+                                        </span>
+                                    ) : null}
+                                </div>
                             ) : (
                                 <div className="aspect-square flex items-center justify-center text-sm text-slate-600 bg-slate-900/40">
                                     Image preview

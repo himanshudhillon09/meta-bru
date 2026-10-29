@@ -225,3 +225,27 @@ test('rejects unreadable post images', async () => {
         assertAppError(400, 'INVALID_IMAGE')
     );
 });
+
+test('reports the whole image as the text area when unframed', async () => {
+    const rendered = await renderPostImage(await solid(400, 300, '#3366cc'), null);
+
+    assert.deepEqual(rendered.textArea, {
+        left: 0,
+        top: 0,
+        width: 1080,
+        height: 810,
+        radius: 0,
+    });
+});
+
+test('reports the framed photo box as the text area', async () => {
+    const logo = await prepareLogo(await paddedMark(400, 300, 120, '#d00000'));
+    const rendered = await renderPostImage(await solid(1000, 1000, '#2a9d8f'), logo.data);
+    const layout = frameLayout(1000, 1000);
+
+    assert.equal(rendered.textArea.width, layout.maxPhotoWidth);
+    assert.equal(rendered.textArea.height, layout.maxPhotoHeight);
+    assert.equal(rendered.textArea.left, Math.round((layout.width - layout.maxPhotoWidth) / 2));
+    assert.equal(rendered.textArea.top, layout.margin);
+    assert.equal(rendered.textArea.radius, layout.radius);
+});

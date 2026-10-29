@@ -167,3 +167,43 @@ test('getMe does not reissue a recent token', async () => {
 
     assert.equal(bodyOf(json).token, undefined);
 });
+
+test('updateProfile saves the Gemini model for each AI feature', async () => {
+    const user = mockUser();
+    const { res, json } = response();
+
+    await updateProfile(
+        request({ aiModels: { text: 'models/gemini-2.5-pro', image: 'gemini-3.1-flash-lite-image' } }),
+        res
+    );
+
+    assert.deepEqual(user.aiModels, {
+        text: 'gemini-2.5-pro',
+        image: 'gemini-3.1-flash-lite-image',
+    });
+    const body = bodyOf(json);
+    assert.deepEqual((body.user as Record<string, unknown>).aiModels, {
+        text: 'gemini-2.5-pro',
+        image: 'gemini-3.1-flash-lite-image',
+    });
+});
+
+test('updateProfile clears one model back to the default and keeps the other', async () => {
+    const user = mockUser();
+    user.aiModels = { text: 'gemini-2.5-pro', image: 'gemini-3-pro-image' };
+    const { res } = response();
+
+    await updateProfile(request({ aiModels: { text: '' } }), res);
+
+    assert.deepEqual(user.aiModels, { text: '', image: 'gemini-3-pro-image' });
+});
+
+test('updateProfile rejects a model id that is not a Gemini model name', async () => {
+    mockUser();
+    const { res } = response();
+
+    await assert.rejects(
+        () => updateProfile(request({ aiModels: { image: '../models/x?key=1' } }), res),
+        (error: unknown) => (error as AppError).code === 'VALIDATION_ERROR'
+    );
+});

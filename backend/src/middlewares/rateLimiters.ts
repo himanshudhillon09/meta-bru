@@ -52,6 +52,18 @@ export const mediaLimiter = rateLimit({
     },
 });
 
+export const aiModelsLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 30,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    keyGenerator: userKey,
+    message: {
+        success: false,
+        message: 'Model list limit reached. Try again in a few minutes.',
+    },
+});
+
 export const storageLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     limit: 60,
@@ -62,6 +74,19 @@ export const storageLimiter = rateLimit({
         success: false,
         message:
             'Storage request limit reached. Try again in a few minutes.',
+    },
+});
+
+// Composer previews refresh as the user types, so this is looser than uploads.
+export const textPreviewLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 150,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    keyGenerator: userKey,
+    message: {
+        success: false,
+        message: 'Preview limit reached. Try again in a few minutes.',
     },
 });
 

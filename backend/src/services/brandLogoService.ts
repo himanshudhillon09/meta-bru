@@ -1,7 +1,11 @@
 import sharp from 'sharp';
 import { User } from '../models/userModel.js';
 import { AppError } from '../utils/errors.js';
-import { prepareLogo, renderPostImage } from './imageProcessingService.js';
+import {
+    prepareLogo,
+    renderPostImage,
+    type RenderedPostImage,
+} from './imageProcessingService.js';
 
 export interface BrandLogoSummary {
     dataUrl: string;
@@ -159,12 +163,12 @@ export async function removeBrandLogo(userId: string): Promise<void> {
 /**
  * Turns any post image (upload or AI) into a feed-ready JPEG for the owning
  * user: framed with their logo when they have one, otherwise only resized.
+ * The result also says where the photo sits, for overlay text.
  */
 export async function preparePostImage(
     userId: string,
     input: Buffer
-): Promise<Buffer> {
+): Promise<RenderedPostImage> {
     const logo = await readStoredLogo(userId);
-    const rendered = await renderPostImage(input, logo?.data ?? null);
-    return rendered.buffer;
+    return renderPostImage(input, logo?.data ?? null);
 }

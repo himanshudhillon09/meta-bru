@@ -4,12 +4,13 @@ import { preparePostImage } from './brandLogoService.js';
 import {
     jpegUrlFor,
     uploadImage,
-    type UploadedMedia,
+    type PostImageMedia,
 } from './cloudinaryService.js';
 import {
     getCloudinaryCredentials,
     getGeminiCredentials,
 } from './credentialService.js';
+import { cleanOverlayText } from './textOverlayService.js';
 
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 const FALLBACK_IMAGE_MODEL = 'gemini-2.5-flash-image';
@@ -27,6 +28,8 @@ export interface CaptionInput {
     platform: 'facebook' | 'instagram' | 'both';
     brandProfile?: BrandProfile;
     mediaPublicId?: string;
+    /** The user's caption model; empty uses the deployment default. */
+    model?: string;
 }
 
 interface InlineImage {
@@ -47,7 +50,113 @@ interface GeminiResponse {
         content?: { parts?: GeminiPart[] };
         finishReason?: string;
     }>;
-    error?: { message?: string };
+    error?: GeminiErrorBody;
+}
+
+interface GeminiErrorBody {
+    code?: number;
+    status?: string;
+    message?: string;
+    details?: Array<{
+        '@type'?: string;
+        retryDelay?: string;
+        violations?: Array<{ quotaMetric?: string; quotaId?: string }>;
+    }>;
+}
+
+export type GeminiTask = 'image' | 'caption' | 'image text' | 'model list';
+
+const GEMINI_FAILURE_CODES: Record<GeminiTask, string> = {
+    image: 'AI_IMAGE_FAILED',
+    caption: 'AI_CAPTION_FAILED',
+    'image text': 'AI_OVERLAY_FAILED',
+    'model list': 'AI_MODELS_FAILED',
+};
+
+const FREE_TIER = /free_tier|FreeTier/i;
+
+/** True when the key is on the free tier and Google allows it none of this model. */
+function isFreeTierBlocked(error: GeminiErrorBody): boolean {
+    const message = error.message ?? '';
+    const violations = (error.details ?? []).flatMap((detail) => detail.violations ?? []);
+    const freeTier =
+        FREE_TIER.test(message) ||
+        violations.some((violation) =>
+            FREE_TIER.test(`${violation.quotaMetric ?? ''} ${violation.quotaId ?? ''}`)
+        );
+    return freeTier && /limit:\s*0\b/.test(message);
+}
+
+function retrySeconds(error: GeminiErrorBody): number | null {
+    const delay = (error.details ?? []).find((detail) => detail.retryDelay)?.retryDelay;
+    const fromDetails = delay ? Number.parseFloat(delay) : Number.NaN;
+    if (Number.isFinite(fromDetails)) return fromDetails;
+
+    const match = /retry in (?:(\d+)h)?(?:(\d+)m)?(?:([\d.]+)s)?/i.exec(error.message ?? '');
+    if (!match || !(match[1] || match[2] || match[3])) return null;
+    return (
+        Number(match[1] ?? 0) * 3600 + Number(match[2] ?? 0) * 60 + Number(match[3] ?? 0)
+    );
+}
+
+function readableWait(seconds: number): string {
+    const minutes = Math.max(1, Math.round(seconds / 60));
+    if (minutes < 60) return `about ${minutes} minute${minutes === 1 ? '' : 's'}`;
+    const hours = Math.round(minutes / 60);
+    return `about ${hours} hour${hours === 1 ? '' : 's'}`;
+}
+
+/**
+ * Turns a Gemini error response into a short message the user can act on.
+ * Google's quota errors are long and point at the wrong fix: a free-tier key
+ * is told to "retry in 20h" for an image model whose free limit is 0.
+ */
+export function describeGeminiError(
+    httpStatus: number,
+    payload: unknown,
+    task: GeminiTask
+): AppError {
+    const error = (payload as { error?: GeminiErrorBody } | null)?.error ?? {};
+    const message = error.message ?? '';
+
+    if (httpStatus === 429 || error.status === 'RESOURCE_EXHAUSTED') {
+        if (isFreeTierBlocked(error)) {
+            return task === 'image'
+                ? new AppError(
+                      402,
+                      "Your Gemini API key is on Google's free tier, which can't generate images. Turn on billing for the key's project in Google AI Studio (images cost about $0.03–0.04 each), then try again.",
+                      'AI_IMAGE_NEEDS_BILLING'
+                  )
+                : new AppError(
+                      402,
+                      "Your Gemini API key is on Google's free tier, which doesn't include this model. Turn on billing for the key's project in Google AI Studio, then try again.",
+                      'AI_NEEDS_BILLING'
+                  );
+        }
+
+        const seconds = retrySeconds(error);
+        return new AppError(
+            429,
+            `Your Gemini API key has hit its usage limit. Try again in ${
+                seconds === null ? 'a few minutes' : readableWait(seconds)
+            }, or raise the limit in Google AI Studio.`,
+            'AI_RATE_LIMITED'
+        );
+    }
+
+    if (/API key not valid|API_KEY_INVALID/i.test(message)) {
+        return new AppError(
+            400,
+            'Gemini rejected your API key. Check the Gemini key under Profile.',
+            'AI_KEY_INVALID'
+        );
+    }
+
+    return new AppError(
+        502,
+        message || `Gemini ${task} generation failed`,
+        GEMINI_FAILURE_CODES[task]
+    );
 }
 
 let warnedAboutRetiredImageModel = false;
@@ -387,6 +496,89 @@ async function loadCaptionImage(
     };
 }
 
+interface GeminiTextRequest {
+    /** Model id; empty uses the deployment default. */
+    model?: string | undefined;
+    parts: Array<{ text?: string; inlineData?: InlineImage }>;
+    temperature: number;
+    maxOutputTokens: number;
+    /** What is being written, for error messages. */
+    label: 'caption' | 'image text';
+    errorCode: string;
+    truncatedCode: string;
+}
+
+/** Sends a text generation request and returns the non-empty reply text. */
+async function requestGeminiText(
+    apiKey: string,
+    request: GeminiTextRequest
+): Promise<string> {
+    const model = request.model || env.gemini.textModel;
+    let response: Response;
+    try {
+        response = await fetch(
+            `${GEMINI_BASE}/models/${encodeURIComponent(model)}:generateContent`,
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-goog-api-key': apiKey,
+                },
+                body: JSON.stringify({
+                    contents: [{ parts: request.parts }],
+                    generationConfig: {
+                        temperature: request.temperature,
+                        maxOutputTokens: request.maxOutputTokens,
+                        // Only 2.5 Flash models accept turning thinking off
+                        // with a zero budget; other models reject it.
+                        ...(/^gemini-2\.5-flash/.test(model)
+                            ? { thinkingConfig: { thinkingBudget: 0 } }
+                            : {}),
+                    },
+                }),
+                signal: AbortSignal.timeout(30_000),
+            }
+        );
+    } catch (error) {
+        throw new AppError(
+            502,
+            error instanceof Error
+                ? `Could not reach Gemini: ${error.message}`
+                : 'Could not reach Gemini',
+            request.errorCode
+        );
+    }
+
+    const data = (await response.json().catch(() => ({}))) as GeminiResponse;
+
+    if (!response.ok || data.error) {
+        throw describeGeminiError(response.status, data, request.label);
+    }
+
+    if (data.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
+        throw new AppError(
+            502,
+            `Gemini stopped before finishing the ${request.label}. Please try again.`,
+            request.truncatedCode
+        );
+    }
+
+    const rawText = data.candidates?.[0]?.content?.parts
+        ?.map((part) => part.text || '')
+        .join('')
+        .trim();
+
+    if (!rawText) {
+        throw new AppError(
+            502,
+            `Gemini returned an empty ${request.label}`,
+            'AI_EMPTY_RESPONSE'
+        );
+    }
+
+    return rawText;
+}
+
 export async function generateCaption(
     userId: string,
     input: CaptionInput
@@ -403,65 +595,15 @@ export async function generateCaption(
         });
     }
 
-    let response: Response;
-    try {
-        response = await fetch(
-            `${GEMINI_BASE}/models/${encodeURIComponent(env.gemini.textModel)}:generateContent`,
-            {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-goog-api-key': credentials.apiKey,
-                },
-                body: JSON.stringify({
-                    contents: [{ parts }],
-                    generationConfig: {
-                        temperature: 0.8,
-                        maxOutputTokens: 4096,
-                        ...(env.gemini.textModel.includes('flash')
-                            ? { thinkingConfig: { thinkingBudget: 0 } }
-                            : {}),
-                    },
-                }),
-                signal: AbortSignal.timeout(30_000),
-            }
-        );
-    } catch (error) {
-        throw new AppError(
-            502,
-            error instanceof Error
-                ? `Could not reach Gemini: ${error.message}`
-                : 'Could not reach Gemini',
-            'AI_CAPTION_FAILED'
-        );
-    }
-
-    const data = (await response.json().catch(() => ({}))) as GeminiResponse;
-
-    if (!response.ok || data.error) {
-        throw new AppError(
-            502,
-            data.error?.message || 'Gemini caption generation failed',
-            'AI_CAPTION_FAILED'
-        );
-    }
-
-    if (data.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
-        throw new AppError(
-            502,
-            'Gemini stopped before finishing the caption. Please try again.',
-            'AI_CAPTION_TRUNCATED'
-        );
-    }
-
-    const rawText = data.candidates?.[0]?.content?.parts
-        ?.map((part) => part.text || '')
-        .join('')
-        .trim();
-
-    if (!rawText) {
-        throw new AppError(502, 'Gemini returned an empty caption', 'AI_EMPTY_RESPONSE');
-    }
+    const rawText = await requestGeminiText(credentials.apiKey, {
+        model: input.model,
+        parts,
+        temperature: 0.8,
+        maxOutputTokens: 4096,
+        label: 'caption',
+        errorCode: 'AI_CAPTION_FAILED',
+        truncatedCode: 'AI_CAPTION_TRUNCATED',
+    });
 
     const caption = parseCaptionResponse(rawText, input);
 
@@ -474,10 +616,12 @@ export async function generateCaption(
 
 export async function generateImage(
     userId: string,
-    prompt: string
-): Promise<UploadedMedia> {
+    prompt: string,
+    /** The user's image model; empty uses the deployment default. */
+    imageModel = ''
+): Promise<PostImageMedia> {
     const credentials = await getGeminiCredentials(userId);
-    const model = resolveImageModel(env.gemini.imageModel);
+    const model = resolveImageModel(imageModel || env.gemini.imageModel);
 
     let response: Response;
     try {
@@ -506,11 +650,7 @@ export async function generateImage(
     const data = (await response.json().catch(() => ({}))) as GeminiResponse;
 
     if (!response.ok || data.error) {
-        throw new AppError(
-            502,
-            data.error?.message || 'Gemini image generation failed',
-            'AI_IMAGE_FAILED'
-        );
+        throw describeGeminiError(response.status, data, 'image');
     }
 
     const image = extractInlineImage(data);
@@ -529,8 +669,199 @@ export async function generateImage(
         );
     }
 
-    return uploadImage(
-        userId,
-        await preparePostImage(userId, Buffer.from(image.data, 'base64'))
-    );
+    const prepared = await preparePostImage(userId, Buffer.from(image.data, 'base64'));
+    return {
+        ...(await uploadImage(userId, prepared.buffer)),
+        textArea: prepared.textArea,
+    };
+}
+
+export interface OverlayTextInput {
+    topic?: string;
+    caption?: string;
+    /** The prompt the image was generated from. */
+    prompt?: string;
+    brandProfile?: BrandProfile;
+    /** The user's caption model, also used for image text. */
+    model?: string;
+}
+
+export function buildOverlayPrompt(input: OverlayTextInput): string {
+    const profile = input.brandProfile || {};
+    const parts = [
+        'You write the short line printed in big bold letters on a social media image, like a reel or meme caption.',
+        'Write exactly one line of at most 12 words and 80 characters.',
+        'Use the same language and style as the post caption and topic. For Hindi or Hinglish, write Hinglish in Roman (English) letters, never Devanagari.',
+        'Make it punchy, relatable, and specific to this post.',
+        'Wrap the 1 to 3 most important words in *asterisks*, for example: Real life wali bandi *ko* pata chal gaya',
+        'No hashtags, no emojis, no quotation marks, and no full stop at the end. Return only the line.',
+    ];
+
+    if (profile.niche) parts.push(`Brand niche: ${profile.niche}.`);
+    if (profile.tone) parts.push(`Brand tone: ${profile.tone}.`);
+    if (profile.audience) parts.push(`Target audience: ${profile.audience}.`);
+    if (input.topic) parts.push(`Post topic: ${input.topic}`);
+    if (input.caption) parts.push(`Post caption: ${input.caption}`);
+    if (input.prompt) parts.push(`Image description: ${input.prompt}`);
+
+    return parts.join('\n');
+}
+
+/**
+ * Turns Gemini's reply into one clean overlay line: first line only, no label,
+ * quotes, hashtags, emojis, or final full stop, and at least one highlighted
+ * word.
+ */
+export function parseOverlayResponse(raw: string): string {
+    const firstLine =
+        raw
+            .split('\n')
+            .map((line) => line.trim())
+            .find((line) => line.length > 0) ?? '';
+
+    let text = firstLine
+        .replace(/^(?:headline|line|overlay|text)\s*:\s*/i, '')
+        .replace(/#[\p{L}\p{N}_]+/gu, '')
+        .replace(/["“”„‟«»]/g, '')
+        .replace(/^'+|'+$/g, '');
+
+    text = cleanOverlayText(text).replace(/[.。]+$/u, '').trim();
+    if (!text) return '';
+
+    if (!text.includes('*')) {
+        const lastSpace = text.lastIndexOf(' ');
+        text =
+            lastSpace === -1
+                ? `*${text}*`
+                : `${text.slice(0, lastSpace + 1)}*${text.slice(lastSpace + 1)}*`;
+    }
+
+    return text;
+}
+
+export async function generateOverlayText(
+    userId: string,
+    input: OverlayTextInput
+): Promise<string> {
+    const credentials = await getGeminiCredentials(userId);
+    const rawText = await requestGeminiText(credentials.apiKey, {
+        model: input.model,
+        parts: [{ text: buildOverlayPrompt(input) }],
+        temperature: 0.9,
+        maxOutputTokens: 256,
+        label: 'image text',
+        errorCode: 'AI_OVERLAY_FAILED',
+        truncatedCode: 'AI_OVERLAY_TRUNCATED',
+    });
+
+    const text = parseOverlayResponse(rawText);
+    if (!text) {
+        throw new AppError(502, 'Gemini returned an empty image text', 'AI_EMPTY_RESPONSE');
+    }
+    return text;
+}
+
+export interface GeminiModelOption {
+    id: string;
+    name: string;
+}
+
+export interface GeminiModelList {
+    /** What an empty choice falls back to on this deployment. */
+    defaults: { text: string; image: string };
+    text: GeminiModelOption[];
+    image: GeminiModelOption[];
+}
+
+interface RawGeminiModel {
+    name?: unknown;
+    displayName?: unknown;
+    supportedGenerationMethods?: unknown;
+}
+
+// Models that answer generateContent but cannot write a caption.
+const NOT_FOR_CAPTIONS = /(tts|audio|live|embedding|aqa|veo|computer-use|robotics)/i;
+
+/**
+ * Splits the models a key can use into caption choices and image choices.
+ * Only Gemini models that support generateContent are offered; image models
+ * are the ones whose id names images.
+ */
+export function classifyGeminiModels(
+    raw: unknown[]
+): Pick<GeminiModelList, 'text' | 'image'> {
+    const text = new Map<string, GeminiModelOption>();
+    const image = new Map<string, GeminiModelOption>();
+
+    for (const entry of raw) {
+        const model = (entry ?? {}) as RawGeminiModel;
+        const id = typeof model.name === 'string' ? model.name.replace(/^models\//, '') : '';
+        const methods = Array.isArray(model.supportedGenerationMethods)
+            ? model.supportedGenerationMethods
+            : [];
+        if (!id.startsWith('gemini') || !methods.includes('generateContent')) continue;
+
+        const option = {
+            id,
+            name: typeof model.displayName === 'string' && model.displayName ? model.displayName : id,
+        };
+        if (/image/i.test(id)) image.set(id, option);
+        else if (!NOT_FOR_CAPTIONS.test(id)) text.set(id, option);
+    }
+
+    const newestFirst = (a: GeminiModelOption, b: GeminiModelOption) => b.id.localeCompare(a.id);
+    return {
+        text: [...text.values()].sort(newestFirst),
+        image: [...image.values()].sort(newestFirst),
+    };
+}
+
+/** Lists the Gemini models the user's own key can use, for the Profile pickers. */
+export async function listGeminiModels(userId: string): Promise<GeminiModelList> {
+    const credentials = await getGeminiCredentials(userId);
+    const models: unknown[] = [];
+    let pageToken = '';
+
+    for (let page = 0; page < 5; page += 1) {
+        const url = new URL(`${GEMINI_BASE}/models`);
+        url.searchParams.set('pageSize', '200');
+        if (pageToken) url.searchParams.set('pageToken', pageToken);
+
+        let response: Response;
+        try {
+            response = await fetch(url, {
+                headers: { 'x-goog-api-key': credentials.apiKey },
+                signal: AbortSignal.timeout(15_000),
+            });
+        } catch (error) {
+            throw new AppError(
+                502,
+                error instanceof Error
+                    ? `Could not reach Gemini: ${error.message}`
+                    : 'Could not reach Gemini',
+                'AI_MODELS_FAILED'
+            );
+        }
+
+        const data = (await response.json().catch(() => ({}))) as {
+            models?: unknown[];
+            nextPageToken?: string;
+            error?: GeminiErrorBody;
+        };
+        if (!response.ok || data.error) {
+            throw describeGeminiError(response.status, data, 'model list');
+        }
+
+        models.push(...(Array.isArray(data.models) ? data.models : []));
+        pageToken = typeof data.nextPageToken === 'string' ? data.nextPageToken : '';
+        if (!pageToken) break;
+    }
+
+    return {
+        defaults: {
+            text: env.gemini.textModel,
+            image: resolveImageModel(env.gemini.imageModel),
+        },
+        ...classifyGeminiModels(models),
+    };
 }

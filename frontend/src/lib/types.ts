@@ -13,8 +13,28 @@ export interface User {
     isActive?: boolean;
     timezone?: string;
     brandProfile?: BrandProfile;
+    /** Gemini model per AI feature; empty means the deployment default. */
+    aiModels?: AiModels;
     hasBrandLogo?: boolean;
     mustChangePassword?: boolean;
+}
+
+export interface AiModels {
+    /** Captions and the text on images. */
+    text: string;
+    /** AI image generation. */
+    image: string;
+}
+
+export interface GeminiModelOption {
+    id: string;
+    name: string;
+}
+
+export interface GeminiModelList {
+    defaults: AiModels;
+    text: GeminiModelOption[];
+    image: GeminiModelOption[];
 }
 
 export interface BrandLogo {
@@ -157,6 +177,15 @@ export interface Post {
     updatedAt: string;
 }
 
+/** Where the photo sits in a post image; overlay text goes inside it. */
+export interface TextArea {
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+    radius: number;
+}
+
 export interface MediaAsset {
     url: string;
     jpegUrl: string;
@@ -165,6 +194,7 @@ export interface MediaAsset {
     height: number;
     format: string;
     bytes: number;
+    textArea?: TextArea;
 }
 
 export interface VideoMedia {
