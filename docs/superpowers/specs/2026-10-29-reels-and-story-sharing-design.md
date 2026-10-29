@@ -71,8 +71,9 @@ input shape. Instagram's reel thumbnail uses `thumb_offset=1000` to match the
 cover frame.
 
 Image Stories use an on-the-fly image derivative,
-`c_pad,w_1080,h_1920,b_blurred:400:15,q_auto:good` as JPG, built from the
-post's existing `mediaPublicId`.
+`c_pad,w_1080,h_1920,b_auto,q_auto:good` as JPG, built from the post's
+existing `mediaPublicId`. Cloudinary's blurred padding is video-only, so images
+pad with a colour taken from their edges.
 
 All transformation strings live in one module so the upload signature, delivery
 URLs, and Storage thumbnails always agree.
