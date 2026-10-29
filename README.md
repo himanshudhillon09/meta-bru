@@ -40,7 +40,7 @@ intentionally out of scope.
 ```
 backend/    Express 5 + TypeScript + Mongoose + in-process scheduler
 frontend/   Next.js 16 App Router + React 19 + Tailwind 4
-docs/       Design spec and deployment guide
+docs/       Deployment guide
 ```
 
 ## Local development
@@ -82,13 +82,6 @@ npm run seed:admin
 ```
 
 Running the command again with `RESET_ADMIN_PASSWORD=true` resets the password.
-
-### Tests
-
-```bash
-cd backend
-npm test
-```
 
 ## Environment
 
