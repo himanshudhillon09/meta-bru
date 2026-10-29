@@ -9,6 +9,7 @@ export type PostStatus =
     | 'partial'
     | 'failed';
 export type TargetStatus = 'pending' | 'publishing' | 'published' | 'failed';
+export type MediaType = 'image' | 'reel';
 
 export interface IPostTarget {
     platform: Platform;
@@ -26,7 +27,14 @@ export interface IPost extends mongoose.Document {
     mediaUrl: string;
     mediaJpegUrl: string;
     mediaPublicId: string;
-    mediaType: 'image';
+    mediaType: MediaType;
+    /** Reel length in seconds; 0 for images. */
+    mediaDuration: number;
+    /** Reel cover JPG used for thumbnails; empty for images. */
+    mediaCoverUrl: string;
+    shareToStory: boolean;
+    /** Story shares. They never change status, lastError, or publishedAt. */
+    storyTargets: IPostTarget[];
     platforms: { facebook: boolean; instagram: boolean };
     status: PostStatus;
     targets: IPostTarget[];
@@ -69,10 +77,14 @@ const postSchema = new mongoose.Schema<IPost>(
         },
         caption: { type: String, required: true, maxlength: 2200 },
         mediaUrl: { type: String, required: true },
-        /** JPEG delivery URL for Meta. Empty for legacy/external media. */
+        /** JPEG delivery URL for Meta. Empty for reels and legacy/external media. */
         mediaJpegUrl: { type: String, default: '' },
         mediaPublicId: { type: String, default: '' },
-        mediaType: { type: String, enum: ['image'], default: 'image' },
+        mediaType: { type: String, enum: ['image', 'reel'], default: 'image' },
+        mediaDuration: { type: Number, default: 0, min: 0 },
+        mediaCoverUrl: { type: String, default: '' },
+        shareToStory: { type: Boolean, default: false },
+        storyTargets: { type: [targetSchema], default: [] },
         platforms: {
             facebook: { type: Boolean, default: true },
             instagram: { type: Boolean, default: false },
