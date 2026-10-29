@@ -2,6 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
+import { ShareStoryButton } from '@/components/ShareStory';
 import {
     formatDuration,
     formatElapsed,
@@ -9,6 +10,7 @@ import {
     formatWatchTime,
     type AnalyticsPost,
     type AnalyticsPostTarget,
+    type StoryShareSubject,
 } from '@/lib/types';
 
 function metricValue(value: number | null, suffix = ''): string {
@@ -218,11 +220,22 @@ function TargetMetrics({
 export function AnalyticsPostCard({
     post,
     now,
+    onShareStory,
+    sharing = false,
 }: {
     post: AnalyticsPost;
     now: number;
+    onShareStory?: (post: StoryShareSubject) => void;
+    sharing?: boolean;
 }) {
     const reel = post.mediaType === 'reel';
+    // Analytics only lists published platforms, which is all sharing needs.
+    const shareSubject: StoryShareSubject = {
+        _id: post.postId,
+        mediaType: post.mediaType,
+        targets: post.targets.map((target) => ({ platform: target.platform, status: 'published' })),
+        storyTargets: post.storyTargets ?? [],
+    };
     return (
         <article className="rounded-2xl border border-line bg-surface p-5 shadow-card transition-[border-color,box-shadow] duration-200 hover:border-line-strong hover:shadow-card-hover">
             <div className="flex flex-col gap-4 sm:flex-row">
@@ -258,6 +271,16 @@ export function AnalyticsPostCard({
                         <span className="text-[10px] uppercase tracking-widest text-subtle">
                             {post.status}
                         </span>
+                        {onShareStory ? (
+                            <div className="ml-auto">
+                                <ShareStoryButton
+                                    post={shareSubject}
+                                    onOpen={onShareStory}
+                                    sharing={sharing}
+                                    size="sm"
+                                />
+                            </div>
+                        ) : null}
                     </div>
                     <p className="mt-2 line-clamp-2 text-sm text-fg-2">
                         {post.caption}

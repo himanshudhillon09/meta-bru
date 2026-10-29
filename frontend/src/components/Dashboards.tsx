@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { AppShell } from '@/components/AppShell';
 import { Modal } from '@/components/Modal';
 import { PasswordResetModal } from '@/components/PasswordResetModal';
+import { ShareStoryButton, StoryShareNotice, useStoryShare } from '@/components/ShareStory';
 import { useAuth } from '@/context/AuthContext';
 import { adminApi, authApi, connectionsApi, postsApi } from '@/lib/apiClient';
 import {
@@ -59,7 +60,16 @@ function StatCard({
     );
 }
 
-function RecentPostRow({ post }: { post: Post }) {
+function RecentPostRow({
+    post,
+    onShareStory,
+    sharing,
+}: {
+    post: Post;
+    /** Left out on the admin overview, which lists other users' posts. */
+    onShareStory?: (post: Post) => void;
+    sharing?: boolean;
+}) {
     return (
         <div className="flex items-center gap-4 py-4 border-b border-line last:border-0">
             <div className="w-12 h-12 rounded-xl overflow-hidden bg-sunken shrink-0 border border-line">
@@ -78,7 +88,17 @@ function RecentPostRow({ post }: { post: Post }) {
                     {connectionName(post)} · {formatDate(post.createdAt)}
                 </div>
             </div>
-            <StatusBadge status={post.status} />
+            <div className="flex shrink-0 flex-col items-end gap-2 sm:flex-row sm:items-center">
+                {onShareStory ? (
+                    <ShareStoryButton
+                        post={post}
+                        onOpen={() => onShareStory(post)}
+                        sharing={Boolean(sharing)}
+                        size="sm"
+                    />
+                ) : null}
+                <StatusBadge status={post.status} />
+            </div>
         </div>
     );
 }
@@ -142,6 +162,14 @@ export function UserDashboard() {
     const [posts, setPosts] = useState<Post[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    // The share response is not populated; keep the Page details we have.
+    const story = useStoryShare((updated) =>
+        setPosts((current) =>
+            current.map((item) =>
+                item._id === updated._id ? { ...updated, connectionId: item.connectionId } : item
+            )
+        )
+    );
 
     useEffect(() => {
         const load = async () => {
@@ -197,6 +225,7 @@ export function UserDashboard() {
                     {error}
                 </div>
             ) : null}
+            <StoryShareNotice outcome={story.outcome} onDismiss={story.clearOutcome} />
 
             <div className="stagger grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
                 <StatCard
@@ -264,11 +293,17 @@ export function UserDashboard() {
                 ) : (
                     <div>
                         {posts.slice(0, 5).map((post) => (
-                            <RecentPostRow key={post._id} post={post} />
+                            <RecentPostRow
+                                key={post._id}
+                                post={post}
+                                onShareStory={story.open}
+                                sharing={story.sharingId === post._id}
+                            />
                         ))}
                     </div>
                 )}
             </section>
+            {story.modal}
         </AppShell>
     );
 }

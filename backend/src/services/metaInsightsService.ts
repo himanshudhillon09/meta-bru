@@ -8,6 +8,7 @@ import {
     type IAnalyticsMetrics,
     type SnapshotStatus,
 } from '../models/postMetricSnapshotModel.js';
+import { emptyStoryMetrics, type IStoryMetrics } from '../models/storyMetricSnapshotModel.js';
 
 export type GraphRequestFn = (
     path: string,
@@ -655,4 +656,195 @@ async function instagramMetrics(
             ? ['likes', 'comments', 'shares', 'saves', 'reach', 'views', 'avgWatchTimeMs']
             : ['likes', 'comments', 'shares', 'saves', 'reach', 'views']
     );
+}
+
+export interface NormalizedStoryMetrics {
+    metrics: IStoryMetrics;
+    status: SnapshotStatus;
+    error: string;
+}
+
+const FEW_VIEWERS_MESSAGE =
+    'Fewer than 5 people have viewed this Story, so Meta hides its numbers.';
+
+/** Meta answers with error 10 when fewer than 5 accounts viewed a Story. */
+function isFewViewersError(error: unknown): boolean {
+    return error instanceof MetaApiError && /not enough viewers/i.test(error.message);
+}
+
+/**
+ * Instagram returns navigation broken down by action type, either as
+ * `total_value.breakdowns[].results[]` or as a plain value object.
+ */
+function navigationBreakdown(data: unknown): Record<string, number> | null {
+    const entry = insightEntry(data, 'navigation');
+    if (!entry) return null;
+
+    const breakdowns = (entry.total_value as { breakdowns?: unknown } | undefined)?.breakdowns;
+    if (Array.isArray(breakdowns)) {
+        const counts: Record<string, number> = {};
+        for (const breakdown of breakdowns) {
+            const results = (breakdown as { results?: unknown })?.results;
+            if (!Array.isArray(results)) continue;
+            for (const result of results) {
+                const key = (result as { dimension_values?: unknown[] })?.dimension_values?.[0];
+                const value = numberOrNull((result as { value?: unknown })?.value);
+                if (typeof key === 'string' && value !== null) {
+                    counts[key.toLowerCase()] = (counts[key.toLowerCase()] ?? 0) + value;
+                }
+            }
+        }
+        return counts;
+    }
+
+    const plain = metricBreakdown(data, 'navigation');
+    return plain
+        ? Object.fromEntries(Object.entries(plain).map(([key, value]) => [key.toLowerCase(), value]))
+        : null;
+}
+
+function finalizeStory(
+    metrics: IStoryMetrics,
+    status: SnapshotStatus,
+    error: string
+): NormalizedStoryMetrics {
+    const anyMetric = Object.values(metrics).some((value) => value !== null);
+    const resolved: SnapshotStatus =
+        status === 'permission_error' || status === 'unavailable'
+            ? status
+            : !anyMetric
+              ? 'unavailable'
+              : metrics.reach !== null && metrics.views !== null
+                ? 'ok'
+                : 'partial';
+    return { metrics, status: resolved, error };
+}
+
+/** Story insights while the Story is live: reach, views, replies, and taps. */
+export async function fetchInstagramStoryMetrics(
+    mediaId: string,
+    accessToken: string,
+    request: GraphRequestFn = graphRequest
+): Promise<NormalizedStoryMetrics> {
+    const metrics = emptyStoryMetrics();
+    let status: SnapshotStatus = 'partial';
+    let lastError = '';
+    let succeeded = false;
+
+    const ladders = [
+        'reach,views,replies,shares,total_interactions',
+        'reach,views,replies',
+        'reach,replies',
+        'reach',
+    ];
+
+    for (const metric of ladders) {
+        try {
+            const data = await request(`${mediaId}/insights`, {
+                accessToken,
+                params: { metric },
+            });
+            metrics.reach = metricValue(data, 'reach');
+            metrics.views = metricValue(data, 'views');
+            metrics.replies = metricValue(data, 'replies');
+            metrics.shares = metricValue(data, 'shares');
+            metrics.interactions = metricValue(data, 'total_interactions');
+            succeeded = true;
+            break;
+        } catch (error) {
+            if (!(error instanceof MetaApiError)) throw error;
+            if (isTokenError(error)) throw error;
+            // Checked before permissions: both use error code 10.
+            if (isFewViewersError(error)) {
+                return finalizeStory(metrics, 'unavailable', FEW_VIEWERS_MESSAGE);
+            }
+            if (isPermissionError(error)) {
+                status = 'permission_error';
+                lastError = errorMessage(error);
+                break;
+            }
+            if (isMetricDataUnavailableError(error)) continue;
+            if (isInvalidMetricError(error)) continue;
+            if (isNetworkError(error)) status = 'unavailable';
+            lastError = errorMessage(error);
+            break;
+        }
+    }
+
+    if (succeeded) {
+        try {
+            const data = await request(`${mediaId}/insights`, {
+                accessToken,
+                params: { metric: 'navigation', breakdown: 'story_navigation_action_type' },
+            });
+            const navigation = navigationBreakdown(data);
+            if (navigation) {
+                metrics.tapsForward = navigation.tap_forward ?? 0;
+                metrics.tapsBack = navigation.tap_back ?? 0;
+                metrics.exits = navigation.tap_exit ?? 0;
+                metrics.swipesForward = navigation.swipe_forward ?? 0;
+            }
+        } catch (error) {
+            if (!(error instanceof MetaApiError)) throw error;
+            if (isTokenError(error)) throw error;
+            // Navigation is optional; keep the main numbers.
+        }
+    }
+
+    return finalizeStory(metrics, status, lastError);
+}
+
+/**
+ * Facebook Page Story insights. Meta's Story metrics are newer and thinner
+ * than post insights, so each name is tried in turn until one is accepted.
+ */
+export async function fetchFacebookStoryMetrics(
+    storyId: string,
+    pageToken: string,
+    request: GraphRequestFn = graphRequest
+): Promise<NormalizedStoryMetrics> {
+    const metrics = emptyStoryMetrics();
+    let status: SnapshotStatus = 'partial';
+    let lastError = '';
+
+    const ladders = [
+        'page_story_total_media_view_unique,post_media_view,post_total_media_view_unique',
+        'post_media_view,post_total_media_view_unique',
+        'page_story_impressions_by_story_id_unique,page_story_impressions_by_story_id',
+    ];
+
+    for (const metric of ladders) {
+        try {
+            const data = await request(`${storyId}/insights`, {
+                accessToken: pageToken,
+                params: { metric },
+            });
+            metrics.reach =
+                metricValue(data, 'page_story_total_media_view_unique') ??
+                metricValue(data, 'post_total_media_view_unique') ??
+                metricValue(data, 'page_story_impressions_by_story_id_unique');
+            metrics.views =
+                metricValue(data, 'post_media_view') ??
+                metricValue(data, 'page_story_impressions_by_story_id');
+            break;
+        } catch (error) {
+            if (!(error instanceof MetaApiError)) throw error;
+            if (isTokenError(error)) throw error;
+            if (isFewViewersError(error)) {
+                return finalizeStory(metrics, 'unavailable', FEW_VIEWERS_MESSAGE);
+            }
+            if (isPermissionError(error)) {
+                status = 'permission_error';
+                lastError = errorMessage(error);
+                break;
+            }
+            if (isMetricDataUnavailableError(error)) continue;
+            if (isInvalidMetricError(error)) continue;
+            if (isNetworkError(error)) status = 'unavailable';
+            lastError = errorMessage(error);
+            break;
+        }
+    }
+
+    return finalizeStory(metrics, status, lastError);
 }

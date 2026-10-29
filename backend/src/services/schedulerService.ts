@@ -5,8 +5,11 @@ import { User } from '../models/userModel.js';
 import { STALE_LOCK_MS } from './connectionLifecycleService.js';
 import { publishPost } from './publishService.js';
 import { nextSlotOrFallback } from './scheduleService.js';
+import { STORY_SYNC_INTERVAL_MS, syncStoryInsights } from './storySyncService.js';
 
 let running = false;
+/** When the scheduler last refreshed live Story insights. */
+let lastStorySyncAt = 0;
 let timer: NodeJS.Timeout | null = null;
 
 async function ensureSchedules(): Promise<void> {
@@ -206,10 +209,21 @@ export async function runSchedulerTick(now: Date = new Date()): Promise<void> {
         for (const connection of due) {
             await processConnection(connection._id.toString(), now);
         }
+
+        // Meta drops Story insights after 24 hours, so save them while live.
+        if (now.getTime() - lastStorySyncAt >= STORY_SYNC_INTERVAL_MS) {
+            lastStorySyncAt = now.getTime();
+            try {
+                await syncStoryInsights({ now });
+            } catch (error) {
+                console.error('[scheduler] Story insights sync failed:', error);
+            }
+        }
     } finally {
         running = false;
     }
 }
+
 
 export function startScheduler(): void {
     if (!env.scheduler.enabled || timer) return;

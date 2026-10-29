@@ -7,11 +7,11 @@ import {
     publishedPlatforms,
     storyTarget,
     type Platform,
-    type Post,
+    type StoryShareSubject,
 } from '@/lib/types';
 
 interface StoryShareModalProps {
-    post: Post | null;
+    post: StoryShareSubject | null;
     selected: Platform[];
     onToggle: (platform: Platform) => void;
     onClose: () => void;

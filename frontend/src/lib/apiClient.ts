@@ -12,6 +12,7 @@ import type {
     Platform,
     Post,
     StorageOverview,
+    StoryAnalyticsResponse,
     TextArea,
     VideoMedia,
     VideoUploadSignature,
@@ -373,6 +374,8 @@ export const analyticsApi = {
             '/analytics/monitor',
             params
         ),
+    stories: (params: Record<string, string>) =>
+        api.get<{ success: boolean } & StoryAnalyticsResponse>('/analytics/stories', params),
     posts: (params: Record<string, string>) =>
         api.get<{ success: boolean } & AnalyticsPostsResponse>(
             '/analytics/posts',

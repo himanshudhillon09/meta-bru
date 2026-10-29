@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { StatusBadge } from '@/components/Dashboards';
 import { EmptyState, ListSkeleton } from '@/components/Feedback';
+import { ShareStoryButton, StoryShareNotice, useStoryShare } from '@/components/ShareStory';
 import { Tabs } from '@/components/Tabs';
 import { postsApi } from '@/lib/apiClient';
 import {
@@ -26,6 +27,14 @@ export default function ActivityPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [filter, setFilter] = useState<FilterKey>('all');
+    // The share response is not populated; keep the Page details we have.
+    const story = useStoryShare((updated) =>
+        setPosts((current) =>
+            current.map((item) =>
+                item._id === updated._id ? { ...updated, connectionId: item.connectionId } : item
+            )
+        )
+    );
 
     const load = async () => {
         try {
@@ -71,6 +80,7 @@ export default function ActivityPage() {
                     {error}
                 </div>
             ) : null}
+            <StoryShareNotice outcome={story.outcome} onDismiss={story.clearOutcome} />
 
             <Tabs
                 label="Activity filter"
@@ -115,6 +125,14 @@ export default function ActivityPage() {
                                         <span className="text-xs text-subtle">
                                             {formatDate(post.publishedAt || post.updatedAt)}
                                         </span>
+                                        <div className="ml-auto">
+                                            <ShareStoryButton
+                                                post={post}
+                                                onOpen={story.open}
+                                                sharing={story.sharingId === post._id}
+                                                size="sm"
+                                            />
+                                        </div>
                                     </div>
 
                                     <p className="text-sm text-fg-2 whitespace-pre-wrap line-clamp-2">
@@ -185,6 +203,7 @@ export default function ActivityPage() {
                     ))}
                 </div>
             )}
+            {story.modal}
         </AppShell>
     );
 }
