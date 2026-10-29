@@ -9,12 +9,13 @@ import {
     MAX_DELETE_IDS,
 } from '../services/cloudinaryStorageService.js';
 import { getCloudinaryCredentials } from '../services/credentialService.js';
+import { previewImageText } from '../services/imageTextService.js';
 import {
     loadReelVideo,
     signVideoUpload,
 } from '../services/videoUploadService.js';
 import { AppError } from '../utils/errors.js';
-import { parseBody } from '../utils/validation.js';
+import { parseBody, textAreaSchema } from '../utils/validation.js';
 
 const deleteMediaSchema = z.object({
     assetIds: z
@@ -25,6 +26,12 @@ const deleteMediaSchema = z.object({
 
 const registerVideoSchema = z.object({
     publicId: z.string().trim().min(1).max(300),
+});
+
+const textPreviewSchema = z.object({
+    publicId: z.string().trim().min(1).max(300),
+    text: z.string().max(500),
+    textArea: textAreaSchema.optional(),
 });
 
 export async function uploadMedia(req: Request, res: Response): Promise<void> {
@@ -112,4 +119,15 @@ export async function registerVideo(req: Request, res: Response): Promise<void> 
     });
 
     res.status(201).json({ success: true, media });
+}
+
+/**
+ * Renders overlay text on one of the user's post images and returns a JPEG
+ * data URL for the Composer preview. Nothing is uploaded.
+ */
+export async function previewText(req: Request, res: Response): Promise<void> {
+    const { publicId, text, textArea } = parseBody(textPreviewSchema, req);
+    const dataUrl = await previewImageText(req.user.id, publicId, text, textArea);
+
+    res.json({ success: true, dataUrl });
 }

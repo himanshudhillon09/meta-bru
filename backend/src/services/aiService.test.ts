@@ -7,9 +7,12 @@ process.env.TOKEN_ENCRYPTION_KEY = '0123456789abcdef'.repeat(4);
 const {
     buildCaptionPrompt,
     buildImageGenerationBody,
+    buildOverlayPrompt,
     extractInlineImage,
     generateCaption,
+    generateOverlayText,
     parseCaptionResponse,
+    parseOverlayResponse,
     resolveImageModel,
 } = await import('./aiService.js');
 const { User } = await import('../models/userModel.js');
@@ -232,4 +235,55 @@ test('adds brand hashtags when the model returns none', () => {
         caption,
         'A clean caption\n\n#ScienceTech #smartphones #battery'
     );
+});
+
+test('asks for one short highlighted line in the caption language', () => {
+    const prompt = buildOverlayPrompt({
+        topic: 'Office wali bandi',
+        caption: 'Jab real life wali bandi ko pata chala...',
+        prompt: 'A surprised young man',
+        brandProfile: { niche: 'Memes', tone: 'Funny' },
+    });
+
+    assert.match(prompt, /at most 12 words/);
+    assert.match(prompt, /same language/i);
+    assert.match(prompt, /Roman/);
+    assert.match(prompt, /\*asterisks\*/);
+    assert.match(prompt, /Office wali bandi/);
+    assert.match(prompt, /Jab real life wali bandi/);
+    assert.match(prompt, /A surprised young man/);
+    assert.match(prompt, /Brand niche: Memes/);
+});
+
+test('cleans the overlay line Gemini returns', () => {
+    assert.equal(
+        parseOverlayResponse('Headline: "Real life wali bandi *ko* pata chal gaya." #meme 😂\nSecond line'),
+        'Real life wali bandi *ko* pata chal gaya'
+    );
+    assert.equal(parseOverlayResponse('“Monday mood hits different”'), 'Monday mood hits *different*');
+    assert.equal(parseOverlayResponse('   \n\n'), '');
+});
+
+test('generates an overlay line with Gemini', async () => {
+    const credentialsEnc = encryptSecret(
+        JSON.stringify({ gemini: { apiKey: 'gemini-test-key' } })
+    );
+    mock.method(User, 'findById', () => ({
+        select: async () => ({ credentialsEnc }),
+    }));
+    let body = '';
+    mock.method(globalThis, 'fetch', async (_input: string | URL | Request, init?: RequestInit) => {
+        body = typeof init?.body === 'string' ? init.body : '';
+        return new Response(
+            JSON.stringify({
+                candidates: [{ content: { parts: [{ text: 'Exam se pehle *full confidence*' }] } }],
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } }
+        );
+    });
+
+    const text = await generateOverlayText(USER_ID, { topic: 'Exams' });
+
+    assert.equal(text, 'Exam se pehle *full confidence*');
+    assert.match(body, /Exams/);
 });

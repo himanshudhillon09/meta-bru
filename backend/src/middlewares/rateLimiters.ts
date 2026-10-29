@@ -65,6 +65,19 @@ export const storageLimiter = rateLimit({
     },
 });
 
+// Composer previews refresh as the user types, so this is looser than uploads.
+export const textPreviewLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 150,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    keyGenerator: userKey,
+    message: {
+        success: false,
+        message: 'Preview limit reached. Try again in a few minutes.',
+    },
+});
+
 export const analyticsReadLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     limit: 120,

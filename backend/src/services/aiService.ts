@@ -10,6 +10,7 @@ import {
     getCloudinaryCredentials,
     getGeminiCredentials,
 } from './credentialService.js';
+import { cleanOverlayText } from './textOverlayService.js';
 
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 const FALLBACK_IMAGE_MODEL = 'gemini-2.5-flash-image';
@@ -387,6 +388,88 @@ async function loadCaptionImage(
     };
 }
 
+interface GeminiTextRequest {
+    parts: Array<{ text?: string; inlineData?: InlineImage }>;
+    temperature: number;
+    maxOutputTokens: number;
+    /** What is being written, for error messages ("caption", "image text"). */
+    label: string;
+    errorCode: string;
+    truncatedCode: string;
+}
+
+/** Sends a text generation request and returns the non-empty reply text. */
+async function requestGeminiText(
+    apiKey: string,
+    request: GeminiTextRequest
+): Promise<string> {
+    let response: Response;
+    try {
+        response = await fetch(
+            `${GEMINI_BASE}/models/${encodeURIComponent(env.gemini.textModel)}:generateContent`,
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-goog-api-key': apiKey,
+                },
+                body: JSON.stringify({
+                    contents: [{ parts: request.parts }],
+                    generationConfig: {
+                        temperature: request.temperature,
+                        maxOutputTokens: request.maxOutputTokens,
+                        ...(env.gemini.textModel.includes('flash')
+                            ? { thinkingConfig: { thinkingBudget: 0 } }
+                            : {}),
+                    },
+                }),
+                signal: AbortSignal.timeout(30_000),
+            }
+        );
+    } catch (error) {
+        throw new AppError(
+            502,
+            error instanceof Error
+                ? `Could not reach Gemini: ${error.message}`
+                : 'Could not reach Gemini',
+            request.errorCode
+        );
+    }
+
+    const data = (await response.json().catch(() => ({}))) as GeminiResponse;
+
+    if (!response.ok || data.error) {
+        throw new AppError(
+            502,
+            data.error?.message || `Gemini ${request.label} generation failed`,
+            request.errorCode
+        );
+    }
+
+    if (data.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
+        throw new AppError(
+            502,
+            `Gemini stopped before finishing the ${request.label}. Please try again.`,
+            request.truncatedCode
+        );
+    }
+
+    const rawText = data.candidates?.[0]?.content?.parts
+        ?.map((part) => part.text || '')
+        .join('')
+        .trim();
+
+    if (!rawText) {
+        throw new AppError(
+            502,
+            `Gemini returned an empty ${request.label}`,
+            'AI_EMPTY_RESPONSE'
+        );
+    }
+
+    return rawText;
+}
+
 export async function generateCaption(
     userId: string,
     input: CaptionInput
@@ -403,65 +486,14 @@ export async function generateCaption(
         });
     }
 
-    let response: Response;
-    try {
-        response = await fetch(
-            `${GEMINI_BASE}/models/${encodeURIComponent(env.gemini.textModel)}:generateContent`,
-            {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-goog-api-key': credentials.apiKey,
-                },
-                body: JSON.stringify({
-                    contents: [{ parts }],
-                    generationConfig: {
-                        temperature: 0.8,
-                        maxOutputTokens: 4096,
-                        ...(env.gemini.textModel.includes('flash')
-                            ? { thinkingConfig: { thinkingBudget: 0 } }
-                            : {}),
-                    },
-                }),
-                signal: AbortSignal.timeout(30_000),
-            }
-        );
-    } catch (error) {
-        throw new AppError(
-            502,
-            error instanceof Error
-                ? `Could not reach Gemini: ${error.message}`
-                : 'Could not reach Gemini',
-            'AI_CAPTION_FAILED'
-        );
-    }
-
-    const data = (await response.json().catch(() => ({}))) as GeminiResponse;
-
-    if (!response.ok || data.error) {
-        throw new AppError(
-            502,
-            data.error?.message || 'Gemini caption generation failed',
-            'AI_CAPTION_FAILED'
-        );
-    }
-
-    if (data.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
-        throw new AppError(
-            502,
-            'Gemini stopped before finishing the caption. Please try again.',
-            'AI_CAPTION_TRUNCATED'
-        );
-    }
-
-    const rawText = data.candidates?.[0]?.content?.parts
-        ?.map((part) => part.text || '')
-        .join('')
-        .trim();
-
-    if (!rawText) {
-        throw new AppError(502, 'Gemini returned an empty caption', 'AI_EMPTY_RESPONSE');
-    }
+    const rawText = await requestGeminiText(credentials.apiKey, {
+        parts,
+        temperature: 0.8,
+        maxOutputTokens: 4096,
+        label: 'caption',
+        errorCode: 'AI_CAPTION_FAILED',
+        truncatedCode: 'AI_CAPTION_TRUNCATED',
+    });
 
     const caption = parseCaptionResponse(rawText, input);
 
@@ -534,4 +566,86 @@ export async function generateImage(
         ...(await uploadImage(userId, prepared.buffer)),
         textArea: prepared.textArea,
     };
+}
+
+export interface OverlayTextInput {
+    topic?: string;
+    caption?: string;
+    /** The prompt the image was generated from. */
+    prompt?: string;
+    brandProfile?: BrandProfile;
+}
+
+export function buildOverlayPrompt(input: OverlayTextInput): string {
+    const profile = input.brandProfile || {};
+    const parts = [
+        'You write the short line printed in big bold letters on a social media image, like a reel or meme caption.',
+        'Write exactly one line of at most 12 words and 80 characters.',
+        'Use the same language and style as the post caption and topic. For Hindi or Hinglish, write Hinglish in Roman (English) letters, never Devanagari.',
+        'Make it punchy, relatable, and specific to this post.',
+        'Wrap the 1 to 3 most important words in *asterisks*, for example: Real life wali bandi *ko* pata chal gaya',
+        'No hashtags, no emojis, no quotation marks, and no full stop at the end. Return only the line.',
+    ];
+
+    if (profile.niche) parts.push(`Brand niche: ${profile.niche}.`);
+    if (profile.tone) parts.push(`Brand tone: ${profile.tone}.`);
+    if (profile.audience) parts.push(`Target audience: ${profile.audience}.`);
+    if (input.topic) parts.push(`Post topic: ${input.topic}`);
+    if (input.caption) parts.push(`Post caption: ${input.caption}`);
+    if (input.prompt) parts.push(`Image description: ${input.prompt}`);
+
+    return parts.join('\n');
+}
+
+/**
+ * Turns Gemini's reply into one clean overlay line: first line only, no label,
+ * quotes, hashtags, emojis, or final full stop, and at least one highlighted
+ * word.
+ */
+export function parseOverlayResponse(raw: string): string {
+    const firstLine =
+        raw
+            .split('\n')
+            .map((line) => line.trim())
+            .find((line) => line.length > 0) ?? '';
+
+    let text = firstLine
+        .replace(/^(?:headline|line|overlay|text)\s*:\s*/i, '')
+        .replace(/#[\p{L}\p{N}_]+/gu, '')
+        .replace(/["“”„‟«»]/g, '')
+        .replace(/^'+|'+$/g, '');
+
+    text = cleanOverlayText(text).replace(/[.。]+$/u, '').trim();
+    if (!text) return '';
+
+    if (!text.includes('*')) {
+        const lastSpace = text.lastIndexOf(' ');
+        text =
+            lastSpace === -1
+                ? `*${text}*`
+                : `${text.slice(0, lastSpace + 1)}*${text.slice(lastSpace + 1)}*`;
+    }
+
+    return text;
+}
+
+export async function generateOverlayText(
+    userId: string,
+    input: OverlayTextInput
+): Promise<string> {
+    const credentials = await getGeminiCredentials(userId);
+    const rawText = await requestGeminiText(credentials.apiKey, {
+        parts: [{ text: buildOverlayPrompt(input) }],
+        temperature: 0.9,
+        maxOutputTokens: 256,
+        label: 'image text',
+        errorCode: 'AI_OVERLAY_FAILED',
+        truncatedCode: 'AI_OVERLAY_TRUNCATED',
+    });
+
+    const text = parseOverlayResponse(rawText);
+    if (!text) {
+        throw new AppError(502, 'Gemini returned an empty image text', 'AI_EMPTY_RESPONSE');
+    }
+    return text;
 }
