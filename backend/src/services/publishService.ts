@@ -22,6 +22,7 @@ import {
     publishInstagramContainer,
 } from './metaService.js';
 import { Deadline, PUBLISH_RUN_MS } from './pollService.js';
+import { publishStories } from './storyService.js';
 
 export interface PublishOptions {
     /** Limit publishing to specific platforms (used when retrying only failed targets). */
@@ -400,5 +401,21 @@ export async function publishPost(
     }
 
     await post.save();
+
+    if (post.shareToStory) {
+        await publishStories(
+            {
+                post,
+                connection,
+                accessToken,
+                platforms,
+                deadline,
+                onTokenError: () =>
+                    markConnectionNeedsReauth(connection, TOKEN_ERROR_MESSAGE),
+            },
+            deps
+        );
+    }
+
     return post;
 }

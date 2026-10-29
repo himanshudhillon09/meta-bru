@@ -239,3 +239,49 @@ test('publishPost fails cleanly while Cloudinary is still preparing a reel', asy
     assert.match(String(post.targets[0]?.error), /still preparing this reel/);
     assert.doesNotMatch(String(post.targets[0]?.error), /Check the Page/);
 });
+
+test('publishPost shares a published reel to Story when asked', async () => {
+    mock.method(User, 'findById', () => metaUser());
+    const post = reelPost({ shareToStory: true });
+    const { deps, calls, containerParams } = fakeDeps();
+
+    await publishPost(post as never, reelConnection() as never, {}, deps);
+
+    assert.equal(post.status, 'published');
+    assert.deepEqual(containerParams.map((params) => params.media_type), ['REELS', 'STORIES']);
+    assert.ok(calls.some((call) => call.startsWith('wait:') && call.includes('du_60')));
+    const storyTargets = post.storyTargets as Array<Record<string, unknown>>;
+    assert.equal(storyTargets[0]?.platform, 'instagram');
+    assert.equal(storyTargets[0]?.status, 'published');
+});
+
+test('publishPost leaves the post published when its Story fails', async () => {
+    mock.method(User, 'findById', () => metaUser());
+    const post = reelPost({ shareToStory: true });
+    const { deps } = fakeDeps();
+    deps.instagram.createContainer = async (_igUserId, _token, params) => {
+        if (params.media_type === 'STORIES') {
+            throw new Error('Story rejected');
+        }
+        return 'container-1';
+    };
+
+    await publishPost(post as never, reelConnection() as never, {}, deps);
+
+    assert.equal(post.status, 'published');
+    assert.equal(post.lastError, '');
+    const storyTargets = post.storyTargets as Array<Record<string, unknown>>;
+    assert.equal(storyTargets[0]?.status, 'failed');
+    assert.equal(storyTargets[0]?.error, 'Story rejected');
+});
+
+test('publishPost skips Stories when shareToStory is off', async () => {
+    mock.method(User, 'findById', () => metaUser());
+    const post = reelPost();
+    const { deps, containerParams } = fakeDeps();
+
+    await publishPost(post as never, reelConnection() as never, {}, deps);
+
+    assert.deepEqual(containerParams.map((params) => params.media_type), ['REELS']);
+    assert.deepEqual(post.storyTargets, []);
+});
