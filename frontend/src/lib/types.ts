@@ -337,23 +337,35 @@ export function postThumbnailUrl(
     return isReel(post) ? post.mediaCoverUrl || '' : post.mediaUrl;
 }
 
-export function publishedPlatforms(post: Pick<Post, 'targets'>): Platform[] {
+type TargetState = Pick<PostTarget, 'platform' | 'status'>;
+type StoryState = Pick<PostTarget, 'platform' | 'status' | 'error'>;
+
+/** What sharing to Story needs from a post; analytics rows have the same shape. */
+export interface StoryShareSubject {
+    _id: string;
+    mediaType?: MediaType;
+    targets: TargetState[];
+    storyTargets?: StoryState[];
+}
+
+export function publishedPlatforms(post: { targets: TargetState[] }): Platform[] {
     return post.targets
         .filter((target) => target.status === 'published')
         .map((target) => target.platform);
 }
 
-export function storyTarget(
-    post: Pick<Post, 'storyTargets'>,
+export function storyTarget<T extends StoryState>(
+    post: { storyTargets?: T[] },
     platform: Platform
-): PostTarget | undefined {
+): T | undefined {
     return (post.storyTargets ?? []).find((target) => target.platform === platform);
 }
 
 /** Published platforms whose Story has not published yet. */
-export function unsharedStoryPlatforms(
-    post: Pick<Post, 'targets' | 'storyTargets'>
-): Platform[] {
+export function unsharedStoryPlatforms(post: {
+    targets: TargetState[];
+    storyTargets?: StoryState[];
+}): Platform[] {
     return publishedPlatforms(post).filter(
         (platform) => storyTarget(post, platform)?.status !== 'published'
     );
@@ -469,9 +481,60 @@ export interface AnalyticsOverview {
     totals: AnalyticsSummary;
     byPlatform: { facebook: AnalyticsSummary; instagram: AnalyticsSummary };
     byContentType?: { image: AnalyticsSummary; reel: AnalyticsSummary };
+    stories?: StorySummary;
     activity: AnalyticsActivityBucket[];
     bestTimes: AnalyticsBestTime[];
     sync: AnalyticsSyncState;
+}
+
+export interface StoryMetrics {
+    reach: number | null;
+    views: number | null;
+    replies: number | null;
+    shares: number | null;
+    interactions: number | null;
+    tapsForward: number | null;
+    tapsBack: number | null;
+    exits: number | null;
+    swipesForward: number | null;
+}
+
+export interface StorySummary {
+    stories: number;
+    /** Stories still inside Meta's 24-hour window. */
+    live: number;
+    reach: number;
+    views: number;
+    replies: number;
+    shares: number;
+    interactions: number;
+    tapsForward: number;
+    tapsBack: number;
+    exits: number;
+    swipesForward: number;
+    /** Exits as a share of views, 0-100. Lower is better. */
+    exitRate: number | null;
+}
+
+export interface StoryRow {
+    postId: string;
+    caption: string;
+    mediaUrl: string;
+    mediaType: MediaType;
+    platform: Platform;
+    pageName: string;
+    publishedAt: string;
+    expiresAt: string;
+    live: boolean;
+    metrics: StoryMetrics | null;
+    metricsAt: string | null;
+    status: 'ok' | 'partial' | 'unavailable' | 'permission_error' | 'waiting';
+    error: string;
+}
+
+export interface StoryAnalyticsResponse {
+    summary: StorySummary;
+    stories: StoryRow[];
 }
 
 export interface AnalyticsMonitorPoint {
@@ -526,6 +589,8 @@ export interface AnalyticsPost {
     mediaType?: MediaType;
     /** Reel length in seconds. */
     mediaDuration?: number | null;
+    /** Story shares of this post. */
+    storyTargets?: Array<{ platform: Platform; status: TargetStatus; error: string }>;
     status: PostStatus;
     connection: {
         id: string;

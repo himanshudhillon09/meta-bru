@@ -4,6 +4,7 @@ import {
     listPosts,
     monitor,
     overview,
+    stories,
     sync,
     tips,
 } from '../controllers/analyticsController.js';
@@ -20,6 +21,7 @@ router.use(protect);
 router.get('/overview', analyticsReadLimiter, overview);
 router.get('/monitor', analyticsReadLimiter, monitor);
 router.get('/posts', analyticsReadLimiter, listPosts);
+router.get('/stories', analyticsReadLimiter, stories);
 router.post('/sync', analyticsSyncLimiter, sync);
 router.get('/tips', analyticsReadLimiter, tips);
 router.post('/tips', aiLimiter, generateTips);

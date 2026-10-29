@@ -11,6 +11,8 @@ import Link from 'next/link';
 import { AppShell } from '@/components/AppShell';
 import { AnalyticsFormatComparison } from '@/components/AnalyticsFormatComparison';
 import { AnalyticsPostCard } from '@/components/AnalyticsPostCard';
+import { AnalyticsStories, StorySummaryCard } from '@/components/AnalyticsStories';
+import { StoryShareNotice, useStoryShare } from '@/components/ShareStory';
 import { AnalyticsTipCard } from '@/components/AnalyticsTipCard';
 import {
     AnalyticsBarChart,
@@ -32,15 +34,17 @@ import {
     type AnalyticsPost,
     type AnalyticsTipsResponse,
     type SocialConnection,
+    type StoryAnalyticsResponse,
 } from '@/lib/types';
 
-type TabKey = 'overview' | 'monitor' | 'tracker' | 'ai';
+type TabKey = 'overview' | 'monitor' | 'tracker' | 'stories' | 'ai';
 type RangeKey = '7' | '30' | '60' | '90' | 'custom';
 
 const TABS: Array<{ key: TabKey; label: string }> = [
     { key: 'overview', label: 'Overview' },
     { key: 'monitor', label: 'Live monitor' },
     { key: 'tracker', label: 'Post tracker' },
+    { key: 'stories', label: 'Stories' },
     { key: 'ai', label: 'AI analysis' },
 ];
 
@@ -166,6 +170,8 @@ export default function AnalyticsPage() {
     );
     const [trackerPosts, setTrackerPosts] = useState<AnalyticsPost[]>([]);
     const [trackerLoading, setTrackerLoading] = useState(false);
+    const [storyData, setStoryData] = useState<StoryAnalyticsResponse | null>(null);
+    const [storiesLoading, setStoriesLoading] = useState(false);
     const [selectedDay, setSelectedDay] = useState<string | null>(null);
     const [aiLoading, setAiLoading] = useState(false);
     const [aiError, setAiError] = useState('');
@@ -225,8 +231,22 @@ export default function AnalyticsPage() {
         setAiError('');
         setMonitor(null);
         setTrackerPosts([]);
+        setStoryData(null);
         setNotice('');
     }, [params]);
+
+    // A Story shared from a post card updates that post's Story state in place.
+    const story = useStoryShare((updated) => {
+        const storyTargets = (updated.storyTargets ?? []).map((target) => ({
+            platform: target.platform,
+            status: target.status,
+            error: target.error,
+        }));
+        const apply = (list: AnalyticsPost[]) =>
+            list.map((item) => (item.postId === updated._id ? { ...item, storyTargets } : item));
+        setPosts(apply);
+        setTrackerPosts(apply);
+    });
 
     const loadAll = useCallback(
         async (showSpinner = false) => {
@@ -351,6 +371,22 @@ export default function AnalyticsPage() {
         if (tab === 'tracker') void loadTracker();
     }, [tab, loadTracker]);
 
+    const loadStories = useCallback(async () => {
+        setStoriesLoading(true);
+        try {
+            const data = await analyticsApi.stories(params);
+            setStoryData(data);
+        } catch (err) {
+            setError(typeof err === 'string' ? err : 'Could not load Story insights');
+        } finally {
+            setStoriesLoading(false);
+        }
+    }, [params]);
+
+    useEffect(() => {
+        if (tab === 'stories') void loadStories();
+    }, [tab, loadStories]);
+
     useEffect(() => {
         if (tab === 'tracker') void loadConnections();
     }, [tab, loadConnections]);
@@ -402,6 +438,8 @@ export default function AnalyticsPage() {
                 } else if (tab === 'tracker') {
                     await loadTracker();
                     void loadConnections();
+                } else if (tab === 'stories') {
+                    await loadStories();
                 } else {
                     await loadAll();
                 }
@@ -420,7 +458,7 @@ export default function AnalyticsPage() {
                 setSyncing(false);
             }
         },
-        [params, tab, loadMonitor, loadTracker, loadConnections, loadAll]
+        [params, tab, loadMonitor, loadTracker, loadConnections, loadStories, loadAll]
     );
 
     // Fetch fresh insights from Meta once per filter selection when the stored
@@ -529,6 +567,7 @@ export default function AnalyticsPage() {
                     {notice}
                 </div>
             ) : null}
+            <StoryShareNotice outcome={story.outcome} onDismiss={story.clearOutcome} />
             {error ? (
                 <div className="animate-fade-up mb-5 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
                     {error}
@@ -737,6 +776,12 @@ export default function AnalyticsPage() {
                             filter={contentType}
                         />
                     ) : null}
+                    {overview.stories ? (
+                        <StorySummaryCard
+                            summary={overview.stories}
+                            onOpen={() => setTab('stories')}
+                        />
+                    ) : null}
                     <section className="rounded-2xl border border-line bg-surface p-5">
                         <h2 className="mb-4 text-sm font-bold text-fg">
                             Facebook vs Instagram
@@ -908,6 +953,8 @@ export default function AnalyticsPage() {
                                         key={post.postId}
                                         post={post}
                                         now={now}
+                                        onShareStory={story.open}
+                                        sharing={story.sharingId === post.postId}
                                     />
                                 ))}
                             </div>
@@ -945,6 +992,8 @@ export default function AnalyticsPage() {
                             : 'Turn on the live monitor to build engagement history.'}
                     </div>
                 )
+            ) : tab === 'stories' ? (
+                <AnalyticsStories data={storyData} loading={storiesLoading} now={now} />
             ) : tab === 'tracker' ? (
                 <PostTrackerCalendar
                     month={trackerMonth}
@@ -975,6 +1024,7 @@ export default function AnalyticsPage() {
                 </div>
             )}
             </div>
+            {story.modal}
         </AppShell>
     );
 }

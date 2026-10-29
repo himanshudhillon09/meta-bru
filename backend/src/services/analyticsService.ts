@@ -42,6 +42,8 @@ export interface PublishedTarget {
     videoId: string;
     sharedToStory: boolean;
     hasTextOverlay: boolean;
+    /** Story shares of this post, for the Share to Story button. */
+    storyTargets: Array<{ platform: Platform; status: string; error: string }>;
     /** When the Page token was last stored by a Meta login, if known. */
     tokenUpdatedAt: Date | null;
     /** Permissions Meta granted at that login. Empty when unknown. */
@@ -509,7 +511,7 @@ export function buildPublishedTargetsQuery(
 }
 
 /** Older posts have no mediaType and are images. */
-function mediaTypeMatch(mediaType: MediaType | undefined): Record<string, unknown> {
+export function mediaTypeMatch(mediaType: MediaType | undefined): Record<string, unknown> {
     if (mediaType === 'reel') return { mediaType: 'reel' };
     if (mediaType === 'image') return { mediaType: { $ne: 'reel' } };
     return {};
@@ -535,7 +537,7 @@ interface PostLike {
         creationId?: string;
         publishedAt?: Date | null;
     }>;
-    storyTargets?: Array<{ platform: Platform; status: string }>;
+    storyTargets?: Array<{ platform: Platform; status: string; error?: string }>;
 }
 
 interface ConnectionLike {
@@ -608,6 +610,11 @@ function targetsFromPost(
                 (story) => story.platform === target.platform && story.status === 'published'
             ),
             hasTextOverlay: Boolean(post.hasTextOverlay),
+            storyTargets: (post.storyTargets ?? []).map((story) => ({
+                platform: story.platform,
+                status: story.status,
+                error: story.error || '',
+            })),
             tokenUpdatedAt: connection?.tokenUpdatedAt ?? null,
             grantedScopes: connection?.grantedScopes ?? [],
         });
@@ -1173,6 +1180,7 @@ export async function getAnalyticsPosts(
             mediaUrl: postTargets[0]?.mediaUrl || '',
             mediaType: postTargets[0]?.mediaType || 'image',
             mediaDuration: postTargets[0]?.mediaDuration ?? null,
+            storyTargets: postTargets[0]?.storyTargets ?? [],
             status: postTargets[0]?.postStatus || 'published',
             connection: {
                 id: postTargets[0]?.connectionId || '',
@@ -1259,6 +1267,8 @@ export function buildRuleBasedTips(input: {
     activity: ActivityBucket[];
     permissionErrors: Array<{ pageName: string; reconnectRequired?: boolean }>;
     posts: Array<{ caption: string; mediaType: MediaType; engagementRate: number | null }>;
+    /** Story totals for the same range. */
+    stories?: { stories: number; exitRate: number | null };
     granularity: 'day' | 'week';
 }): RuleBasedTip[] {
     const tips: RuleBasedTip[] = [];
@@ -1415,6 +1425,32 @@ export function buildRuleBasedTips(input: {
                 idea: null,
             });
         }
+    }
+
+    // Stories give each post a second chance with followers.
+    const stories = input.stories;
+    if (stories && input.summary.posts >= 3 && stories.stories === 0) {
+        tips.push({
+            id: 'stories',
+            title: 'Share your posts to Stories',
+            body: `None of your ${input.summary.posts} posts in this range were shared to Stories. A Story puts each post in front of your followers a second time.`,
+            severity: 'info',
+            category: 'growth',
+            actionLabel: 'Open activity',
+            actionHref: '/activity',
+            idea: null,
+        });
+    } else if (stories && stories.exitRate !== null && stories.exitRate >= 20) {
+        tips.push({
+            id: 'stories',
+            title: 'People leave your Stories early',
+            body: `${stories.exitRate}% of Story views ended with an exit. Share your strongest posts and reels to Stories, and keep text large and readable.`,
+            severity: 'warning',
+            category: 'content',
+            actionLabel: 'Open activity',
+            actionHref: '/activity',
+            idea: null,
+        });
     }
 
     const topPost = [...input.posts]
@@ -1607,6 +1643,8 @@ export function buildAnalyticsAiPayload(input: {
     summary: AnalyticsSummary;
     byPlatform: { facebook: AnalyticsSummary; instagram: AnalyticsSummary };
     byContentType: { image: AnalyticsSummary; reel: AnalyticsSummary };
+    /** Story totals (reach, views, replies, taps, exit rate) for the range. */
+    stories?: object;
     activity: ActivityBucket[];
     bestTimes: BestTimeBucket[];
     permissionErrors: Array<{ pageName: string }>;
@@ -1631,6 +1669,7 @@ export function buildAnalyticsAiPayload(input: {
         summary: input.summary,
         byPlatform: input.byPlatform,
         byContentType: input.byContentType,
+        stories: input.stories ?? null,
         activity: input.activity.filter((bucket) => bucket.posts > 0),
         publishingFrequency: publishingFrequency(input.activity, input.summary.posts),
         longestGapDays: longestGapDays(input.activity, input.range.granularity),

@@ -22,7 +22,11 @@ Page and linked Instagram Business account.
   Cloudinary account, then publish to Facebook Reels (3–90 seconds) and
   Instagram Reels (up to 15 minutes) from the same queue as image posts
 - Story sharing: share any published post or reel to Facebook and Instagram
-  Stories, automatically after publishing or on demand from Queue
+  Stories, automatically after publishing or on demand from Overview, Activity,
+  Queue, or Analytics
+- Story analytics: reach, views, replies, shares, and how viewers tapped
+  forward, back, or out. Meta only reports Story insights for 24 hours, so the
+  scheduler saves them every 30 minutes while a Story is live
 - Deleting an unpublished post also removes its Cloudinary file when no other
   post uses it
 - Per-connection daily time and IANA timezone
@@ -42,8 +46,7 @@ Page and linked Instagram Business account.
   content, consistency, and growth, each with a ready post or reel idea that
   opens in the Composer or Reels page
 
-Carousels, long videos over 100 MB, Story analytics, and billing are
-intentionally out of scope.
+Carousels, long videos over 100 MB, and billing are intentionally out of scope.
 
 ## Structure
 

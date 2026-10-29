@@ -23,6 +23,8 @@ import {
     type AnalyticsRange,
 } from '../services/analyticsDateService.js';
 import { syncAnalytics } from '../services/analyticsSyncService.js';
+import { getStoryAnalytics } from '../services/storyAnalyticsService.js';
+import { syncStoryInsights } from '../services/storySyncService.js';
 import {
     generateAnalyticsAiInsight,
     getCachedAnalyticsAiInsight,
@@ -94,6 +96,7 @@ async function buildTipsContext(
     const activity = buildActivity(targets, latest, range);
     const bestTimes = buildBestTimes(targets, latest);
     const permissionErrors = uniquePermissionErrors(targets, latest);
+    const stories = (await getStoryAnalytics(userId, range, filters)).summary;
     const posts = targets.map((target) => ({
         caption: target.caption,
         mediaType: target.mediaType,
@@ -109,6 +112,7 @@ async function buildTipsContext(
         activity,
         permissionErrors,
         posts,
+        stories,
         granularity: range.granularity,
     });
     const scopeName = filters.connectionId
@@ -120,6 +124,7 @@ async function buildTipsContext(
         summary,
         byPlatform,
         byContentType,
+        stories,
         activity,
         bestTimes,
         permissionErrors,
@@ -147,8 +152,11 @@ async function buildTipsContext(
 export async function overview(req: Request, res: Response): Promise<void> {
     const input = parseQuery(rangeQuerySchema, req);
     const { range, filters } = rangeAndFilters(input);
-    const data = await getAnalyticsOverview(req.user!.id, range, filters);
-    res.json({ success: true, ...data });
+    const [data, stories] = await Promise.all([
+        getAnalyticsOverview(req.user!.id, range, filters),
+        getStoryAnalytics(req.user!.id, range, filters),
+    ]);
+    res.json({ success: true, ...data, stories: stories.summary });
 }
 
 export async function monitor(req: Request, res: Response): Promise<void> {
@@ -174,7 +182,18 @@ export async function listPosts(req: Request, res: Response): Promise<void> {
 export async function sync(req: Request, res: Response): Promise<void> {
     const input = parseBody(syncBodySchema, req);
     const { range, filters } = rangeAndFilters(input);
-    const data = await syncAnalytics(req.user!.id, range, filters, input.mode);
+    const [data, stories] = await Promise.all([
+        syncAnalytics(req.user!.id, range, filters, input.mode),
+        // Live Stories are refreshed too, inside Meta's 24-hour window.
+        syncStoryInsights({ userId: req.user!.id }),
+    ]);
+    res.json({ success: true, ...data, stories });
+}
+
+export async function stories(req: Request, res: Response): Promise<void> {
+    const input = parseQuery(rangeQuerySchema, req);
+    const { range, filters } = rangeAndFilters(input);
+    const data = await getStoryAnalytics(req.user!.id, range, filters);
     res.json({ success: true, ...data });
 }
 
