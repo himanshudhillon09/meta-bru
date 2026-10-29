@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AppShell } from '@/components/AppShell';
+import { ShareToStoryToggle } from '@/components/ShareToStoryToggle';
 import { useAuth } from '@/context/AuthContext';
 import { aiApi, connectionsApi, mediaApi, postsApi } from '@/lib/apiClient';
 import type { MediaAsset, SocialConnection } from '@/lib/types';
@@ -34,6 +35,7 @@ interface ComposerDraft {
     media: MediaAsset | null;
     facebook: boolean;
     instagram: boolean;
+    shareToStory: boolean;
 }
 
 export default function ComposerPage() {
@@ -48,6 +50,7 @@ export default function ComposerPage() {
     const [media, setMedia] = useState<MediaAsset | null>(null);
     const [facebook, setFacebook] = useState(true);
     const [instagram, setInstagram] = useState(false);
+    const [shareToStory, setShareToStory] = useState(false);
     const [loading, setLoading] = useState(true);
     const [uploading, setUploading] = useState(false);
     const [drafting, setDrafting] = useState(false);
@@ -75,6 +78,7 @@ export default function ComposerPage() {
             setMedia(null);
             setFacebook(true);
             setInstagram(false);
+            setShareToStory(false);
         }
 
         try {
@@ -107,6 +111,9 @@ export default function ComposerPage() {
                 }
                 if (typeof draft.instagram === 'boolean') {
                     setInstagram(draft.instagram);
+                }
+                if (typeof draft.shareToStory === 'boolean') {
+                    setShareToStory(draft.shareToStory);
                 }
             }
         } catch {
@@ -180,6 +187,7 @@ export default function ComposerPage() {
             media,
             facebook,
             instagram,
+            shareToStory,
         };
 
         try {
@@ -197,6 +205,7 @@ export default function ComposerPage() {
         media,
         facebook,
         instagram,
+        shareToStory,
     ]);
 
     const selectedConnection = useMemo(
@@ -310,6 +319,7 @@ export default function ComposerPage() {
                 mediaJpegUrl: media.jpegUrl || '',
                 mediaPublicId: media.publicId,
                 platforms: { facebook, instagram },
+                shareToStory,
                 action,
             });
 
@@ -463,6 +473,12 @@ export default function ComposerPage() {
                                     Instagram
                                 </button>
                             </div>
+
+                            <ShareToStoryToggle
+                                checked={shareToStory}
+                                onChange={setShareToStory}
+                                detail="Shares the image as a 9:16 Story on each platform once the post publishes."
+                            />
                         </section>
 
                         <section className="rounded-3xl border border-white/5 bg-slate-900/40 p-6 sm:p-8 shadow-xl">
