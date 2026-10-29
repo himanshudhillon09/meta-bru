@@ -9,7 +9,9 @@ const {
     buildImageGenerationBody,
     buildOverlayPrompt,
     extractInlineImage,
+    describeGeminiError,
     generateCaption,
+    generateImage,
     generateOverlayText,
     parseCaptionResponse,
     parseOverlayResponse,
@@ -286,4 +288,97 @@ test('generates an overlay line with Gemini', async () => {
 
     assert.equal(text, 'Exam se pehle *full confidence*');
     assert.match(body, /Exams/);
+});
+
+const FREE_TIER_IMAGE_ERROR = {
+    error: {
+        code: 429,
+        status: 'RESOURCE_EXHAUSTED',
+        message:
+            'You exceeded your current quota, please check your plan and billing details. * Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-2.5-flash-preview-image. Please retry in 20h1m4.388614383s.',
+        details: [
+            {
+                '@type': 'type.googleapis.com/google.rpc.QuotaFailure',
+                violations: [
+                    {
+                        quotaMetric: 'generativelanguage.googleapis.com/generate_content_free_tier_requests',
+                        quotaId: 'GenerateRequestsPerDayPerProjectPerModel-FreeTier',
+                    },
+                ],
+            },
+            { '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '72064s' },
+        ],
+    },
+};
+
+test('explains that free-tier keys cannot generate images', () => {
+    const error = describeGeminiError(429, FREE_TIER_IMAGE_ERROR, 'image');
+
+    assert.equal(error.code, 'AI_IMAGE_NEEDS_BILLING');
+    assert.equal(error.statusCode, 402);
+    assert.match(error.message, /free tier/);
+    assert.match(error.message, /billing/);
+    assert.doesNotMatch(error.message, /https?:\/\//);
+    assert.doesNotMatch(error.message, /retry in/i);
+});
+
+test('reports an ordinary rate limit with a readable wait', () => {
+    const error = describeGeminiError(
+        429,
+        {
+            error: {
+                code: 429,
+                status: 'RESOURCE_EXHAUSTED',
+                message: 'Quota exceeded for metric: requests per minute, limit: 10. Please retry in 41.2s.',
+                details: [{ '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '42s' }],
+            },
+        },
+        'caption'
+    );
+
+    assert.equal(error.code, 'AI_RATE_LIMITED');
+    assert.equal(error.statusCode, 429);
+    assert.match(error.message, /about 1 minute/);
+});
+
+test('turns an invalid key into a Profile hint', () => {
+    const error = describeGeminiError(
+        400,
+        { error: { code: 400, status: 'INVALID_ARGUMENT', message: 'API key not valid. Please pass a valid API key.' } },
+        'image'
+    );
+
+    assert.equal(error.code, 'AI_KEY_INVALID');
+    assert.match(error.message, /Profile/);
+});
+
+test('keeps other Gemini errors as they are', () => {
+    const error = describeGeminiError(
+        500,
+        { error: { code: 500, status: 'INTERNAL', message: 'Internal error encountered.' } },
+        'caption'
+    );
+
+    assert.equal(error.code, 'AI_CAPTION_FAILED');
+    assert.equal(error.message, 'Internal error encountered.');
+});
+
+test('generateImage returns the billing explanation from Gemini', async () => {
+    const credentialsEnc = encryptSecret(
+        JSON.stringify({ gemini: { apiKey: 'gemini-test-key' } })
+    );
+    mock.method(User, 'findById', () => ({
+        select: async () => ({ credentialsEnc }),
+    }));
+    mock.method(globalThis, 'fetch', async () =>
+        new Response(JSON.stringify(FREE_TIER_IMAGE_ERROR), {
+            status: 429,
+            headers: { 'content-type': 'application/json' },
+        })
+    );
+
+    await assert.rejects(
+        () => generateImage(USER_ID, 'A robot reading a newspaper'),
+        (error: unknown) => (error as { code?: string }).code === 'AI_IMAGE_NEEDS_BILLING'
+    );
 });

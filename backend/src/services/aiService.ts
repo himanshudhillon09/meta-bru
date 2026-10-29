@@ -48,7 +48,112 @@ interface GeminiResponse {
         content?: { parts?: GeminiPart[] };
         finishReason?: string;
     }>;
-    error?: { message?: string };
+    error?: GeminiErrorBody;
+}
+
+interface GeminiErrorBody {
+    code?: number;
+    status?: string;
+    message?: string;
+    details?: Array<{
+        '@type'?: string;
+        retryDelay?: string;
+        violations?: Array<{ quotaMetric?: string; quotaId?: string }>;
+    }>;
+}
+
+export type GeminiTask = 'image' | 'caption' | 'image text';
+
+const GEMINI_FAILURE_CODES: Record<GeminiTask, string> = {
+    image: 'AI_IMAGE_FAILED',
+    caption: 'AI_CAPTION_FAILED',
+    'image text': 'AI_OVERLAY_FAILED',
+};
+
+const FREE_TIER = /free_tier|FreeTier/i;
+
+/** True when the key is on the free tier and Google allows it none of this model. */
+function isFreeTierBlocked(error: GeminiErrorBody): boolean {
+    const message = error.message ?? '';
+    const violations = (error.details ?? []).flatMap((detail) => detail.violations ?? []);
+    const freeTier =
+        FREE_TIER.test(message) ||
+        violations.some((violation) =>
+            FREE_TIER.test(`${violation.quotaMetric ?? ''} ${violation.quotaId ?? ''}`)
+        );
+    return freeTier && /limit:\s*0\b/.test(message);
+}
+
+function retrySeconds(error: GeminiErrorBody): number | null {
+    const delay = (error.details ?? []).find((detail) => detail.retryDelay)?.retryDelay;
+    const fromDetails = delay ? Number.parseFloat(delay) : Number.NaN;
+    if (Number.isFinite(fromDetails)) return fromDetails;
+
+    const match = /retry in (?:(\d+)h)?(?:(\d+)m)?(?:([\d.]+)s)?/i.exec(error.message ?? '');
+    if (!match || !(match[1] || match[2] || match[3])) return null;
+    return (
+        Number(match[1] ?? 0) * 3600 + Number(match[2] ?? 0) * 60 + Number(match[3] ?? 0)
+    );
+}
+
+function readableWait(seconds: number): string {
+    const minutes = Math.max(1, Math.round(seconds / 60));
+    if (minutes < 60) return `about ${minutes} minute${minutes === 1 ? '' : 's'}`;
+    const hours = Math.round(minutes / 60);
+    return `about ${hours} hour${hours === 1 ? '' : 's'}`;
+}
+
+/**
+ * Turns a Gemini error response into a short message the user can act on.
+ * Google's quota errors are long and point at the wrong fix: a free-tier key
+ * is told to "retry in 20h" for an image model whose free limit is 0.
+ */
+export function describeGeminiError(
+    httpStatus: number,
+    payload: unknown,
+    task: GeminiTask
+): AppError {
+    const error = (payload as { error?: GeminiErrorBody } | null)?.error ?? {};
+    const message = error.message ?? '';
+
+    if (httpStatus === 429 || error.status === 'RESOURCE_EXHAUSTED') {
+        if (isFreeTierBlocked(error)) {
+            return task === 'image'
+                ? new AppError(
+                      402,
+                      "Your Gemini API key is on Google's free tier, which can't generate images. Turn on billing for the key's project in Google AI Studio (images cost about $0.03–0.04 each), then try again.",
+                      'AI_IMAGE_NEEDS_BILLING'
+                  )
+                : new AppError(
+                      402,
+                      "Your Gemini API key is on Google's free tier, which doesn't include this model. Turn on billing for the key's project in Google AI Studio, then try again.",
+                      'AI_NEEDS_BILLING'
+                  );
+        }
+
+        const seconds = retrySeconds(error);
+        return new AppError(
+            429,
+            `Your Gemini API key has hit its usage limit. Try again in ${
+                seconds === null ? 'a few minutes' : readableWait(seconds)
+            }, or raise the limit in Google AI Studio.`,
+            'AI_RATE_LIMITED'
+        );
+    }
+
+    if (/API key not valid|API_KEY_INVALID/i.test(message)) {
+        return new AppError(
+            400,
+            'Gemini rejected your API key. Check the Gemini key under Profile.',
+            'AI_KEY_INVALID'
+        );
+    }
+
+    return new AppError(
+        502,
+        message || `Gemini ${task} generation failed`,
+        GEMINI_FAILURE_CODES[task]
+    );
 }
 
 let warnedAboutRetiredImageModel = false;
@@ -392,8 +497,8 @@ interface GeminiTextRequest {
     parts: Array<{ text?: string; inlineData?: InlineImage }>;
     temperature: number;
     maxOutputTokens: number;
-    /** What is being written, for error messages ("caption", "image text"). */
-    label: string;
+    /** What is being written, for error messages. */
+    label: Exclude<GeminiTask, 'image'>;
     errorCode: string;
     truncatedCode: string;
 }
@@ -439,11 +544,7 @@ async function requestGeminiText(
     const data = (await response.json().catch(() => ({}))) as GeminiResponse;
 
     if (!response.ok || data.error) {
-        throw new AppError(
-            502,
-            data.error?.message || `Gemini ${request.label} generation failed`,
-            request.errorCode
-        );
+        throw describeGeminiError(response.status, data, request.label);
     }
 
     if (data.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
@@ -538,11 +639,7 @@ export async function generateImage(
     const data = (await response.json().catch(() => ({}))) as GeminiResponse;
 
     if (!response.ok || data.error) {
-        throw new AppError(
-            502,
-            data.error?.message || 'Gemini image generation failed',
-            'AI_IMAGE_FAILED'
-        );
+        throw describeGeminiError(response.status, data, 'image');
     }
 
     const image = extractInlineImage(data);
