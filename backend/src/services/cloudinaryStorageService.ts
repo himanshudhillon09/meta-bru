@@ -5,6 +5,7 @@ import {
     getCloudinaryCredentials,
     type CloudinaryCredentials,
 } from './credentialService.js';
+import { reelCoverUrl } from './mediaDerivativeService.js';
 
 const FOLDER_ROOT = 'meta-bru';
 const MAX_ASSETS = 2000;
@@ -21,6 +22,8 @@ const PROTECTED_POST_STATUSES: ReadonlySet<PostStatus> = new Set([
 
 export type DuplicateMatch = 'exact' | 'likely' | '';
 
+export type MediaResourceType = 'image' | 'video';
+
 export interface StoragePostUsage {
     id: string;
     status: PostStatus;
@@ -33,6 +36,9 @@ export interface StorageAssetBase {
     assetId: string;
     publicId: string;
     assetFolder: string;
+    resourceType: MediaResourceType;
+    /** Video length in seconds; 0 for images. */
+    duration: number;
     url: string;
     secureUrl: string;
     thumbnailUrl: string;
@@ -112,6 +118,8 @@ interface RawAsset {
     asset_id?: unknown;
     public_id?: unknown;
     asset_folder?: unknown;
+    resource_type?: unknown;
+    duration?: unknown;
     url?: unknown;
     secure_url?: unknown;
     format?: unknown;
@@ -347,15 +355,23 @@ export function normalizeAsset(
 
     if (!publicId || !assetId) return null;
 
+    const resourceType: MediaResourceType =
+        raw.resource_type === 'video' ? 'video' : 'image';
+
     return {
         assetId,
         publicId,
         assetFolder:
             typeof raw.asset_folder === 'string' ? raw.asset_folder : '',
+        resourceType,
+        duration: numberOrZero(raw.duration),
         url: typeof raw.url === 'string' ? raw.url : '',
         secureUrl:
             typeof raw.secure_url === 'string' ? raw.secure_url : '',
-        thumbnailUrl: thumbnailUrlFor(cloudName, publicId),
+        thumbnailUrl:
+            resourceType === 'video'
+                ? reelCoverUrl(cloudName, publicId)
+                : thumbnailUrlFor(cloudName, publicId),
         format: typeof raw.format === 'string' ? raw.format : '',
         width: numberOrZero(raw.width),
         height: numberOrZero(raw.height),
@@ -394,7 +410,7 @@ async function searchUserAssets(
     includeImageAnalysis: boolean
 ): Promise<AssetListResult> {
     const folder = userFolder(userId);
-    const expression = `(public_id:${folder}/* OR asset_folder=${folder}) AND resource_type:image AND type:upload`;
+    const expression = `(public_id:${folder}/* OR asset_folder=${folder}) AND (resource_type:image OR resource_type:video) AND type:upload`;
     const assets: StorageAssetBase[] = [];
     let cursor = '';
     let truncated = false;
@@ -483,33 +499,39 @@ async function listUserAssetsByPrefix(
 ): Promise<AssetListResult> {
     const prefix = userFolderPrefix(userId);
     const assets: StorageAssetBase[] = [];
-    let cursor = '';
     let truncated = false;
 
-    do {
-        const options: Record<string, unknown> = {
-            ...credentialsOptions(credentials),
-            resource_type: 'image',
-            type: 'upload',
-            prefix,
-            max_results: 500,
-        };
-        if (cursor) options.next_cursor = cursor;
+    // The Admin API lists one resource type per call.
+    for (const resourceType of ['image', 'video'] as const) {
+        let cursor = '';
 
-        const raw = await cloudinary.api.resources(options);
-        const page = normalizePage(raw, credentials.cloudName);
-        assets.push(
-            ...page.assets.filter((asset) =>
-                isAssetInUserFolder(asset, userId)
-            )
-        );
-        cursor = page.nextCursor;
+        do {
+            const options: Record<string, unknown> = {
+                ...credentialsOptions(credentials),
+                resource_type: resourceType,
+                type: 'upload',
+                prefix,
+                max_results: 500,
+            };
+            if (cursor) options.next_cursor = cursor;
 
-        if (assets.length >= cap) {
-            truncated = Boolean(cursor);
-            break;
-        }
-    } while (cursor);
+            const raw = await cloudinary.api.resources(options);
+            const page = normalizePage(raw, credentials.cloudName);
+            assets.push(
+                ...page.assets.filter((asset) =>
+                    isAssetInUserFolder(asset, userId)
+                )
+            );
+            cursor = page.nextCursor;
+
+            if (assets.length >= cap) {
+                truncated = Boolean(cursor) || resourceType !== 'video';
+                break;
+            }
+        } while (cursor);
+
+        if (assets.length >= cap) break;
+    }
 
     return { assets: assets.slice(0, cap), truncated };
 }
@@ -932,7 +954,7 @@ export async function deleteUserAssets(
     if (assetIds.length === 0) {
         throw new AppError(
             400,
-            'Select at least one image to delete.',
+            'Select at least one file to delete.',
             'VALIDATION_ERROR'
         );
     }
@@ -940,7 +962,7 @@ export async function deleteUserAssets(
     if (assetIds.length > MAX_DELETE_IDS) {
         throw new AppError(
             400,
-            `You can delete at most ${MAX_DELETE_IDS} images at a time.`,
+            `You can delete at most ${MAX_DELETE_IDS} files at a time.`,
             'VALIDATION_ERROR'
         );
     }
