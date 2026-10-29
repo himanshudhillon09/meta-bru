@@ -196,7 +196,7 @@ export function thumbnailUrlFor(cloudName: string, publicId: string): string {
     });
 }
 
-function credentialsOptions(
+export function credentialsOptions(
     credentials: CloudinaryCredentials
 ): Record<string, string> {
     return {
@@ -253,8 +253,18 @@ function cloudinaryErrorInfo(error: unknown): {
     return { message, status };
 }
 
-function cloudinaryErrorMessage(error: unknown): string {
+export function cloudinaryErrorMessage(error: unknown): string {
     return cloudinaryErrorInfo(error).message;
+}
+
+/** The HTTP status of a Cloudinary SDK error, which nests it under `error`. */
+export function cloudinaryHttpCode(error: unknown): number | undefined {
+    const shape = error as
+        | { http_code?: unknown; error?: { http_code?: unknown } }
+        | null
+        | undefined;
+    const code = shape?.error?.http_code ?? shape?.http_code;
+    return typeof code === 'number' ? code : undefined;
 }
 
 function asCloudinaryError(error: unknown): AppError {

@@ -1,7 +1,9 @@
 import express from 'express';
 import {
+    createVideoSignature,
     deleteMedia,
     getStorageOverview,
+    registerVideo,
     uploadMedia,
 } from '../controllers/mediaController.js';
 import { protect } from '../middlewares/authMiddleware.js';
@@ -16,5 +18,7 @@ const router = express.Router();
 router.get('/storage', protect, storageLimiter, getStorageOverview);
 router.post('/delete', protect, storageLimiter, deleteMedia);
 router.post('/upload', protect, mediaLimiter, uploadImageMiddleware, uploadMedia);
+router.post('/video-signature', protect, mediaLimiter, createVideoSignature);
+router.post('/videos', protect, mediaLimiter, registerVideo);
 
 export default router;
