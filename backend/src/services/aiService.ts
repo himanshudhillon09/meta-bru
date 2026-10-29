@@ -11,6 +11,7 @@ import {
     getCloudinaryCredentials,
     getGeminiCredentials,
 } from './credentialService.js';
+import { recordGeminiCall } from './geminiUsageService.js';
 import { cleanOverlayText } from './textOverlayService.js';
 
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
@@ -499,6 +500,8 @@ async function loadCaptionImage(
 }
 
 interface GeminiTextRequest {
+    /** Whose key is used, for the Usage page. */
+    userId: string;
     /** Model id; empty uses the deployment default. */
     model?: string | undefined;
     parts: Array<{ text?: string; inlineData?: InlineImage }>;
@@ -552,6 +555,13 @@ async function requestGeminiText(
     }
 
     const data = (await response.json().catch(() => ({}))) as GeminiResponse;
+    void recordGeminiCall(request.userId, {
+        model,
+        feature: request.label,
+        httpStatus: response.status,
+        ok: response.ok && !data.error,
+        body: data,
+    });
 
     if (!response.ok || data.error) {
         throw describeGeminiError(response.status, data, request.label);
@@ -598,6 +608,7 @@ export async function generateCaption(
     }
 
     const rawText = await requestGeminiText(credentials.apiKey, {
+        userId,
         model: input.model,
         parts,
         temperature: 0.8,
@@ -657,6 +668,13 @@ export async function generateImage(
     }
 
     const data = (await response.json().catch(() => ({}))) as GeminiResponse;
+    void recordGeminiCall(userId, {
+        model,
+        feature: 'image',
+        httpStatus: response.status,
+        ok: response.ok && !data.error && Boolean(extractInlineImage(data)),
+        body: data,
+    });
 
     if (!response.ok || data.error) {
         throw describeGeminiError(response.status, data, 'image');
@@ -761,6 +779,7 @@ export async function generateOverlayText(
 ): Promise<string> {
     const credentials = await getGeminiCredentials(userId);
     const rawText = await requestGeminiText(credentials.apiKey, {
+        userId,
         model: input.model,
         parts: [{ text: buildOverlayPrompt(input) }],
         temperature: 0.9,

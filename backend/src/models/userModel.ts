@@ -55,6 +55,11 @@ const userSchema = new mongoose.Schema({
         text: { type: String, default: '' },
         image: { type: String, default: '' }
     },
+    /** The user's own Gemini request limits, for "left today/this month" on Usage. */
+    geminiLimits: {
+        dailyRequests: { type: Number, default: null, min: 0 },
+        monthlyRequests: { type: Number, default: null, min: 0 }
+    },
     /**
      * Normalised PNG logo embedded in the frame of every new post image.
      * Stored here rather than in Cloudinary so the storage manager can never

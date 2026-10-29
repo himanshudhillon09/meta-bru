@@ -6,6 +6,7 @@ import type {
     AnalyticsTipsResponse,
     BrandLogoDetails,
     DeleteMediaResult,
+    GeminiLimits,
     GeminiModelList,
     MediaAsset,
     MetaLoginResult,
@@ -14,6 +15,7 @@ import type {
     StorageOverview,
     StoryAnalyticsResponse,
     TextArea,
+    UsageReport,
     VideoMedia,
     VideoUploadSignature,
 } from './types';
@@ -355,6 +357,12 @@ export const aiApi = {
         api.get<{ success: boolean } & GeminiModelList>('/ai/models'),
     overlayText: (data: { topic?: string; caption?: string; prompt?: string }) =>
         api.post<{ success: boolean; text: string }>('/ai/overlay-text', data),
+};
+
+export const usageApi = {
+    get: () => api.get<{ success: boolean } & UsageReport>('/usage'),
+    saveGeminiLimits: (limits: GeminiLimits) =>
+        api.put<{ success: boolean; limits: GeminiLimits }>('/usage/gemini-limits', limits),
 };
 
 export const adminApi = {

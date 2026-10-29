@@ -28,7 +28,11 @@ Page and linked Instagram Business account.
   forward, back, or out. Meta only reports Story insights for 24 hours, so the
   scheduler saves them every 30 minutes while a Story is live
 - Deleting an unpublished post also removes its Cloudinary file when no other
-  post uses it
+  post uses it; Storage can also select every published file at once to free
+  space (the posts stay live on Facebook and Instagram)
+- Usage page: Gemini requests, tokens, and images per day and month against
+  your own limits and the limits Google reports, plus Cloudinary plan credits,
+  storage, bandwidth, and transformations
 - Per-connection daily time and IANA timezone
 - FIFO queue with one automatic publish per connection per day
 - Immediate **Post now** and **Retry failed** actions

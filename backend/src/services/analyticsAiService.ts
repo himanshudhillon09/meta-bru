@@ -9,6 +9,7 @@ import {
 } from '../models/analyticsAiInsightModel.js';
 import { AppError } from '../utils/errors.js';
 import { describeGeminiError } from './aiService.js';
+import { recordGeminiCall } from './geminiUsageService.js';
 import { getGeminiCredentials } from './credentialService.js';
 
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
@@ -254,6 +255,13 @@ export async function generateAnalyticsAiInsight(
         parsedBody && typeof parsedBody === 'object'
             ? (parsedBody as GeminiResponse)
             : {};
+    void recordGeminiCall(userId, {
+        model,
+        feature: 'analytics',
+        httpStatus: response.status,
+        ok: response.ok && !data.error,
+        body: data,
+    });
 
     if (!response.ok || data.error) {
         throw describeGeminiError(response.status, data, 'analytics');

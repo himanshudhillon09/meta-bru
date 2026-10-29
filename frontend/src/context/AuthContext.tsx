@@ -25,6 +25,7 @@ const PRIVATE_PATHS = [
     '/activity',
     '/storage',
     '/settings',
+    '/usage',
     '/change-password',
 ];
 

@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import { connectDB } from './config/db.js';
 import { env } from './config/env.js';
 import adminRoutes from './routes/adminRoutes.js';
+import usageRoutes from './routes/usageRoutes.js';
 import aiRoutes from './routes/aiRoutes.js';
 import analyticsRoutes from './routes/analyticsRoutes.js';
 import authRoutes from './routes/authRoutes.js';
@@ -54,6 +55,7 @@ app.use('/api/analytics', analyticsRoutes);
 app.use('/api/media', mediaRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/usage', usageRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

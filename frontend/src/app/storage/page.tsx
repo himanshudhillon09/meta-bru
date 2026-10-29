@@ -206,6 +206,14 @@ export default function StoragePage() {
     const unusedDeletableCount = assets.filter(
         (asset) => asset.posts.length === 0 && asset.canDelete
     ).length;
+    // Files whose posts have all published: deleting them frees space while
+    // the posts stay live on Facebook and Instagram.
+    const publishedDeletable = assets.filter(
+        (asset) =>
+            asset.canDelete &&
+            asset.posts.length > 0 &&
+            asset.posts.every((post) => post.status === 'published')
+    );
     const videoCount = assets.filter((asset) => asset.resourceType === 'video').length;
     const imageCount = assets.length - videoCount;
 
@@ -277,6 +285,21 @@ export default function StoragePage() {
             ids.length > 0
                 ? `Selected ${ids.length} unused ${files(ids.length)}.`
                 : 'No deletable unused files were found.'
+        );
+        setNoticeKind(ids.length > 0 ? 'success' : 'warning');
+    };
+
+    const selectPublished = () => {
+        const ids = publishedDeletable.map((asset) => asset.assetId);
+        const bytes = publishedDeletable.reduce((total, asset) => total + asset.bytes, 0);
+
+        setSelected(new Set(ids));
+        setNotice(
+            ids.length > 0
+                ? `Selected ${ids.length} published ${files(ids.length)} (${formatBytes(
+                      bytes
+                  )}). The posts stay live on Facebook and Instagram; only their previews in Meta-Bru stop loading.`
+                : 'No deletable published files were found.'
         );
         setNoticeKind(ids.length > 0 ? 'success' : 'warning');
     };
@@ -768,6 +791,15 @@ export default function StoragePage() {
                                     className="px-3.5 py-2 rounded-xl text-[11px] font-bold border border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/15 disabled:opacity-40 transition-all"
                                 >
                                     Select unused
+                                </button>
+                                <button
+                                    onClick={selectPublished}
+                                    disabled={publishedDeletable.length === 0}
+                                    title="Selects every file whose posts have all been published"
+                                    className="px-3.5 py-2 rounded-xl text-[11px] font-bold border border-sky-500/20 bg-sky-500/10 text-sky-700 dark:text-sky-300 hover:bg-sky-500/15 disabled:opacity-40 transition-all"
+                                >
+                                    Select published
+                                    {publishedDeletable.length > 0 ? ` (${publishedDeletable.length})` : ''}
                                 </button>
                                 <button
                                     onClick={clearSelection}
