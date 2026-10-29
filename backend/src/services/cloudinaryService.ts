@@ -1,6 +1,7 @@
 import { v2 as cloudinary } from 'cloudinary';
 import { getCloudinaryCredentials } from './credentialService.js';
 import { AppError } from '../utils/errors.js';
+import type { TextArea } from './textOverlayService.js';
 
 export interface UploadedMedia {
     url: string;
@@ -10,6 +11,11 @@ export interface UploadedMedia {
     height: number;
     format: string;
     bytes: number;
+}
+
+/** An uploaded post image plus where its photo sits, for overlay text. */
+export interface PostImageMedia extends UploadedMedia {
+    textArea: TextArea;
 }
 
 function jpegUrlFor(cloudName: string, publicId: string): string {

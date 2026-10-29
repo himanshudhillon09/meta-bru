@@ -35,7 +35,10 @@ export async function uploadMedia(req: Request, res: Response): Promise<void> {
     // Resize to feed limits (and frame with the user's logo) before upload, so
     // Cloudinary only ever stores the exact image that will be published.
     const image = await preparePostImage(req.user.id, req.file.buffer);
-    const media = await uploadToCloudinary(req.user.id, image);
+    const media = {
+        ...(await uploadToCloudinary(req.user.id, image.buffer)),
+        textArea: image.textArea,
+    };
 
     res.status(201).json({ success: true, media });
 }

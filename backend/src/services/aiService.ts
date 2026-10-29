@@ -4,7 +4,7 @@ import { preparePostImage } from './brandLogoService.js';
 import {
     jpegUrlFor,
     uploadImage,
-    type UploadedMedia,
+    type PostImageMedia,
 } from './cloudinaryService.js';
 import {
     getCloudinaryCredentials,
@@ -475,7 +475,7 @@ export async function generateCaption(
 export async function generateImage(
     userId: string,
     prompt: string
-): Promise<UploadedMedia> {
+): Promise<PostImageMedia> {
     const credentials = await getGeminiCredentials(userId);
     const model = resolveImageModel(env.gemini.imageModel);
 
@@ -529,8 +529,9 @@ export async function generateImage(
         );
     }
 
-    return uploadImage(
-        userId,
-        await preparePostImage(userId, Buffer.from(image.data, 'base64'))
-    );
+    const prepared = await preparePostImage(userId, Buffer.from(image.data, 'base64'));
+    return {
+        ...(await uploadImage(userId, prepared.buffer)),
+        textArea: prepared.textArea,
+    };
 }

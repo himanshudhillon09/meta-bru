@@ -1,5 +1,6 @@
 import sharp, { type Sharp } from 'sharp';
 import { AppError } from '../utils/errors.js';
+import type { TextArea } from './textOverlayService.js';
 
 /**
  * Instagram feed posts must be between 4:5 (tallest) and 1.91:1 (widest), and
@@ -32,6 +33,8 @@ export interface RenderedPostImage {
     width: number;
     height: number;
     framed: boolean;
+    /** Where the photo sits in the post image; overlay text goes inside it. */
+    textArea: TextArea;
 }
 
 export interface PreparedLogo {
@@ -558,6 +561,7 @@ async function renderFramed(photo: RawImage, logo: Buffer): Promise<RenderedPost
         width: layout.width,
         height: layout.height,
         framed: true,
+        textArea: { ...photoRect, radius: layout.radius },
     };
 }
 
@@ -567,7 +571,12 @@ async function renderPlain(photo: RawImage): Promise<RenderedPostImage> {
         .jpeg({ quality: 90, mozjpeg: true })
         .toBuffer();
 
-    return { buffer, ...size, framed: false };
+    return {
+        buffer,
+        ...size,
+        framed: false,
+        textArea: { left: 0, top: 0, ...size, radius: 0 },
+    };
 }
 
 /**
