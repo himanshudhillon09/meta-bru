@@ -87,6 +87,7 @@ interface PostMediaFields {
     mediaPublicId: string;
     mediaDuration: number;
     mediaCoverUrl: string;
+    hasTextOverlay: boolean;
     /** The plain image the overlay replaced; cleaned up once the post exists. */
     replacedPublicId?: string;
 }
@@ -103,6 +104,7 @@ async function resolvePostMedia(
             mediaPublicId: parsed.mediaPublicId,
             mediaDuration: 0,
             mediaCoverUrl: '',
+            hasTextOverlay: false,
         };
         if (parseOverlayText(parsed.overlayText).length === 0) return image;
 
@@ -125,6 +127,7 @@ async function resolvePostMedia(
             mediaUrl: withText.url,
             mediaJpegUrl: withText.jpegUrl,
             mediaPublicId: withText.publicId,
+            hasTextOverlay: true,
             replacedPublicId: parsed.mediaPublicId,
         };
     }
@@ -146,6 +149,7 @@ async function resolvePostMedia(
         mediaPublicId: video.publicId,
         mediaDuration: video.duration,
         mediaCoverUrl: video.coverUrl,
+        hasTextOverlay: false,
     };
 }
 

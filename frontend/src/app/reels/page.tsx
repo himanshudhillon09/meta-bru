@@ -28,6 +28,7 @@ import {
     type SocialConnection,
     type VideoMedia,
 } from '@/lib/types';
+import { useIdeaFromUrl } from '@/lib/useIdeaFromUrl';
 
 interface ReelDraft {
     connectionId: string;
@@ -207,6 +208,12 @@ export default function ReelsPage() {
         instagram,
         shareToStory,
     ]);
+
+    // "Create this reel" on an Analytics tip opens this page with its idea.
+    useIdeaFromUrl(hydratedDraftKey !== null, (idea) => {
+        setTopic(idea);
+        setNotice('Idea from Analytics added as the AI topic. Upload the video, then use AI draft caption.');
+    });
 
     const selectedConnection = useMemo(
         () => connections.find((connection) => connection._id === connectionId),

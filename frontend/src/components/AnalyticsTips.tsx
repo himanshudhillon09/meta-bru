@@ -1,14 +1,8 @@
 'use client';
 
 import React from 'react';
-import Link from 'next/link';
+import { AnalyticsTipCard } from '@/components/AnalyticsTipCard';
 import type { AnalyticsRuleTip } from '@/lib/types';
-
-const TONES: Record<string, string> = {
-    info: 'border-sky-500/15 bg-sky-500/5 text-sky-700 dark:text-sky-200',
-    success: 'border-emerald-500/15 bg-emerald-500/5 text-emerald-700 dark:text-emerald-200',
-    warning: 'border-amber-500/15 bg-amber-500/5 text-amber-700 dark:text-amber-200',
-};
 
 export function AnalyticsTips({ tips }: { tips: AnalyticsRuleTip[] }) {
     return (
@@ -26,25 +20,9 @@ export function AnalyticsTips({ tips }: { tips: AnalyticsRuleTip[] }) {
                     Publish a few posts to unlock tips.
                 </p>
             ) : (
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="stagger grid gap-3 sm:grid-cols-2">
                     {tips.map((tip) => (
-                        <div
-                            key={tip.id}
-                            className={`rounded-2xl border p-4 ${TONES[tip.severity] || TONES.info}`}
-                        >
-                            <div className="text-sm font-bold">{tip.title}</div>
-                            <p className="mt-1 text-xs opacity-80">
-                                {tip.body}
-                            </p>
-                            {tip.actionHref ? (
-                                <Link
-                                    href={tip.actionHref}
-                                    className="mt-2 inline-block text-xs font-bold underline"
-                                >
-                                    {tip.actionLabel || 'Open'}
-                                </Link>
-                            ) : null}
-                        </div>
+                        <AnalyticsTipCard key={tip.id} tip={tip} />
                     ))}
                 </div>
             )}

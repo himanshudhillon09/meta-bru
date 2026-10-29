@@ -9,7 +9,9 @@ import React, {
 } from 'react';
 import Link from 'next/link';
 import { AppShell } from '@/components/AppShell';
+import { AnalyticsFormatComparison } from '@/components/AnalyticsFormatComparison';
 import { AnalyticsPostCard } from '@/components/AnalyticsPostCard';
+import { AnalyticsTipCard } from '@/components/AnalyticsTipCard';
 import {
     AnalyticsBarChart,
     AnalyticsHeatmap,
@@ -41,6 +43,14 @@ const TABS: Array<{ key: TabKey; label: string }> = [
     { key: 'tracker', label: 'Post tracker' },
     { key: 'ai', label: 'AI analysis' },
 ];
+
+const CONTENT_TYPES = [
+    { key: 'all', label: 'All' },
+    { key: 'image', label: 'Posts' },
+    { key: 'reel', label: 'Reels' },
+] as const;
+
+type ContentKey = (typeof CONTENT_TYPES)[number]['key'];
 
 const RANGES: Array<{ key: RangeKey; label: string }> = [
     { key: '7', label: '7 days' },
@@ -139,6 +149,7 @@ export default function AnalyticsPage() {
     const [customTo, setCustomTo] = useState(istTodayKey());
     const [connectionId, setConnectionId] = useState('');
     const [platform, setPlatform] = useState('');
+    const [contentType, setContentType] = useState<ContentKey>('all');
     const [connections, setConnections] = useState<SocialConnection[]>([]);
     const [overview, setOverview] = useState<AnalyticsOverview | null>(null);
     // The filter selection the loaded overview belongs to.
@@ -206,8 +217,9 @@ export default function AnalyticsPage() {
             to: selected.to,
             ...(connectionId ? { connectionId } : {}),
             ...(platform ? { platform } : {}),
+            ...(contentType !== 'all' ? { mediaType: contentType } : {}),
         };
-    }, [range, customFrom, customTo, connectionId, platform]);
+    }, [range, customFrom, customTo, connectionId, platform, contentType]);
 
     useEffect(() => {
         setAiError('');
@@ -323,6 +335,7 @@ export default function AnalyticsPage() {
                 to: `${trackerMonth}-${String(lastDay).padStart(2, '0')}`,
                 ...(connectionId ? { connectionId } : {}),
                 ...(platform ? { platform } : {}),
+                ...(contentType !== 'all' ? { mediaType: contentType } : {}),
                 page: '1',
                 limit: '100',
             });
@@ -332,7 +345,7 @@ export default function AnalyticsPage() {
         } finally {
             setTrackerLoading(false);
         }
-    }, [trackerMonth, connectionId, platform]);
+    }, [trackerMonth, connectionId, platform, contentType]);
 
     useEffect(() => {
         if (tab === 'tracker') void loadTracker();
@@ -605,6 +618,13 @@ export default function AnalyticsPage() {
                     value={range}
                     onChange={setRange}
                 />
+                <Tabs
+                    label="Content type"
+                    variant="segmented"
+                    items={CONTENT_TYPES}
+                    value={contentType}
+                    onChange={setContentType}
+                />
                 {range === 'custom' ? (
                     <>
                         <input
@@ -679,8 +699,13 @@ export default function AnalyticsPage() {
                 <div key="overview" className="stagger space-y-6">
                     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
                         <MetricCard
-                            label="Published posts"
+                            label={contentType === 'reel' ? 'Published reels' : 'Published posts'}
                             value={formatNumber(overview.totals.posts)}
+                            hint={
+                                contentType === 'all' && overview.totals.reels
+                                    ? `${formatNumber(overview.totals.reels)} reel${overview.totals.reels === 1 ? '' : 's'}`
+                                    : undefined
+                            }
                         />
                         <MetricCard
                             label="Reach"
@@ -688,7 +713,7 @@ export default function AnalyticsPage() {
                             tone="sky"
                         />
                         <MetricCard
-                            label="Views"
+                            label={contentType === 'reel' ? 'Plays' : 'Views'}
                             value={formatNumber(overview.totals.views)}
                             tone="sky"
                         />
@@ -706,6 +731,12 @@ export default function AnalyticsPage() {
                             tone="amber"
                         />
                     </div>
+                    {overview.byContentType ? (
+                        <AnalyticsFormatComparison
+                            byContentType={overview.byContentType}
+                            filter={contentType}
+                        />
+                    ) : null}
                     <section className="rounded-2xl border border-line bg-surface p-5">
                         <h2 className="mb-4 text-sm font-bold text-fg">
                             Facebook vs Instagram
@@ -842,19 +873,12 @@ export default function AnalyticsPage() {
                                     Cached result from{' '}
                                     {formatIstDateTime(tips.ai.generatedAt)}
                                 </p>
-                                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                                <div className="mt-2 grid gap-3 sm:grid-cols-2">
                                     {tips.ai.tips.slice(0, 2).map((tip, index) => (
-                                        <div
+                                        <AnalyticsTipCard
                                             key={`${tip.title}-${index}`}
-                                            className="rounded-xl border border-line bg-surface-2 p-3"
-                                        >
-                                            <div className="text-xs font-bold text-fg">
-                                                {tip.title}
-                                            </div>
-                                            <p className="mt-1 text-[11px] text-muted">
-                                                {tip.body}
-                                            </p>
-                                        </div>
+                                            tip={tip}
+                                        />
                                     ))}
                                 </div>
                             </div>
@@ -868,23 +892,25 @@ export default function AnalyticsPage() {
                     <div className="space-y-4">
                         {posts.length === 0 ? (
                             <div className="animate-fade-up rounded-2xl border border-dashed border-line-strong bg-surface p-12 text-center text-sm text-muted">
-                                No published posts in this range.{' '}
+                                No published {contentType === 'reel' ? 'reels' : 'posts'} in this range.{' '}
                                 <Link
-                                    href="/composer"
+                                    href={contentType === 'reel' ? '/reels' : '/composer'}
                                     className="font-bold text-indigo-700 dark:text-indigo-300"
                                 >
-                                    Create a post
+                                    {contentType === 'reel' ? 'Make a reel' : 'Create a post'}
                                 </Link>
                                 .
                             </div>
                         ) : (
-                            posts.map((post) => (
-                                <AnalyticsPostCard
-                                    key={post.postId}
-                                    post={post}
-                                    now={now}
-                                />
-                            ))
+                            <div className="stagger space-y-4">
+                                {posts.map((post) => (
+                                    <AnalyticsPostCard
+                                        key={post.postId}
+                                        post={post}
+                                        now={now}
+                                    />
+                                ))}
+                            </div>
                         )}
                     </div>
                     {hasMore ? (
