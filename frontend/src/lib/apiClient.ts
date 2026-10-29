@@ -9,6 +9,7 @@ import type {
     Platform,
     Post,
     StorageOverview,
+    TextArea,
     VideoMedia,
     VideoUploadSignature,
 } from './types';
@@ -328,12 +329,20 @@ export const mediaApi = {
         api.post<{ success: boolean; media: VideoMedia }>('/media/videos', {
             publicId,
         }),
+    textPreview: (publicId: string, text: string, textArea?: TextArea) =>
+        api.post<{ success: boolean; dataUrl: string }>('/media/text-preview', {
+            publicId,
+            text,
+            ...(textArea ? { textArea } : {}),
+        }),
 };
 
 export const aiApi = {
     caption: (data: { topic?: string; platform?: string; mediaPublicId?: string }) =>
         api.post('/ai/caption', data),
     image: (data: { prompt: string }) => api.post('/ai/image', data),
+    overlayText: (data: { topic?: string; caption?: string; prompt?: string }) =>
+        api.post<{ success: boolean; text: string }>('/ai/overlay-text', data),
 };
 
 export const adminApi = {

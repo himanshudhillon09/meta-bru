@@ -157,6 +157,15 @@ export interface Post {
     updatedAt: string;
 }
 
+/** Where the photo sits in a post image; overlay text goes inside it. */
+export interface TextArea {
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+    radius: number;
+}
+
 export interface MediaAsset {
     url: string;
     jpegUrl: string;
@@ -165,6 +174,7 @@ export interface MediaAsset {
     height: number;
     format: string;
     bytes: number;
+    textArea?: TextArea;
 }
 
 export interface VideoMedia {
