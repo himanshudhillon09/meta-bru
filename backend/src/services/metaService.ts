@@ -356,3 +356,291 @@ export async function getInstagramContainerStatus(
     });
     return data.status_code || 'UNKNOWN';
 }
+
+export interface InstagramContainerState {
+    /** IN_PROGRESS, FINISHED, PUBLISHED, ERROR, EXPIRED, or UNKNOWN. */
+    statusCode: string;
+    /** Meta's human-readable status, which explains an ERROR. */
+    status: string;
+}
+
+export interface InstagramMediaApi {
+    createContainer(
+        igUserId: string,
+        accessToken: string,
+        params: Record<string, string | number>
+    ): Promise<string>;
+    containerState(
+        containerId: string,
+        accessToken: string
+    ): Promise<InstagramContainerState>;
+    publishContainer(
+        igUserId: string,
+        accessToken: string,
+        creationId: string
+    ): Promise<string>;
+}
+
+export async function createInstagramMediaContainer(
+    igUserId: string,
+    accessToken: string,
+    params: Record<string, string | number>
+): Promise<string> {
+    const data = await graphRequest<{ id?: string }>(`${igUserId}/media`, {
+        method: 'POST',
+        accessToken,
+        params,
+    });
+
+    if (!data.id) {
+        throw new MetaApiError('Instagram did not return a media container ID', 502);
+    }
+    return data.id;
+}
+
+export async function getInstagramContainerState(
+    containerId: string,
+    accessToken: string
+): Promise<InstagramContainerState> {
+    const data = await graphRequest<{ status_code?: string; status?: string }>(
+        containerId,
+        { accessToken, params: { fields: 'status_code,status' } }
+    );
+    return {
+        statusCode: data.status_code || 'UNKNOWN',
+        status: data.status || '',
+    };
+}
+
+export const instagramMediaApi: InstagramMediaApi = {
+    createContainer: createInstagramMediaContainer,
+    containerState: getInstagramContainerState,
+    publishContainer: (igUserId, accessToken, creationId) =>
+        publishInstagramContainer({ igUserId, accessToken, creationId }),
+};
+
+export type FacebookVideoEdge = 'video_reels' | 'video_stories';
+
+export interface FacebookVideoStatus {
+    videoStatus: string;
+    uploading: string;
+    processing: string;
+    publishing: string;
+    /** Why Meta rejected the video, or '' while it is fine. */
+    error: string;
+}
+
+export interface FacebookVideoApi {
+    start(
+        pageId: string,
+        pageToken: string,
+        edge: FacebookVideoEdge
+    ): Promise<{ videoId: string; uploadUrl: string }>;
+    upload(uploadUrl: string, pageToken: string, fileUrl: string): Promise<void>;
+    finish(
+        pageId: string,
+        pageToken: string,
+        edge: FacebookVideoEdge,
+        params: Record<string, string>
+    ): Promise<{ postId: string }>;
+    status(videoId: string, pageToken: string): Promise<FacebookVideoStatus>;
+}
+
+export interface FacebookPhotoStoryApi {
+    uploadUnpublished(
+        pageId: string,
+        pageToken: string,
+        imageUrl: string
+    ): Promise<string>;
+    publishStory(
+        pageId: string,
+        pageToken: string,
+        photoId: string
+    ): Promise<{ postId: string }>;
+}
+
+export async function startFacebookVideoUpload(
+    pageId: string,
+    pageToken: string,
+    edge: FacebookVideoEdge
+): Promise<{ videoId: string; uploadUrl: string }> {
+    const data = await graphRequest<{ video_id?: string; upload_url?: string }>(
+        `${pageId}/${edge}`,
+        { method: 'POST', accessToken: pageToken, params: { upload_phase: 'start' } }
+    );
+
+    if (!data.video_id || !data.upload_url) {
+        throw new MetaApiError('Facebook did not return a video upload session', 502);
+    }
+    return { videoId: data.video_id, uploadUrl: data.upload_url };
+}
+
+function isFacebookHost(url: string): boolean {
+    try {
+        const { protocol, hostname } = new URL(url);
+        return (
+            protocol === 'https:' &&
+            (hostname === 'facebook.com' || hostname.endsWith('.facebook.com'))
+        );
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * Asks Meta to download a hosted video into an upload session. The Page token
+ * is sent as a header, so it only ever goes to a Facebook host.
+ */
+export async function uploadFacebookVideoFromUrl(
+    uploadUrl: string,
+    pageToken: string,
+    fileUrl: string
+): Promise<void> {
+    if (!isFacebookHost(uploadUrl)) {
+        throw new MetaApiError('Meta returned an unexpected video upload address', 502);
+    }
+
+    let response: Response;
+    try {
+        response = await fetch(uploadUrl, {
+            method: 'POST',
+            headers: { Authorization: `OAuth ${pageToken}`, file_url: fileUrl },
+            signal: AbortSignal.timeout(120_000),
+        });
+    } catch (error) {
+        throw new MetaApiError(
+            error instanceof Error ? error.message : 'Could not reach the Meta upload service',
+            0
+        );
+    }
+
+    const data = (await response.json().catch(() => ({}))) as {
+        success?: boolean;
+        debug_info?: { message?: string };
+    };
+    if (!response.ok || data.success !== true) {
+        throw new MetaApiError(
+            data.debug_info?.message ||
+                `Meta video upload failed with status ${response.status}`,
+            response.status
+        );
+    }
+}
+
+export async function finishFacebookVideoUpload(
+    pageId: string,
+    pageToken: string,
+    edge: FacebookVideoEdge,
+    params: Record<string, string>
+): Promise<{ postId: string }> {
+    const data = await graphRequest<{ success?: boolean; post_id?: string }>(
+        `${pageId}/${edge}`,
+        {
+            method: 'POST',
+            accessToken: pageToken,
+            params: { ...params, upload_phase: 'finish' },
+        }
+    );
+
+    if (data.success === false) {
+        throw new MetaApiError('Facebook did not accept the video', 502);
+    }
+    return { postId: data.post_id || '' };
+}
+
+interface RawVideoPhase {
+    status?: string;
+    errors?: Array<{ message?: string }>;
+}
+
+const FAILED_VIDEO_STATUSES: Record<string, string> = {
+    error: 'Facebook could not process this video',
+    upload_failed: 'Facebook video upload failed',
+    expired: 'Facebook video upload expired',
+};
+
+export function parseFacebookVideoStatus(raw: unknown): FacebookVideoStatus {
+    const status =
+        (raw as {
+            status?: {
+                video_status?: string;
+                uploading_phase?: RawVideoPhase;
+                processing_phase?: RawVideoPhase;
+                publishing_phase?: RawVideoPhase;
+            };
+        } | null)?.status ?? {};
+    const phases = [
+        status.uploading_phase,
+        status.processing_phase,
+        status.publishing_phase,
+    ];
+    const failedPhase = phases.find((phase) => phase?.status === 'error');
+    const videoStatus = status.video_status ?? '';
+
+    return {
+        videoStatus,
+        uploading: status.uploading_phase?.status ?? '',
+        processing: status.processing_phase?.status ?? '',
+        publishing: status.publishing_phase?.status ?? '',
+        error: failedPhase
+            ? failedPhase.errors?.[0]?.message || 'Facebook could not process this video'
+            : FAILED_VIDEO_STATUSES[videoStatus] ?? '',
+    };
+}
+
+export async function getFacebookVideoStatus(
+    videoId: string,
+    pageToken: string
+): Promise<FacebookVideoStatus> {
+    const data = await graphRequest<unknown>(videoId, {
+        accessToken: pageToken,
+        params: { fields: 'status' },
+    });
+    return parseFacebookVideoStatus(data);
+}
+
+export const facebookVideoApi: FacebookVideoApi = {
+    start: startFacebookVideoUpload,
+    upload: uploadFacebookVideoFromUrl,
+    finish: finishFacebookVideoUpload,
+    status: getFacebookVideoStatus,
+};
+
+/** Photo Stories need a fresh, unpublished photo; a feed photo cannot be reused. */
+export async function uploadUnpublishedFacebookPhoto(
+    pageId: string,
+    pageToken: string,
+    imageUrl: string
+): Promise<string> {
+    const data = await graphRequest<{ id?: string }>(`${pageId}/photos`, {
+        method: 'POST',
+        accessToken: pageToken,
+        params: { url: imageUrl, published: 'false' },
+    });
+
+    if (!data.id) {
+        throw new MetaApiError('Facebook did not return a photo ID', 502);
+    }
+    return data.id;
+}
+
+export async function publishFacebookPhotoStory(
+    pageId: string,
+    pageToken: string,
+    photoId: string
+): Promise<{ postId: string }> {
+    const data = await graphRequest<{ success?: boolean; post_id?: string }>(
+        `${pageId}/photo_stories`,
+        { method: 'POST', accessToken: pageToken, params: { photo_id: photoId } }
+    );
+
+    if (data.success === false) {
+        throw new MetaApiError('Facebook did not accept the Story', 502);
+    }
+    return { postId: data.post_id || '' };
+}
+
+export const facebookPhotoStoryApi: FacebookPhotoStoryApi = {
+    uploadUnpublished: uploadUnpublishedFacebookPhoto,
+    publishStory: publishFacebookPhotoStory,
+};
