@@ -1062,6 +1062,11 @@ export async function getAnalyticsOverview(
             lastSyncedAt: lastSyncedAt(targets, latest),
             staleTargets: staleCount(targets, latest, 15),
             remainingTargets: remainingTargets(targets, latest),
+            // Read again after a reconnect even if today's refresh already ran.
+            reconnectPending: targets.filter((target) => {
+                const snapshot = latest.get(targetKey(target.postId, target.platform));
+                return snapshot !== undefined && snapshotPredatesToken(snapshot, target);
+            }).length,
             permissionErrors: uniquePermissionErrors(targets, latest),
         },
     };

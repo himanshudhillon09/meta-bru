@@ -95,6 +95,14 @@ function formatNumber(value: number | null | undefined): string {
 
 const RECONNECT_HREF = '/connections?returnTo=/analytics';
 
+/** True when an ISO time falls on today's date in IST. */
+function isTodayIst(value: string | null | undefined): boolean {
+    if (!value) return false;
+    const day = (date: Date) =>
+        new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(date);
+    return day(new Date(value)) === day(new Date());
+}
+
 function syncNotice(
     result: {
         synced?: number;
@@ -185,7 +193,7 @@ export default function AnalyticsPage() {
     const [now, setNow] = useState(0);
     const syncingRef = useRef(false);
     const loadingMoreRef = useRef(false);
-    const autoSyncedKeyRef = useRef('');
+    const dailyRunRef = useRef(false);
 
     const loadConnections = useCallback(async () => {
         try {
@@ -461,16 +469,6 @@ export default function AnalyticsPage() {
         [params, tab, loadMonitor, loadTracker, loadConnections, loadStories, loadAll]
     );
 
-    // Fetch fresh insights from Meta once per filter selection when the stored
-    // ones are stale, including right after a Page was reconnected.
-    const staleTargets = overview?.sync.staleTargets ?? 0;
-    useEffect(() => {
-        const key = JSON.stringify(params);
-        if (loading || syncing || overviewKey !== key) return;
-        if (autoSyncedKeyRef.current === key) return;
-        autoSyncedKeyRef.current = key;
-        if (staleTargets > 0) void refresh(true);
-    }, [loading, syncing, overviewKey, staleTargets, params, refresh]);
 
     const refreshMonitor = async () => {
         if (syncingRef.current) return;
@@ -497,31 +495,61 @@ export default function AnalyticsPage() {
         }
     };
 
-    const generateAi = async () => {
-        setAiLoading(true);
-        setAiError('');
-        try {
-            const result: any = await analyticsApi.generateTips(params);
-            if (!result?.insight) {
-                throw new Error('AI analysis returned no tips.');
+    // The button always asks Gemini again; the daily automatic run reuses an
+    // analysis already made today.
+    const generateAi = useCallback(
+        async (automatic = false) => {
+            setAiLoading(true);
+            if (!automatic) setAiError('');
+            try {
+                const result: any = await analyticsApi.generateTips({
+                    ...params,
+                    force: !automatic,
+                });
+                if (!result?.insight) {
+                    throw new Error('AI analysis returned no tips.');
+                }
+                setTips((current) => ({
+                    ruleBased: current?.ruleBased || [],
+                    ai: {
+                        cached: Boolean(result.cached),
+                        ...result.insight,
+                    },
+                    aiDueToday: false,
+                }));
+            } catch (err: any) {
+                const message =
+                    typeof err === 'string'
+                        ? err
+                        : 'Could not generate AI tips. Rule-based tips are still available.';
+                // A missing Gemini key is not worth an error on a run nobody asked for.
+                if (!(automatic && /not configured/i.test(message))) setAiError(message);
+            } finally {
+                setAiLoading(false);
             }
-            setTips((current) => ({
-                ruleBased: current?.ruleBased || [],
-                ai: {
-                    cached: Boolean(result.cached),
-                    ...result.insight,
-                },
-            }));
-        } catch (err: any) {
-            setAiError(
-                typeof err === 'string'
-                    ? err
-                    : 'Could not generate AI tips. Rule-based tips are still available.'
-            );
-        } finally {
-            setAiLoading(false);
-        }
-    };
+        },
+        [params]
+    );
+
+    // Analytics does its Meta refresh and AI analysis by itself at most once a
+    // day: on the first visit of the day, for the first view shown. Anything
+    // later happens only from the buttons. A reconnected Page is read again
+    // right away so its insights do not wait for tomorrow.
+    useEffect(() => {
+        if (dailyRunRef.current || loading || !overview) return;
+        if (overviewKey !== JSON.stringify(params)) return;
+        dailyRunRef.current = true;
+        if (overview.totals.posts === 0) return;
+
+        const needsRefresh =
+            !isTodayIst(overview.sync.lastSyncedAt) ||
+            (overview.sync.reconnectPending ?? 0) > 0;
+        const needsAi = tips?.aiDueToday !== false;
+        void (async () => {
+            if (needsRefresh) await refresh(true);
+            if (needsAi) await generateAi(true);
+        })();
+    }, [loading, overview, overviewKey, params, tips, refresh, generateAi]);
 
     const aiNotConfigured = /gemini api key is not configured/i.test(aiError);
     const selectedConnection = connectionId
@@ -718,6 +746,7 @@ export default function AnalyticsPage() {
                               ) || 'recently'
                           }`
                         : 'Not synced yet'}
+                    {' · '}updates once a day, or tap Refresh insights
                 </span>
             </div>
 
@@ -915,8 +944,7 @@ export default function AnalyticsPage() {
                         {tips?.ai ? (
                             <div>
                                 <p className="text-[11px] text-subtle">
-                                    Cached result from{' '}
-                                    {formatIstDateTime(tips.ai.generatedAt)}
+                                    From {formatIstDateTime(tips.ai.generatedAt)} · runs once a day
                                 </p>
                                 <div className="mt-2 grid gap-3 sm:grid-cols-2">
                                     {tips.ai.tips.slice(0, 2).map((tip, index) => (
@@ -1016,7 +1044,7 @@ export default function AnalyticsPage() {
                     <AnalyticsTips tips={tips?.ruleBased || []} />
                     <AnalyticsAiTips
                         ai={tips?.ai || null}
-                        onGenerate={generateAi}
+                        onGenerate={() => void generateAi()}
                         loading={aiLoading}
                         error={aiError}
                         notConfigured={aiNotConfigured}

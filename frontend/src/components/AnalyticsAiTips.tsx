@@ -82,9 +82,10 @@ export function AnalyticsAiTips({
                         </div>
                     )}
                     <p className="mt-3 text-[10px] text-subtle">
-                        Cached for 6 hours. AI compares your best and weakest
-                        posts by format, timing, caption, and reel watch time.
-                        Pick the model under Profile.
+                        Runs by itself on your first visit each day; Refresh
+                        AI analysis runs it again now. AI compares your best and
+                        weakest posts by format, timing, caption, and reel watch
+                        time. Pick the model under Profile.
                     </p>
                 </>
             ) : (

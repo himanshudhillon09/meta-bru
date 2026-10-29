@@ -406,6 +406,9 @@ export const analyticsApi = {
         to: string;
         connectionId?: string;
         platform?: string;
+        mediaType?: string;
+        /** False for the daily automatic run, which reuses today's analysis. */
+        force?: boolean;
     }) => api.post('/analytics/tips', data),
 };
 
