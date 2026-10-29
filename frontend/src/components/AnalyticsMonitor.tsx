@@ -2,11 +2,20 @@
 
 import React, { useState } from 'react';
 import { AnalyticsLineChart, MetricCard } from './AnalyticsCharts';
+import { Tabs } from './Tabs';
 import {
     formatElapsed,
     formatIstDateTime,
     type AnalyticsMonitor as AnalyticsMonitorData,
 } from '@/lib/types';
+
+const SERIES = [
+    { key: 'reach', label: 'Reach' },
+    { key: 'interactions', label: 'Interactions' },
+    { key: 'engagementRate', label: 'Rate' },
+] as const;
+
+type SeriesKey = (typeof SERIES)[number]['key'];
 
 function last<T>(values: T[]): T | undefined {
     return values[values.length - 1];
@@ -42,9 +51,7 @@ export function AnalyticsMonitor({
     refreshing: boolean;
     now: number;
 }) {
-    const [seriesKey, setSeriesKey] = useState<
-        'reach' | 'interactions' | 'engagementRate'
-    >('reach');
+    const [seriesKey, setSeriesKey] = useState<SeriesKey>('reach');
 
     const points = data.series.all
         .map((point) => ({
@@ -163,28 +170,15 @@ export function AnalyticsMonitor({
                     <h2 className="text-sm font-bold text-fg">
                         Engagement over time
                     </h2>
-                    <div className="ml-auto flex gap-1">
-                        {(
-                            [
-                                ['reach', 'Reach'],
-                                ['interactions', 'Interactions'],
-                                ['engagementRate', 'Rate'],
-                            ] as const
-                        ).map(([key, label]) => (
-                            <button
-                                key={key}
-                                type="button"
-                                onClick={() => setSeriesKey(key)}
-                                className={`rounded-lg px-2.5 py-1.5 text-[10px] font-bold ${
-                                    seriesKey === key
-                                        ? 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300'
-                                        : 'text-subtle'
-                                }`}
-                            >
-                                {label}
-                            </button>
-                        ))}
-                    </div>
+                    <Tabs
+                        label="Chart metric"
+                        variant="segmented"
+                        size="sm"
+                        items={SERIES}
+                        value={seriesKey}
+                        onChange={setSeriesKey}
+                        className="ml-auto"
+                    />
                 </div>
                 <AnalyticsLineChart
                     points={points}

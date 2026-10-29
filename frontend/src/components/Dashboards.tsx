@@ -49,7 +49,7 @@ function StatCard({
     hint?: string;
 }) {
     return (
-        <div className={`rounded-2xl border p-6 shadow-card ${accent}`}>
+        <div className={`rounded-2xl border p-6 shadow-card transition-[box-shadow,translate] duration-200 hover:-translate-y-0.5 hover:shadow-card-hover ${accent}`}>
             <div className="text-xs font-bold uppercase tracking-widest opacity-70">
                 {label}
             </div>
@@ -193,12 +193,12 @@ export function UserDashboard() {
             }
         >
             {error ? (
-                <div className="mb-6 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
+                <div className="animate-fade-up mb-6 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
                     {error}
                 </div>
             ) : null}
 
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            <div className="stagger grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
                 <StatCard
                     label="Connections"
                     value={connections.length}
@@ -221,7 +221,7 @@ export function UserDashboard() {
                 />
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            <div className="stagger grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
                 <NextSlotCard connections={connections} />
                 <div className="rounded-2xl border border-line bg-surface p-8 shadow-card">
                     <div className="text-xs font-bold uppercase tracking-widest text-purple-700 dark:text-purple-400">
@@ -255,7 +255,7 @@ export function UserDashboard() {
                 </div>
                 {loading ? (
                     <div className="flex justify-center py-12">
-                        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-indigo-500" />
+                        <div className="animate-spin rounded-full h-8 w-8 border-[3px] border-indigo-500/20 border-t-indigo-500" />
                     </div>
                 ) : posts.length === 0 ? (
                     <div className="py-10 text-center text-sm text-subtle">
@@ -423,12 +423,12 @@ export function AdminDashboard() {
             ) : null}
 
             {error ? (
-                <div className="mb-6 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
+                <div className="animate-fade-up mb-6 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
                     {error}
                 </div>
             ) : null}
 
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+            <div className="stagger grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
                 <StatCard
                     label="Users"
                     value={stats?.users ?? users.length}
@@ -462,7 +462,7 @@ export function AdminDashboard() {
                 </h2>
                 {loading ? (
                     <div className="flex justify-center py-10">
-                        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-indigo-500" />
+                        <div className="animate-spin rounded-full h-8 w-8 border-[3px] border-indigo-500/20 border-t-indigo-500" />
                     </div>
                 ) : (overview?.recentPosts.length ?? 0) === 0 ? (
                     <div className="py-8 text-center text-sm text-subtle">
@@ -482,7 +482,7 @@ export function AdminDashboard() {
 
                 {loading ? (
                     <div className="flex justify-center py-10">
-                        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-indigo-500" />
+                        <div className="animate-spin rounded-full h-8 w-8 border-[3px] border-indigo-500/20 border-t-indigo-500" />
                     </div>
                 ) : adminConnections.length === 0 ? (
                     <div className="py-8 text-center text-sm text-subtle">
@@ -622,7 +622,7 @@ export function AdminDashboard() {
 
                 {loading ? (
                     <div className="flex justify-center py-10">
-                        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-indigo-500" />
+                        <div className="animate-spin rounded-full h-8 w-8 border-[3px] border-indigo-500/20 border-t-indigo-500" />
                     </div>
                 ) : (
                     <>

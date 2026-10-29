@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Modal } from '@/components/Modal';
+import { ToggleChip } from '@/components/ToggleChip';
 import { connectionsApi } from '@/lib/apiClient';
 import {
     MAX_DAILY_SLOTS,
@@ -308,42 +309,30 @@ export function ConnectionCard({
             </div>
 
             <div className="flex flex-wrap items-center gap-3 mt-6">
-                <button
-                    type="button"
-                    onClick={() => setFacebook((value) => !value)}
-                    className={`px-4 py-2.5 rounded-xl text-xs font-bold border transition-all ${
-                        facebook
-                            ? 'bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30'
-                            : 'bg-surface-2 text-subtle border-line'
-                    }`}
+                <ToggleChip
+                    tone="facebook"
+                    checked={facebook}
+                    onToggle={() => setFacebook((value) => !value)}
                 >
                     Facebook {facebook ? 'on' : 'off'}
-                </button>
+                </ToggleChip>
 
-                <button
-                    type="button"
+                <ToggleChip
+                    tone="instagram"
+                    checked={instagram}
                     disabled={!connection.instagram}
-                    onClick={() => setInstagram((value) => !value)}
-                    className={`px-4 py-2.5 rounded-xl text-xs font-bold border transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
-                        instagram
-                            ? 'bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30'
-                            : 'bg-surface-2 text-subtle border-line'
-                    }`}
+                    onToggle={() => setInstagram((value) => !value)}
                 >
                     Instagram {instagram ? 'on' : 'off'}
-                </button>
+                </ToggleChip>
 
-                <button
-                    type="button"
-                    onClick={() => setActive((value) => !value)}
-                    className={`px-4 py-2.5 rounded-xl text-xs font-bold border transition-all ${
-                        active
-                            ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30'
-                            : 'bg-surface-2 text-subtle border-line'
-                    }`}
+                <ToggleChip
+                    tone="emerald"
+                    checked={active}
+                    onToggle={() => setActive((value) => !value)}
                 >
                     {active ? 'Schedule active' : 'Schedule paused'}
-                </button>
+                </ToggleChip>
 
                 <button
                     onClick={save}

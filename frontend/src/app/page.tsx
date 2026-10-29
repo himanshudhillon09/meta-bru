@@ -113,7 +113,7 @@ function ProductPreview() {
     return (
         <div className="relative mx-auto w-full max-w-md">
             <div className="absolute -inset-6 -z-10 rounded-[40px] bg-gradient-to-br from-indigo-200/60 via-violet-200/40 to-rose-200/50 blur-2xl dark:from-indigo-500/20 dark:via-violet-500/10 dark:to-rose-500/15" />
-            <div className="overflow-hidden rounded-2xl border border-line bg-surface shadow-xl shadow-slate-900/5">
+            <div className="animate-pop-in overflow-hidden rounded-2xl border border-line bg-surface shadow-xl shadow-slate-900/5 [animation-delay:150ms]">
                 <div className="flex items-center gap-3 border-b border-line px-4 py-3">
                     <div className="flex h-9 w-9 items-center justify-center rounded-full bg-indigo-100 text-sm font-bold text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
                         B
@@ -143,10 +143,10 @@ function ProductPreview() {
                     <div className="h-2.5 w-1/2 rounded-full bg-indigo-100 dark:bg-indigo-500/20" />
                 </div>
             </div>
-            <div className="absolute -right-3 top-24 hidden rounded-xl border border-line bg-surface px-3 py-2 text-xs font-semibold text-fg shadow-lg sm:block">
+            <div className="absolute -right-3 top-24 hidden animate-float rounded-xl border border-line bg-surface px-3 py-2 text-xs font-semibold text-fg shadow-lg sm:block">
                 ✨ Caption drafted by AI
             </div>
-            <div className="absolute -left-4 bottom-20 hidden rounded-xl border border-line bg-surface px-3 py-2 text-xs font-semibold text-fg shadow-lg sm:block">
+            <div className="absolute -left-4 bottom-20 hidden animate-float rounded-xl border border-line bg-surface px-3 py-2 text-xs font-semibold text-fg shadow-lg [animation-delay:-3s] sm:block">
                 Shared to Story
             </div>
         </div>
@@ -182,7 +182,7 @@ export default function Home() {
                         )}
                         <Link
                             href={primaryHref}
-                            className="inline-flex rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
+                            className="inline-flex rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-indigo-500 hover:shadow-md hover:shadow-indigo-600/30"
                         >
                             {user ? 'Dashboard' : 'Get started'}
                         </Link>
@@ -192,7 +192,7 @@ export default function Home() {
 
             <main>
                 <section className="mx-auto grid max-w-6xl items-center gap-14 px-4 pb-20 pt-14 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:pt-20">
-                    <div>
+                    <div className="stagger">
                         <span className="inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300">
                             <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
                             For Facebook Pages and Instagram
@@ -200,7 +200,7 @@ export default function Home() {
                         <h1 className="mt-5 text-4xl font-extrabold leading-[1.08] tracking-tight sm:text-5xl lg:text-6xl">
                             Plan once.
                             <br />
-                            <span className="bg-gradient-to-r from-indigo-600 via-violet-600 to-rose-500 bg-clip-text text-transparent dark:from-indigo-400 dark:via-violet-400 dark:to-rose-400">
+                            <span className="animate-gradient bg-gradient-to-r from-indigo-600 via-violet-600 to-rose-500 bg-[length:200%_auto] bg-clip-text text-transparent dark:from-indigo-400 dark:via-violet-400 dark:to-rose-400">
                                 Publish every day.
                             </span>
                         </h1>
@@ -212,13 +212,13 @@ export default function Home() {
                         <div className="mt-8 flex flex-col gap-3 sm:flex-row">
                             <Link
                                 href={primaryHref}
-                                className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-6 py-3 text-base font-semibold text-white shadow-sm hover:bg-indigo-500"
+                                className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-6 py-3 text-base font-semibold text-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-indigo-500 hover:shadow-lg hover:shadow-indigo-600/30"
                             >
                                 {primaryLabel}
                             </Link>
                             <a
                                 href="#features"
-                                className="inline-flex items-center justify-center rounded-xl border border-line-strong bg-surface px-6 py-3 text-base font-semibold text-fg hover:bg-hover"
+                                className="inline-flex items-center justify-center rounded-xl border border-line-strong bg-surface px-6 py-3 text-base font-semibold text-fg transition-all duration-200 hover:-translate-y-0.5 hover:bg-hover"
                             >
                                 See what it does
                             </a>
@@ -244,7 +244,7 @@ export default function Home() {
 
                 <section id="features" className="border-y border-line bg-surface">
                     <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
-                        <div className="max-w-2xl">
+                        <div className="reveal max-w-2xl">
                             <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
                                 Everything your Page needs to stay active
                             </h2>
@@ -256,9 +256,9 @@ export default function Home() {
                             {FEATURES.map((feature) => (
                                 <div
                                     key={feature.title}
-                                    className="rounded-2xl border border-line bg-canvas p-6 transition-colors hover:border-line-strong"
+                                    className="reveal group rounded-2xl border border-line bg-canvas p-6 transition-[border-color,box-shadow,translate] duration-200 hover:-translate-y-1 hover:border-line-strong hover:shadow-card-hover"
                                 >
-                                    <div className={`inline-flex h-10 w-10 items-center justify-center rounded-xl ${feature.tint}`}>
+                                    <div className={`inline-flex h-10 w-10 items-center justify-center rounded-xl transition-transform duration-200 group-hover:scale-110 group-hover:-rotate-6 ${feature.tint}`}>
                                         {feature.icon}
                                     </div>
                                     <h3 className="mt-4 text-base font-semibold text-fg">{feature.title}</h3>
@@ -270,10 +270,10 @@ export default function Home() {
                 </section>
 
                 <section id="how-it-works" className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
-                    <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">How it works</h2>
+                    <h2 className="reveal text-3xl font-bold tracking-tight sm:text-4xl">How it works</h2>
                     <ol className="mt-10 grid gap-6 md:grid-cols-3">
                         {STEPS.map((step, index) => (
-                            <li key={step.title} className="rounded-2xl border border-line bg-surface p-6 shadow-card">
+                            <li key={step.title} className="reveal rounded-2xl border border-line bg-surface p-6 shadow-card transition-[box-shadow,translate] duration-200 hover:-translate-y-1 hover:shadow-card-hover">
                                 <div className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-600 text-sm font-bold text-white">
                                     {index + 1}
                                 </div>
@@ -285,7 +285,7 @@ export default function Home() {
                 </section>
 
                 <section className="mx-auto max-w-6xl px-4 pb-20 sm:px-6">
-                    <div className="flex flex-col items-start gap-6 rounded-2xl bg-indigo-600 px-8 py-10 text-white sm:flex-row sm:items-center sm:justify-between">
+                    <div className="reveal relative flex flex-col items-start gap-6 overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-600 via-indigo-600 to-violet-600 px-8 py-10 text-white sm:flex-row sm:items-center sm:justify-between">
                         <div>
                             <h2 className="text-2xl font-bold tracking-tight">Ready to fill your queue?</h2>
                             <p className="mt-2 text-indigo-100">
@@ -294,7 +294,7 @@ export default function Home() {
                         </div>
                         <Link
                             href={primaryHref}
-                            className="inline-flex shrink-0 rounded-xl bg-white px-6 py-3 text-base font-semibold text-indigo-700 hover:bg-indigo-50"
+                            className="inline-flex shrink-0 rounded-xl bg-white px-6 py-3 text-base font-semibold text-indigo-700 transition-all duration-200 hover:-translate-y-0.5 hover:bg-indigo-50 hover:shadow-lg"
                         >
                             {primaryLabel}
                         </Link>

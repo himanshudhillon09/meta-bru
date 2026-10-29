@@ -54,15 +54,20 @@ export const Modal: React.FC<ModalProps> = ({
     };
 
     return (
-        <div className={`fixed inset-0 z-[100] flex items-center justify-center p-4 transition-all duration-300 ${isOpen ? 'opacity-100 scale-100' : 'opacity-0 scale-95 pointer-events-none'}`}>
+        <div className={`fixed inset-0 z-[100] flex items-center justify-center p-4 transition-opacity duration-200 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
             {/* Backdrop */}
             <div
-                className={`absolute inset-0 bg-slate-950/50 backdrop-blur-sm transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'opacity-0'}`}
+                className="absolute inset-0 animate-fade-in bg-slate-950/50 backdrop-blur-sm"
                 onClick={onClose}
             />
 
             {/* Modal Content */}
-            <div className="relative w-full max-w-md bg-surface border border-line-strong rounded-3xl p-8 shadow-2xl backdrop-blur-xl">
+            <div
+                role="dialog"
+                aria-modal="true"
+                aria-label={title}
+                className={`relative w-full max-w-md animate-pop-in bg-surface border border-line-strong rounded-3xl p-8 shadow-2xl transition-transform duration-200 ${isOpen ? 'scale-100' : 'scale-95'}`}
+            >
                 <div className="flex flex-col items-center text-center">
                     {/* Icon */}
                     <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-6 border ${typeIconColors[type]}`}>

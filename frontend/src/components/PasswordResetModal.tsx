@@ -67,12 +67,12 @@ export function PasswordResetModal({
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <div
-                className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm"
+                className="absolute inset-0 animate-fade-in bg-slate-950/50 backdrop-blur-sm"
                 onClick={
                     temporaryPassword || resetting ? undefined : onClose
                 }
             />
-            <div className="relative w-full max-w-lg rounded-3xl border border-line-strong bg-surface p-7 shadow-2xl">
+            <div className="relative w-full max-w-lg animate-pop-in rounded-3xl border border-line-strong bg-surface p-7 shadow-2xl">
                 {temporaryPassword ? (
                     <>
                         <h3 className="text-xl font-bold text-fg">
@@ -114,7 +114,7 @@ export function PasswordResetModal({
                         </div>
 
                         {error ? (
-                            <div className="mt-4 rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
+                            <div className="animate-fade-up mt-4 rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
                                 {error}
                             </div>
                         ) : null}
@@ -147,7 +147,7 @@ export function PasswordResetModal({
                         </div>
 
                         {error ? (
-                            <div className="mt-4 rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
+                            <div className="animate-fade-up mt-4 rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
                                 {error}
                             </div>
                         ) : null}

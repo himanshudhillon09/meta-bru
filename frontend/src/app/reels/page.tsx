@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AppShell } from '@/components/AppShell';
 import { ShareToStoryToggle } from '@/components/ShareToStoryToggle';
+import { ToggleChip } from '@/components/ToggleChip';
 import { useAuth } from '@/context/AuthContext';
 import {
     aiApi,
@@ -385,22 +386,22 @@ export default function ReelsPage() {
             }
         >
             {notice ? (
-                <div className="mb-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-300">
+                <div className="animate-fade-up mb-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-300">
                     {notice}
                 </div>
             ) : null}
             {error ? (
-                <div className="mb-6 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
+                <div className="animate-fade-up mb-6 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
                     {error}
                 </div>
             ) : null}
 
             {loading ? (
                 <div className="flex justify-center py-24">
-                    <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-indigo-500" />
+                    <div className="animate-spin rounded-full h-10 w-10 border-[3px] border-indigo-500/20 border-t-indigo-500" />
                 </div>
             ) : activeConnections.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-line-strong bg-surface p-12 text-center">
+                <div className="animate-fade-up rounded-2xl border border-dashed border-line-strong bg-surface p-12 text-center">
                     <div className="text-xl font-bold text-fg">No active Pages</div>
                     <p className="text-sm text-muted mt-2">
                         Reconnect a Page under Connections to create and publish a reel.
@@ -414,7 +415,7 @@ export default function ReelsPage() {
                 </div>
             ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-[1.15fr_0.85fr] gap-6 items-start">
-                    <div className="space-y-6">
+                    <div className="stagger space-y-6">
                         <section className="rounded-2xl border border-line bg-surface p-6 sm:p-8 shadow-card">
                             <label className="text-xs font-bold uppercase tracking-widest text-subtle">
                                 Publishing as
@@ -448,35 +449,27 @@ export default function ReelsPage() {
                             ) : null}
 
                             <div className="flex gap-3 mt-4">
-                                <button
-                                    type="button"
+                                <ToggleChip
+                                    tone="facebook"
+                                    checked={publishFacebook}
                                     disabled={!facebookAllowed}
-                                    onClick={() => setFacebook((value) => !value)}
+                                    onToggle={() => setFacebook((value) => !value)}
                                     title={
                                         facebookAllowed
                                             ? undefined
                                             : 'Facebook Reels can be at most 90 seconds long.'
                                     }
-                                    className={`px-4 py-2.5 rounded-xl text-xs font-bold border transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
-                                        publishFacebook
-                                            ? 'bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30'
-                                            : 'bg-surface-2 text-subtle border-line'
-                                    }`}
                                 >
                                     Facebook
-                                </button>
-                                <button
-                                    type="button"
+                                </ToggleChip>
+                                <ToggleChip
+                                    tone="instagram"
+                                    checked={instagram}
                                     disabled={!selectedConnection?.instagram}
-                                    onClick={() => setInstagram((value) => !value)}
-                                    className={`px-4 py-2.5 rounded-xl text-xs font-bold border transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
-                                        instagram
-                                            ? 'bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30'
-                                            : 'bg-surface-2 text-subtle border-line'
-                                    }`}
+                                    onToggle={() => setInstagram((value) => !value)}
                                 >
                                     Instagram
-                                </button>
+                                </ToggleChip>
                             </div>
 
                             {!facebookAllowed ? (

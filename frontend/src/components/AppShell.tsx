@@ -180,15 +180,23 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
                                             href={item.href}
                                             onClick={onNavigate}
                                             aria-current={active ? 'page' : undefined}
-                                            className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                                            className={`group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
                                                 active
-                                                    ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300'
-                                                    : 'text-muted hover:bg-hover hover:text-fg'
+                                                    ? 'bg-indigo-50 font-semibold text-indigo-700 dark:bg-indigo-500/20 dark:text-white'
+                                                    : 'font-medium text-muted hover:bg-hover hover:text-fg'
                                             }`}
                                         >
+                                            <span
+                                                aria-hidden="true"
+                                                className={`absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-indigo-600 transition-[opacity,scale] duration-200 dark:bg-indigo-400 ${
+                                                    active ? 'opacity-100 scale-y-100' : 'opacity-0 scale-y-50'
+                                                }`}
+                                            />
                                             <Icon
                                                 name={item.icon}
-                                                className={`w-[18px] h-[18px] ${active ? '' : 'text-subtle'}`}
+                                                className={`w-[18px] h-[18px] transition-transform duration-200 group-hover:scale-110 ${
+                                                    active ? 'text-indigo-600 dark:text-indigo-300' : 'text-subtle group-hover:text-fg'
+                                                }`}
                                             />
                                             {item.label}
                                         </Link>
@@ -217,7 +225,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
                         onClick={logout}
                         title="Log out"
                         aria-label="Log out"
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-line bg-surface text-muted hover:text-rose-600 hover:bg-rose-50 dark:hover:text-rose-300 dark:hover:bg-rose-500/10 transition-colors"
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-line bg-surface text-muted hover:border-rose-200 hover:text-rose-600 hover:bg-rose-50 dark:hover:border-rose-500/30 dark:hover:text-rose-300 dark:hover:bg-rose-500/10"
                     >
                         <Icon name="logout" className="w-[18px] h-[18px]" />
                     </button>
@@ -264,9 +272,9 @@ export function AppShell({ title, subtitle, actions, children }: AppShellProps) 
                         type="button"
                         aria-label="Close menu"
                         onClick={() => setMenuOpen(false)}
-                        className="absolute inset-0 bg-slate-950/40 backdrop-blur-[2px]"
+                        className="absolute inset-0 animate-fade-in bg-slate-950/40 backdrop-blur-[2px] active:transform-none"
                     />
-                    <div className="absolute inset-y-0 left-0 w-72 max-w-[85vw] border-r border-line bg-surface shadow-2xl">
+                    <div className="absolute inset-y-0 left-0 w-72 max-w-[85vw] animate-slide-in-left border-r border-line bg-surface shadow-2xl">
                         <button
                             type="button"
                             onClick={() => setMenuOpen(false)}
@@ -294,7 +302,7 @@ export function AppShell({ title, subtitle, actions, children }: AppShellProps) 
                     <ThemeToggle />
                 </header>
 
-                <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8 lg:px-10 lg:py-10">
+                <main className="mx-auto max-w-6xl animate-fade-up px-4 py-6 sm:px-6 sm:py-8 lg:px-10 lg:py-10">
                     <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
                         <div>
                             <h1 className="text-2xl font-bold tracking-tight text-fg sm:text-3xl">{title}</h1>

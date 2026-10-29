@@ -536,19 +536,19 @@ export default function SettingsPage() {
             subtitle="Your account, brand context, and the integrations that belong only to you."
         >
             {notice ? (
-                <div className="mb-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-300">
+                <div className="animate-fade-up mb-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-300">
                     {notice}
                 </div>
             ) : null}
             {error ? (
-                <div className="mb-6 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
+                <div className="animate-fade-up mb-6 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
                     {error}
                 </div>
             ) : null}
 
             <form
                 onSubmit={save}
-                className="grid grid-cols-1 lg:grid-cols-[0.8fr_1.2fr] gap-6 items-start"
+                className="stagger grid grid-cols-1 lg:grid-cols-[0.8fr_1.2fr] gap-6 items-start"
             >
                 <section className="rounded-2xl border border-line bg-surface p-6 sm:p-8 shadow-card">
                     <h2 className="text-lg font-bold text-fg mb-6">Account</h2>
@@ -757,7 +757,7 @@ export default function SettingsPage() {
 
                 {credentialsLoading ? (
                     <div className="flex justify-center py-16">
-                        <div className="animate-spin rounded-full h-9 w-9 border-t-2 border-indigo-500" />
+                        <div className="animate-spin rounded-full h-9 w-9 border-[3px] border-indigo-500/20 border-t-indigo-500" />
                     </div>
                 ) : (
                     <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">

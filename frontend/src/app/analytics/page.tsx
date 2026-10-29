@@ -19,6 +19,7 @@ import { AnalyticsAiTips } from '@/components/AnalyticsAiTips';
 import { AnalyticsMonitor } from '@/components/AnalyticsMonitor';
 import { AnalyticsTips } from '@/components/AnalyticsTips';
 import { PostTrackerCalendar } from '@/components/PostTrackerCalendar';
+import { Tabs } from '@/components/Tabs';
 import { analyticsApi, connectionsApi } from '@/lib/apiClient';
 import {
     formatElapsed,
@@ -39,6 +40,14 @@ const TABS: Array<{ key: TabKey; label: string }> = [
     { key: 'monitor', label: 'Live monitor' },
     { key: 'tracker', label: 'Post tracker' },
     { key: 'ai', label: 'AI analysis' },
+];
+
+const RANGES: Array<{ key: RangeKey; label: string }> = [
+    { key: '7', label: '7 days' },
+    { key: '30', label: '30 days' },
+    { key: '60', label: '60 days' },
+    { key: '90', label: '90 days' },
+    { key: 'custom', label: 'Custom' },
 ];
 
 function istTodayKey(): string {
@@ -503,17 +512,17 @@ export default function AnalyticsPage() {
             }
         >
             {notice ? (
-                <div className="mb-5 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-300">
+                <div className="animate-fade-up mb-5 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-300">
                     {notice}
                 </div>
             ) : null}
             {error ? (
-                <div className="mb-5 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
+                <div className="animate-fade-up mb-5 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
                     {error}
                 </div>
             ) : null}
             {reconnectPages.length > 0 ? (
-                <div className="mb-5 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-200">
+                <div className="animate-fade-up mb-5 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-200">
                     {reconnectPages.join(', ')}{' '}
                     {reconnectPages.length === 1 ? 'needs' : 'need'}{' '}
                     reconnecting to load engagement insights.
@@ -534,7 +543,7 @@ export default function AnalyticsPage() {
                 return (
                     <div
                         key={item.connectionId}
-                        className="mb-5 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-200"
+                        className="animate-fade-up mb-5 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-200"
                     >
                         <div>
                             Meta still blocks insights for{' '}
@@ -589,29 +598,13 @@ export default function AnalyticsPage() {
             })}
 
             <div className="mb-6 flex flex-wrap items-center gap-2">
-                {(['7', '30', '60', '90'] as RangeKey[]).map((value) => (
-                    <button
-                        key={value}
-                        onClick={() => setRange(value)}
-                        className={`rounded-xl border px-3 py-2 text-xs font-bold ${
-                            range === value
-                                ? 'border-indigo-500/20 bg-indigo-500/15 text-indigo-700 dark:text-indigo-300'
-                                : 'border-line bg-surface text-muted'
-                        }`}
-                    >
-                        {value} days
-                    </button>
-                ))}
-                <button
-                    onClick={() => setRange('custom')}
-                    className={`rounded-xl border px-3 py-2 text-xs font-bold ${
-                        range === 'custom'
-                            ? 'border-indigo-500/20 bg-indigo-500/15 text-indigo-700 dark:text-indigo-300'
-                            : 'border-line bg-surface text-muted'
-                    }`}
-                >
-                    Custom
-                </button>
+                <Tabs
+                    label="Date range"
+                    variant="segmented"
+                    items={RANGES}
+                    value={range}
+                    onChange={setRange}
+                />
                 {range === 'custom' ? (
                     <>
                         <input
@@ -669,28 +662,21 @@ export default function AnalyticsPage() {
                 </span>
             </div>
 
-            <div className="mb-6 flex gap-2 overflow-x-auto">
-                {TABS.map((item) => (
-                    <button
-                        key={item.key}
-                        onClick={() => setTab(item.key)}
-                        className={`whitespace-nowrap rounded-xl border px-4 py-2.5 text-xs font-bold ${
-                            tab === item.key
-                                ? 'border-indigo-500/20 bg-indigo-500/15 text-indigo-700 dark:text-indigo-300'
-                                : 'border-line bg-surface text-muted'
-                        }`}
-                    >
-                        {item.label}
-                    </button>
-                ))}
-            </div>
+            <Tabs
+                label="Analytics view"
+                items={TABS}
+                value={tab}
+                onChange={setTab}
+                className="mb-6"
+            />
 
+            <div key={tab} className="animate-fade-in">
             {loading ? (
                 <div className="flex justify-center py-24">
-                    <div className="h-10 w-10 animate-spin rounded-full border-t-2 border-indigo-500" />
+                    <div className="h-10 w-10 animate-spin rounded-full border-[3px] border-indigo-500/20 border-t-indigo-500" />
                 </div>
             ) : tab === 'overview' && overview ? (
-                <div className="space-y-6">
+                <div key="overview" className="stagger space-y-6">
                     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
                         <MetricCard
                             label="Published posts"
@@ -881,7 +867,7 @@ export default function AnalyticsPage() {
                     </section>
                     <div className="space-y-4">
                         {posts.length === 0 ? (
-                            <div className="rounded-2xl border border-dashed border-line-strong bg-surface p-12 text-center text-sm text-muted">
+                            <div className="animate-fade-up rounded-2xl border border-dashed border-line-strong bg-surface p-12 text-center text-sm text-muted">
                                 No published posts in this range.{' '}
                                 <Link
                                     href="/composer"
@@ -912,7 +898,7 @@ export default function AnalyticsPage() {
                     ) : null}
                 </div>
             ) : tab === 'overview' ? (
-                <div className="rounded-2xl border border-dashed border-line-strong bg-surface p-12 text-center text-sm text-muted">
+                <div className="animate-fade-up rounded-2xl border border-dashed border-line-strong bg-surface p-12 text-center text-sm text-muted">
                     Could not load the overview. Use Refresh insights to try
                     again.
                 </div>
@@ -927,7 +913,7 @@ export default function AnalyticsPage() {
                         now={now}
                     />
                 ) : (
-                    <div className="rounded-2xl border border-dashed border-line-strong bg-surface p-12 text-center text-sm text-muted">
+                    <div className="animate-fade-up rounded-2xl border border-dashed border-line-strong bg-surface p-12 text-center text-sm text-muted">
                         {monitorLoading
                             ? 'Loading live monitor...'
                             : 'Turn on the live monitor to build engagement history.'}
@@ -962,6 +948,7 @@ export default function AnalyticsPage() {
                     />
                 </div>
             )}
+            </div>
         </AppShell>
     );
 }
