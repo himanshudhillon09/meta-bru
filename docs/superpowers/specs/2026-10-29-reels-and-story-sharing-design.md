@@ -352,8 +352,8 @@ returns the cover as `mediaUrl` for reels.
 
 ## Error Handling
 
-- Cloudinary not configured: signature and video endpoints return `503`, and
-  the Reels page shows the same setup prompt as Storage.
+- Cloudinary not configured: signature and video endpoints return `503` with a
+  message that points to Profile, and the Reels page shows that message.
 - Upload interrupted or rejected by Cloudinary: the page shows Cloudinary's
   error and keeps the caption and settings.
 - A Story failure is shown on its chip in Queue and never turns a published post
