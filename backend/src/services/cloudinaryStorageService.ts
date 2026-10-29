@@ -973,3 +973,83 @@ export async function deleteUserAssets(
 
     return executeDeletion(credentials, plan);
 }
+
+export interface PostMediaCleanup {
+    mediaDeleted: boolean;
+    mediaError: string;
+}
+
+export interface MediaFileStore {
+    /** The file's asset folder, or null when Cloudinary no longer has it. */
+    assetFolder(publicId: string, resourceType: MediaResourceType): Promise<string | null>;
+    remove(publicId: string, resourceType: MediaResourceType): Promise<void>;
+}
+
+export function cloudinaryMediaFileStore(
+    credentials: CloudinaryCredentials
+): MediaFileStore {
+    const options = credentialsOptions(credentials);
+
+    return {
+        async assetFolder(publicId, resourceType) {
+            try {
+                const raw = (await cloudinary.api.resource(publicId, {
+                    ...options,
+                    resource_type: resourceType,
+                })) as { asset_folder?: unknown };
+                return typeof raw.asset_folder === 'string' ? raw.asset_folder : '';
+            } catch (error) {
+                if (cloudinaryHttpCode(error) === 404) return null;
+                throw error;
+            }
+        },
+        async remove(publicId, resourceType) {
+            const response = (await cloudinary.api.delete_resources([publicId], {
+                ...options,
+                resource_type: resourceType,
+                type: 'upload',
+            })) as DeleteApiResponse;
+            const status = response.deleted?.[publicId];
+            if (status !== 'deleted' && status !== 'not_found') {
+                throw new Error(
+                    typeof status === 'string'
+                        ? `Cloudinary returned: ${status}`
+                        : 'Cloudinary did not confirm deletion.'
+                );
+            }
+        },
+    };
+}
+
+/**
+ * Deletes a deleted post's Cloudinary file when no other post of the same
+ * user still uses it and it sits in the user's Meta-Bru folder. Failures are
+ * reported, never thrown: the post is already gone.
+ */
+export async function deletePostMediaIfUnused(
+    userId: string,
+    media: { publicId: string; resourceType: MediaResourceType },
+    storeFor: (credentials: CloudinaryCredentials) => MediaFileStore = cloudinaryMediaFileStore
+): Promise<PostMediaCleanup> {
+    const { publicId, resourceType } = media;
+    const kept: PostMediaCleanup = { mediaDeleted: false, mediaError: '' };
+    if (!publicId) return kept;
+
+    try {
+        if (await Post.exists({ userId, mediaPublicId: publicId })) return kept;
+
+        const store = storeFor(await getCloudinaryCredentials(userId));
+        const assetFolder = await store.assetFolder(publicId, resourceType);
+        if (assetFolder === null || !isAssetInUserFolder({ publicId, assetFolder }, userId)) {
+            return kept;
+        }
+
+        await store.remove(publicId, resourceType);
+        return { mediaDeleted: true, mediaError: '' };
+    } catch (error) {
+        if (error instanceof AppError && error.code === 'MEDIA_NOT_CONFIGURED') {
+            return kept;
+        }
+        return { mediaDeleted: false, mediaError: cloudinaryErrorMessage(error) };
+    }
+}

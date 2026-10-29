@@ -17,6 +17,7 @@ import {
     STALE_LOCK_MS,
     canPublishWithStatus,
 } from '../services/connectionLifecycleService.js';
+import { deletePostMediaIfUnused } from '../services/cloudinaryStorageService.js';
 import { getCloudinaryCredentials } from '../services/credentialService.js';
 import { REEL_LIMITS } from '../services/mediaDerivativeService.js';
 import { publishPost, sharePostToStory } from '../services/publishService.js';
@@ -468,7 +469,12 @@ export async function deletePost(req: Request, res: Response): Promise<void> {
         throw new AppError(409, 'This post is currently publishing', 'POST_LOCKED');
     }
 
-    res.json({ success: true, message: 'Post deleted' });
+    const cleanup = await deletePostMediaIfUnused(req.user.id, {
+        publicId: post.mediaPublicId,
+        resourceType: post.mediaType === 'reel' ? 'video' : 'image',
+    });
+
+    res.json({ success: true, message: 'Post deleted', ...cleanup });
 }
 
 export async function publishNow(req: Request, res: Response): Promise<void> {

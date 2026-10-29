@@ -528,3 +528,24 @@ test('shareStory releases the Page lock when sharing fails', async () => {
         { lockedAt: null }
     );
 });
+
+test('deletePost keeps a file another post still uses and reports it', async () => {
+    const draft = queuedPost({
+        status: 'draft',
+        mediaType: 'image',
+        mediaPublicId: `meta-bru/${USER_ID}/image-1`,
+    });
+    mock.method(post, 'findOne', async () => draft);
+    mock.method(post, 'findOneAndDelete', async () => draft);
+    mock.method(post, 'exists', async () => ({ _id: 'another-post' }));
+    const { res, json } = response();
+
+    await deletePost(request(), res);
+
+    assert.deepEqual(json.mock.calls[0]?.arguments[0], {
+        success: true,
+        message: 'Post deleted',
+        mediaDeleted: false,
+        mediaError: '',
+    });
+});

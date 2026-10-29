@@ -1,4 +1,4 @@
-import test from 'node:test';
+import test, { afterEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import type {
     DeletionPlan,
@@ -12,6 +12,7 @@ process.env.TOKEN_ENCRYPTION_KEY = '0123456789abcdef'.repeat(4);
 
 const {
     applyDuplicateGroups,
+    deletePostMediaIfUnused,
     duplicateKeyFor,
     emptyStorageSummary,
     executeDeletion,
@@ -24,6 +25,42 @@ const {
     userFolder,
 } = await import('./cloudinaryStorageService.js');
 const { reelCoverUrl } = await import('./mediaDerivativeService.js');
+const { Post } = await import('../models/postModel.js');
+const { User } = await import('../models/userModel.js');
+const { encryptSecret } = await import('./cryptoService.js');
+
+type MockableModel = Record<string, (...args: unknown[]) => unknown>;
+const postModel = Post as unknown as MockableModel;
+const userModel = User as unknown as MockableModel;
+const OWNER_ID = '64b7f1c2a1b2c3d4e5f60719';
+
+afterEach(() => mock.restoreAll());
+
+function cloudinaryOwner() {
+    return {
+        select: async () => ({
+            credentialsEnc: encryptSecret(
+                JSON.stringify({
+                    cloudinary: { cloudName: 'demo', apiKey: 'key', apiSecret: 'secret' },
+                })
+            ),
+        }),
+    };
+}
+
+function fakeFileStore(assetFolder: string | null, removeError?: Error) {
+    const removed: Array<[string, string]> = [];
+    return {
+        removed,
+        storeFor: () => ({
+            assetFolder: async () => assetFolder,
+            remove: async (publicId: string, resourceType: string) => {
+                if (removeError) throw removeError;
+                removed.push([publicId, resourceType]);
+            },
+        }),
+    };
+}
 
 function baseAsset(
     overrides: Partial<StorageAssetBase> = {}
@@ -526,4 +563,83 @@ test('treats assets without a resource type as images', () => {
     assert.equal(asset.resourceType, 'image');
     assert.equal(asset.duration, 0);
     assert.equal(asset.thumbnailUrl, thumbnailUrlFor('demo', 'meta-bru/user-1/image'));
+});
+
+test('deletes an unused post file from the user folder', async () => {
+    mock.method(postModel, 'exists', async () => null);
+    mock.method(userModel, 'findById', () => cloudinaryOwner());
+    const files = fakeFileStore(`meta-bru/${OWNER_ID}`);
+
+    const result = await deletePostMediaIfUnused(
+        OWNER_ID,
+        { publicId: `meta-bru/${OWNER_ID}/reel-1`, resourceType: 'video' },
+        files.storeFor
+    );
+
+    assert.deepEqual(result, { mediaDeleted: true, mediaError: '' });
+    assert.deepEqual(files.removed, [[`meta-bru/${OWNER_ID}/reel-1`, 'video']]);
+});
+
+test('keeps a file another post still uses', async () => {
+    mock.method(postModel, 'exists', async () => ({ _id: 'other-post' }));
+    const files = fakeFileStore(`meta-bru/${OWNER_ID}`);
+
+    const result = await deletePostMediaIfUnused(
+        OWNER_ID,
+        { publicId: `meta-bru/${OWNER_ID}/image-1`, resourceType: 'image' },
+        files.storeFor
+    );
+
+    assert.deepEqual(result, { mediaDeleted: false, mediaError: '' });
+    assert.deepEqual(files.removed, []);
+});
+
+test('never deletes a file outside the user folder', async () => {
+    mock.method(postModel, 'exists', async () => null);
+    mock.method(userModel, 'findById', () => cloudinaryOwner());
+    const files = fakeFileStore('somewhere-else');
+
+    const result = await deletePostMediaIfUnused(
+        OWNER_ID,
+        { publicId: 'somewhere-else/image-1', resourceType: 'image' },
+        files.storeFor
+    );
+
+    assert.deepEqual(result, { mediaDeleted: false, mediaError: '' });
+    assert.deepEqual(files.removed, []);
+});
+
+test('reports a Cloudinary failure instead of throwing', async () => {
+    mock.method(postModel, 'exists', async () => null);
+    mock.method(userModel, 'findById', () => cloudinaryOwner());
+    const files = fakeFileStore(`meta-bru/${OWNER_ID}`, new Error('Cloudinary is down'));
+
+    const result = await deletePostMediaIfUnused(
+        OWNER_ID,
+        { publicId: `meta-bru/${OWNER_ID}/image-1`, resourceType: 'image' },
+        files.storeFor
+    );
+
+    assert.deepEqual(result, { mediaDeleted: false, mediaError: 'Cloudinary is down' });
+});
+
+test('skips cleanup quietly without Cloudinary credentials or media', async () => {
+    mock.method(postModel, 'exists', async () => null);
+    mock.method(userModel, 'findById', () => ({
+        select: async () => ({ credentialsEnc: '' }),
+    }));
+    const files = fakeFileStore(`meta-bru/${OWNER_ID}`);
+
+    assert.deepEqual(
+        await deletePostMediaIfUnused(
+            OWNER_ID,
+            { publicId: `meta-bru/${OWNER_ID}/image-1`, resourceType: 'image' },
+            files.storeFor
+        ),
+        { mediaDeleted: false, mediaError: '' }
+    );
+    assert.deepEqual(
+        await deletePostMediaIfUnused(OWNER_ID, { publicId: '', resourceType: 'image' }, files.storeFor),
+        { mediaDeleted: false, mediaError: '' }
+    );
 });
