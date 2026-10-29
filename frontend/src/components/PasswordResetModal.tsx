@@ -11,7 +11,7 @@ interface PasswordResetModalProps {
 }
 
 const fieldInputClass =
-    'w-full bg-slate-950/80 border border-white/10 rounded-xl px-4 py-3.5 text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50';
+    'w-full bg-surface-2 border border-line-strong rounded-xl px-4 py-3.5 text-fg placeholder:text-faint focus:outline-none focus:ring-2 focus:ring-indigo-500/50';
 
 export function PasswordResetModal({
     target,
@@ -67,24 +67,24 @@ export function PasswordResetModal({
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <div
-                className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm"
+                className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm"
                 onClick={
                     temporaryPassword || resetting ? undefined : onClose
                 }
             />
-            <div className="relative w-full max-w-lg rounded-[28px] border border-white/10 bg-slate-900/95 p-7 shadow-2xl">
+            <div className="relative w-full max-w-lg rounded-3xl border border-line-strong bg-surface p-7 shadow-2xl">
                 {temporaryPassword ? (
                     <>
-                        <h3 className="text-xl font-bold text-white">
+                        <h3 className="text-xl font-bold text-fg">
                             Temporary password ready
                         </h3>
-                        <p className="mt-2 text-sm text-slate-400">
+                        <p className="mt-2 text-sm text-muted">
                             Give this password to {target.name} ({target.email})
                             through a secure channel. It will not be shown again.
                         </p>
 
                         <div className="mt-5">
-                            <label className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                            <label className="text-xs font-bold uppercase tracking-widest text-subtle">
                                 Temporary password
                             </label>
                             <PasswordInput
@@ -101,20 +101,20 @@ export function PasswordResetModal({
                             <button
                                 type="button"
                                 onClick={() => void copy()}
-                                className="rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-bold text-white transition-all hover:bg-white/10"
+                                className="rounded-xl border border-line-strong bg-hover px-4 py-2.5 text-xs font-bold text-fg transition-all hover:bg-hover-strong"
                             >
                                 {copied ? 'Copied' : 'Copy password'}
                             </button>
                         </div>
 
-                        <div className="mt-5 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-200">
+                        <div className="mt-5 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-700 dark:text-amber-200">
                             All of this user&apos;s sessions have been signed
                             out. They must change this password before they can
                             use the app again.
                         </div>
 
                         {error ? (
-                            <div className="mt-4 rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
+                            <div className="mt-4 rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
                                 {error}
                             </div>
                         ) : null}
@@ -129,25 +129,25 @@ export function PasswordResetModal({
                     </>
                 ) : (
                     <>
-                        <h3 className="text-xl font-bold text-white">
+                        <h3 className="text-xl font-bold text-fg">
                             Reset password?
                         </h3>
-                        <p className="mt-2 text-sm text-slate-400">
+                        <p className="mt-2 text-sm text-muted">
                             Reset the password for{' '}
-                            <span className="font-semibold text-white">
+                            <span className="font-semibold text-fg">
                                 {target.name}
                             </span>{' '}
                             ({target.email}).
                         </p>
 
-                        <div className="mt-5 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+                        <div className="mt-5 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-200">
                             This signs out all of their active sessions. A
                             temporary password will be shown to you once, and
                             they will be required to change it at next login.
                         </div>
 
                         {error ? (
-                            <div className="mt-4 rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
+                            <div className="mt-4 rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
                                 {error}
                             </div>
                         ) : null}
@@ -157,7 +157,7 @@ export function PasswordResetModal({
                                 type="button"
                                 onClick={onClose}
                                 disabled={resetting}
-                                className="flex-1 rounded-xl border border-white/10 bg-white/5 py-3 text-sm font-bold text-white transition-all hover:bg-white/10 disabled:opacity-60"
+                                className="flex-1 rounded-xl border border-line-strong bg-hover py-3 text-sm font-bold text-fg transition-all hover:bg-hover-strong disabled:opacity-60"
                             >
                                 Cancel
                             </button>

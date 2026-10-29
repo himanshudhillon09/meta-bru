@@ -9,12 +9,12 @@ import {
 } from '@/lib/types';
 
 const STATUS_CLASSES: Record<PostStatus, string> = {
-    draft: 'bg-slate-500/10 text-slate-300 border-slate-500/20',
-    queued: 'bg-indigo-500/10 text-indigo-300 border-indigo-500/20',
-    publishing: 'bg-sky-500/10 text-sky-300 border-sky-500/20',
-    published: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20',
-    partial: 'bg-amber-500/10 text-amber-300 border-amber-500/20',
-    failed: 'bg-rose-500/10 text-rose-300 border-rose-500/20',
+    draft: 'bg-slate-500/10 text-fg-2 border-slate-500/20',
+    queued: 'bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border-indigo-500/20',
+    publishing: 'bg-sky-500/10 text-sky-700 dark:text-sky-300 border-sky-500/20',
+    published: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20',
+    partial: 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20',
+    failed: 'bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/20',
 };
 
 function uploadDate(value: string): string {
@@ -32,7 +32,7 @@ function usageBadge(asset: StorageAsset): {
         return {
             label: 'In use',
             className:
-                'bg-amber-500/10 text-amber-300 border-amber-500/20',
+                'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20',
         };
     }
 
@@ -40,13 +40,13 @@ function usageBadge(asset: StorageAsset): {
         return {
             label: 'Published',
             className:
-                'bg-emerald-500/10 text-emerald-300 border-emerald-500/20',
+                'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20',
         };
     }
 
     return {
         label: 'Unused',
-        className: 'bg-slate-500/10 text-slate-300 border-slate-500/20',
+        className: 'bg-slate-500/10 text-fg-2 border-slate-500/20',
     };
 }
 
@@ -67,13 +67,13 @@ export function StorageAssetCard({
 
     return (
         <article
-            className={`rounded-3xl border bg-slate-900/40 overflow-hidden shadow-xl transition-all ${
+            className={`rounded-2xl border bg-surface overflow-hidden shadow-card transition-all ${
                 selected
                     ? 'border-indigo-500/50 ring-2 ring-indigo-500/20'
-                    : 'border-white/5'
+                    : 'border-line'
             }`}
         >
-            <div className="relative aspect-square bg-slate-800">
+            <div className="relative aspect-square bg-sunken">
                 <a
                     href={asset.secureUrl}
                     target="_blank"
@@ -116,7 +116,7 @@ export function StorageAssetCard({
                         className={`w-8 h-8 rounded-xl border flex items-center justify-center transition-all ${
                             selected
                                 ? 'bg-indigo-500 border-indigo-400 text-white'
-                                : 'bg-slate-950/70 border-white/20 text-transparent hover:border-white/40'
+                                : 'bg-surface-2 border-line-strong text-transparent hover:border-faint'
                         } ${
                             !asset.canDelete
                                 ? 'opacity-40 cursor-not-allowed'
@@ -139,12 +139,12 @@ export function StorageAssetCard({
 
                 <div className="absolute top-3 right-3 flex flex-col items-end gap-1.5">
                     {isVideo ? (
-                        <span className="rounded-full border border-fuchsia-500/25 bg-slate-950/80 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-fuchsia-300 backdrop-blur">
+                        <span className="rounded-full border border-fuchsia-500/25 bg-surface-2 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-fuchsia-700 dark:text-fuchsia-300 backdrop-blur">
                             ▶ Reel · {formatDuration(asset.duration)}
                         </span>
                     ) : null}
                     {duplicate ? (
-                        <span className="rounded-full border border-indigo-500/25 bg-slate-950/80 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-indigo-300 backdrop-blur">
+                        <span className="rounded-full border border-indigo-500/25 bg-surface-2 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-300 backdrop-blur">
                             {asset.duplicateMatch === 'exact'
                                 ? 'Exact duplicate'
                                 : 'Possible duplicate'}{' '}
@@ -155,8 +155,8 @@ export function StorageAssetCard({
                         <span
                             className={`rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider backdrop-blur ${
                                 asset.recommendedKeep
-                                    ? 'border-emerald-500/25 bg-slate-950/80 text-emerald-300'
-                                    : 'border-rose-500/25 bg-slate-950/80 text-rose-300'
+                                    ? 'border-emerald-500/25 bg-surface-2 text-emerald-700 dark:text-emerald-300'
+                                    : 'border-rose-500/25 bg-surface-2 text-rose-700 dark:text-rose-300'
                             }`}
                         >
                             {asset.recommendedKeep ? 'Keep' : 'Extra copy'}
@@ -165,7 +165,7 @@ export function StorageAssetCard({
                 </div>
 
                 {!asset.canDelete ? (
-                    <div className="absolute bottom-3 left-3 right-3 rounded-xl border border-amber-500/20 bg-slate-950/85 px-3 py-2 text-[11px] font-semibold text-amber-300 backdrop-blur">
+                    <div className="absolute bottom-3 left-3 right-3 rounded-xl border border-amber-500/20 bg-surface-2 px-3 py-2 text-[11px] font-semibold text-amber-700 dark:text-amber-300 backdrop-blur">
                         Locked by an unfinished post
                     </div>
                 ) : null}
@@ -175,12 +175,12 @@ export function StorageAssetCard({
                 <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                         <div
-                            className="text-sm font-bold text-white truncate"
+                            className="text-sm font-bold text-fg truncate"
                             title={asset.publicId}
                         >
                             {asset.publicId}
                         </div>
-                        <div className="text-[11px] text-slate-500 mt-1">
+                        <div className="text-[11px] text-subtle mt-1">
                             {asset.format
                                 ? asset.format.toUpperCase()
                                 : isVideo
@@ -190,7 +190,7 @@ export function StorageAssetCard({
                             {isVideo ? `${formatDuration(asset.duration)} · ` : ''}
                             {formatBytes(asset.bytes)}
                         </div>
-                        <div className="text-[11px] text-slate-500 mt-0.5">
+                        <div className="text-[11px] text-subtle mt-0.5">
                             Uploaded {uploadDate(asset.createdAt)}
                         </div>
                     </div>
@@ -212,7 +212,7 @@ export function StorageAssetCard({
                             </span>
                         ))}
                         {asset.posts.length > 4 ? (
-                            <span className="text-[10px] text-slate-500 self-center">
+                            <span className="text-[10px] text-subtle self-center">
                                 +{asset.posts.length - 4} more
                             </span>
                         ) : null}
@@ -220,18 +220,18 @@ export function StorageAssetCard({
                 ) : null}
 
                 {!asset.canDelete ? (
-                    <p className="mt-3 text-[11px] leading-relaxed text-amber-300/80">
+                    <p className="mt-3 text-[11px] leading-relaxed text-amber-700/80 dark:text-amber-300/80">
                         {asset.deleteBlockedReason}
                     </p>
                 ) : null}
 
                 {duplicate ? (
-                    <p className="mt-3 text-[11px] text-slate-400">
+                    <p className="mt-3 text-[11px] text-muted">
                         <span
                             className={
                                 asset.recommendedKeep
-                                    ? 'text-emerald-300'
-                                    : 'text-rose-300'
+                                    ? 'text-emerald-700 dark:text-emerald-300'
+                                    : 'text-rose-700 dark:text-rose-300'
                             }
                         >
                             {asset.recommendedKeep

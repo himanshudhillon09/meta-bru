@@ -14,7 +14,7 @@ interface BrandLogoSectionProps {
 const EMPTY: BrandLogoDetails = { logo: null, previews: [] };
 
 const removeButtonClass =
-    'bg-white/5 hover:bg-rose-500/10 disabled:opacity-60 text-rose-300 border border-white/10 px-4 py-2.5 rounded-xl text-xs font-bold transition-all';
+    'bg-hover hover:bg-rose-500/10 disabled:opacity-60 text-rose-700 dark:text-rose-300 border border-line-strong px-4 py-2.5 rounded-xl text-xs font-bold transition-all';
 
 function LogoSwatch({
     src,
@@ -27,8 +27,8 @@ function LogoSwatch({
         <div
             className={`flex h-28 items-center justify-center rounded-2xl border p-4 ${
                 tone === 'light'
-                    ? 'border-white/10 bg-slate-100'
-                    : 'border-white/5 bg-slate-950'
+                    ? 'border-line-strong bg-slate-100'
+                    : 'border-line bg-canvas'
             }`}
         >
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -130,11 +130,11 @@ export function BrandLogoSection({ onNotice, onError }: BrandLogoSectionProps) {
     const { logo, previews } = details;
 
     return (
-        <section className="mt-6 rounded-3xl border border-white/5 bg-slate-900/40 p-6 sm:p-8 shadow-xl">
+        <section className="mt-6 rounded-2xl border border-line bg-surface p-6 sm:p-8 shadow-card">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                    <h2 className="text-lg font-bold text-white">Post branding</h2>
-                    <p className="mt-1 max-w-2xl text-sm text-slate-400">
+                    <h2 className="text-lg font-bold text-fg">Post branding</h2>
+                    <p className="mt-1 max-w-2xl text-sm text-muted">
                         Every new upload and AI image is resized for the
                         Instagram and Facebook feed before it is stored. Add a
                         logo to also place each photo in a branded frame, with
@@ -144,8 +144,8 @@ export function BrandLogoSection({ onNotice, onError }: BrandLogoSectionProps) {
                 <span
                     className={`inline-flex shrink-0 items-center gap-1.5 self-start rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-wider ${
                         logo
-                            ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300'
-                            : 'border-slate-500/20 bg-slate-500/10 text-slate-300'
+                            ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                            : 'border-slate-500/20 bg-slate-500/10 text-fg-2'
                     }`}
                 >
                     <span
@@ -159,19 +159,19 @@ export function BrandLogoSection({ onNotice, onError }: BrandLogoSectionProps) {
 
             <div className="mt-6 grid grid-cols-1 items-start gap-6 lg:grid-cols-[0.8fr_1.2fr]">
                 <div>
-                    <div className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                    <div className="text-xs font-bold uppercase tracking-widest text-subtle">
                         Logo
                     </div>
 
                     {loading ? (
-                        <div className="mt-3 h-28 animate-pulse rounded-2xl border border-white/5 bg-slate-950/40" />
+                        <div className="mt-3 h-28 animate-pulse rounded-2xl border border-line bg-surface-2" />
                     ) : logo ? (
                         <>
                             <div className="mt-3 grid grid-cols-2 gap-3">
                                 <LogoSwatch src={logo.dataUrl} tone="light" />
                                 <LogoSwatch src={logo.dataUrl} tone="dark" />
                             </div>
-                            <p className="mt-2 text-[11px] text-slate-500">
+                            <p className="mt-2 text-[11px] text-subtle">
                                 {logo.width} × {logo.height} · {formatBytes(logo.bytes)} ·
                                 transparent edges trimmed automatically
                             </p>
@@ -181,12 +181,12 @@ export function BrandLogoSection({ onNotice, onError }: BrandLogoSectionProps) {
                             type="button"
                             onClick={() => fileInput.current?.click()}
                             disabled={Boolean(busy)}
-                            className="mt-3 flex h-28 w-full flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-slate-950/40 text-center transition-all hover:border-indigo-500/40 disabled:opacity-60"
+                            className="mt-3 flex h-28 w-full flex-col items-center justify-center rounded-2xl border border-dashed border-line-strong bg-surface-2 text-center transition-all hover:border-indigo-500/40 disabled:opacity-60"
                         >
-                            <span className="text-sm font-bold text-white">
+                            <span className="text-sm font-bold text-fg">
                                 {busy === 'upload' ? 'Uploading...' : 'Upload your logo'}
                             </span>
-                            <span className="mt-1 text-xs text-slate-500">
+                            <span className="mt-1 text-xs text-subtle">
                                 PNG with a transparent background works best
                             </span>
                         </button>
@@ -222,7 +222,7 @@ export function BrandLogoSection({ onNotice, onError }: BrandLogoSectionProps) {
                             </>
                         ) : null}
                     </div>
-                    <p className="mt-3 text-xs text-slate-500">
+                    <p className="mt-3 text-xs text-subtle">
                         JPEG, PNG or WebP · max 10 MB · 400px or wider looks
                         sharpest. A logo without transparency is shown as a
                         rounded badge.
@@ -230,14 +230,14 @@ export function BrandLogoSection({ onNotice, onError }: BrandLogoSectionProps) {
                 </div>
 
                 <div>
-                    <div className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                    <div className="text-xs font-bold uppercase tracking-widest text-subtle">
                         {logo ? 'How your posts will look' : 'Without a logo'}
                     </div>
 
                     {loading || (busy === 'upload' && !logo) ? (
                         <div className="mt-3 grid grid-cols-2 gap-4">
-                            <div className="aspect-[4/5] animate-pulse rounded-2xl bg-slate-950/40" />
-                            <div className="aspect-square animate-pulse rounded-2xl bg-slate-950/40" />
+                            <div className="aspect-[4/5] animate-pulse rounded-2xl bg-surface-2" />
+                            <div className="aspect-square animate-pulse rounded-2xl bg-surface-2" />
                         </div>
                     ) : logo && previews.length > 0 ? (
                         <div className="mt-3 grid grid-cols-2 items-start gap-4">
@@ -247,10 +247,10 @@ export function BrandLogoSection({ onNotice, onError }: BrandLogoSectionProps) {
                                     <img
                                         src={preview.dataUrl}
                                         alt={`${preview.label} in the branded frame`}
-                                        className="h-auto w-full rounded-2xl border border-white/10 shadow-lg"
+                                        className="h-auto w-full rounded-2xl border border-line-strong shadow-lg"
                                     />
-                                    <figcaption className="mt-2 text-[11px] text-slate-500">
-                                        <span className="font-bold text-slate-300">
+                                    <figcaption className="mt-2 text-[11px] text-subtle">
+                                        <span className="font-bold text-fg-2">
                                             {preview.label}
                                         </span>{' '}
                                         · {preview.width} × {preview.height}
@@ -259,7 +259,7 @@ export function BrandLogoSection({ onNotice, onError }: BrandLogoSectionProps) {
                             ))}
                         </div>
                     ) : (
-                        <div className="mt-3 rounded-2xl border border-white/5 bg-slate-950/40 p-5 text-sm leading-relaxed text-slate-400">
+                        <div className="mt-3 rounded-2xl border border-line bg-surface-2 p-5 text-sm leading-relaxed text-muted">
                             Photos are only resized, 1080px wide, to fit the
                             feed: from 4:5 portrait (1080 × 1350) to 1.91:1
                             landscape (1080 × 566). A photo already in that range
@@ -270,7 +270,7 @@ export function BrandLogoSection({ onNotice, onError }: BrandLogoSectionProps) {
                     )}
 
                     {logo ? (
-                        <p className="mt-3 text-xs text-slate-500">
+                        <p className="mt-3 text-xs text-subtle">
                             The frame colour follows each photo and switches
                             between light and dark to keep your logo readable.
                             Already uploaded images are not changed.

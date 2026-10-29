@@ -12,7 +12,7 @@ interface PasswordChangeFormProps {
 }
 
 const fieldInputClass =
-    'w-full bg-slate-950/80 border border-white/10 rounded-xl px-4 py-3.5 text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 disabled:opacity-60';
+    'w-full bg-surface-2 border border-line-strong rounded-xl px-4 py-3.5 text-fg placeholder:text-faint focus:outline-none focus:ring-2 focus:ring-indigo-500/50 disabled:opacity-60';
 
 export function PasswordChangeForm({
     onSuccess,
@@ -75,7 +75,7 @@ export function PasswordChangeForm({
     return (
         <form onSubmit={submit} className="space-y-5">
             <div>
-                <label className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                <label className="text-xs font-bold uppercase tracking-widest text-subtle">
                     {currentPasswordLabel}
                 </label>
                 <PasswordInput
@@ -89,7 +89,7 @@ export function PasswordChangeForm({
             </div>
 
             <div>
-                <label className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                <label className="text-xs font-bold uppercase tracking-widest text-subtle">
                     New password
                 </label>
                 <PasswordInput
@@ -104,7 +104,7 @@ export function PasswordChangeForm({
             </div>
 
             <div>
-                <label className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                <label className="text-xs font-bold uppercase tracking-widest text-subtle">
                     Confirm new password
                 </label>
                 <PasswordInput
@@ -118,13 +118,13 @@ export function PasswordChangeForm({
                 />
             </div>
 
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-subtle">
                 Changing your password signs out every other session. This
                 session stays signed in.
             </p>
 
             {error ? (
-                <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
+                <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
                     {error}
                 </div>
             ) : null}

@@ -5,24 +5,24 @@ import Link from 'next/link';
 import type { AnalyticsRuleTip } from '@/lib/types';
 
 const TONES: Record<string, string> = {
-    info: 'border-sky-500/15 bg-sky-500/5 text-sky-200',
-    success: 'border-emerald-500/15 bg-emerald-500/5 text-emerald-200',
-    warning: 'border-amber-500/15 bg-amber-500/5 text-amber-200',
+    info: 'border-sky-500/15 bg-sky-500/5 text-sky-700 dark:text-sky-200',
+    success: 'border-emerald-500/15 bg-emerald-500/5 text-emerald-700 dark:text-emerald-200',
+    warning: 'border-amber-500/15 bg-amber-500/5 text-amber-700 dark:text-amber-200',
 };
 
 export function AnalyticsTips({ tips }: { tips: AnalyticsRuleTip[] }) {
     return (
-        <section className="rounded-3xl border border-white/5 bg-slate-900/40 p-5">
+        <section className="rounded-2xl border border-line bg-surface p-5">
             <div className="mb-4 flex items-center gap-2">
-                <h2 className="text-sm font-bold text-white">
+                <h2 className="text-sm font-bold text-fg">
                     Engagement tips
                 </h2>
-                <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest text-slate-400">
+                <span className="rounded-full bg-sunken px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest text-muted">
                     Rule-based
                 </span>
             </div>
             {tips.length === 0 ? (
-                <p className="text-sm text-slate-500">
+                <p className="text-sm text-subtle">
                     Publish a few posts to unlock tips.
                 </p>
             ) : (

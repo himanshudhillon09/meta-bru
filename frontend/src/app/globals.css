@@ -1,25 +1,77 @@
 @import "tailwindcss";
 
-:root {
-  --background: #0f172a;
-  --foreground: #f8fafc;
-  --primary: #6366f1;
-  --primary-hover: #4f46e5;
-  --secondary: #94a3b8;
-  --accent: #f43f5e;
+/* `dark:` follows the theme the user picked, not the OS setting. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/*
+ * Semantic colour tokens. Components use bg-canvas, bg-surface, text-fg,
+ * border-line, and so on, so one set of classes works in both themes.
+ * Accent colours (indigo buttons, emerald/amber/rose states) come from
+ * Tailwind's palette directly.
+ */
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+  --canvas: #f5f7fb;
+  --surface: #ffffff;
+  --surface-2: #f8fafc;
+  --sunken: #eef2f7;
+  --line: #e4e8ef;
+  --line-strong: #cdd5e0;
+  --fg: #0f172a;
+  --fg-2: #334155;
+  --muted: #475569;
+  --subtle: #64748b;
+  --faint: #94a3b8;
+  --hover: rgb(15 23 42 / 0.045);
+  --hover-strong: rgb(15 23 42 / 0.08);
+  --card-shadow: 0 1px 2px rgb(15 23 42 / 0.04), 0 2px 6px rgb(15 23 42 / 0.04);
 }
 
-@theme {
-  --inline-color-primary: var(--primary);
-  --inline-color-primary-hover: var(--primary-hover);
-  --inline-color-secondary: var(--secondary);
-  --inline-color-accent: var(--accent);
+[data-theme="dark"] {
+  color-scheme: dark;
+  --canvas: #0a0e17;
+  --surface: #111724;
+  --surface-2: #0d121d;
+  --sunken: #1a2131;
+  --line: #1e2635;
+  --line-strong: #2e3a4e;
+  --fg: #f1f5f9;
+  --fg-2: #cbd5e1;
+  --muted: #a3afc2;
+  --subtle: #8692a6;
+  --faint: #566277;
+  --hover: rgb(255 255 255 / 0.04);
+  --hover-strong: rgb(255 255 255 / 0.08);
+  --card-shadow: 0 1px 2px rgb(0 0 0 / 0.3);
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-sunken: var(--sunken);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-fg: var(--fg);
+  --color-fg-2: var(--fg-2);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+  --color-faint: var(--faint);
+  --color-hover: var(--hover);
+  --color-hover-strong: var(--hover-strong);
+  --shadow-card: var(--card-shadow);
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
 }
 
 @layer base {
   body {
-    @apply bg-slate-950 text-slate-50 antialiased;
-    background: radial-gradient(circle at top left, #1e293b, #020617);
+    @apply bg-canvas text-fg antialiased;
     min-height: 100vh;
+  }
+
+  ::selection {
+    background: rgb(99 102 241 / 0.25);
   }
 }

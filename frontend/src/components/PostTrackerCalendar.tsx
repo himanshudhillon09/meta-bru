@@ -94,29 +94,29 @@ export function PostTrackerCalendar({
 
     return (
         <div className="space-y-5">
-            <section className="rounded-3xl border border-white/5 bg-slate-900/40 p-5">
+            <section className="rounded-2xl border border-line bg-surface p-5">
                 <div className="mb-4 flex flex-wrap items-center gap-2">
-                    <h2 className="text-sm font-bold text-white">
+                    <h2 className="text-sm font-bold text-fg">
                         Post date &amp; time tracker
                     </h2>
-                    <span className="text-[10px] text-slate-500">IST</span>
+                    <span className="text-[10px] text-subtle">IST</span>
                     <div className="ml-auto flex items-center gap-2">
                         <button
                             type="button"
                             aria-label="Previous month"
                             onClick={() => onMonthChange(shiftMonth(month, -1))}
-                            className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-slate-300"
+                            className="rounded-lg border border-line-strong px-3 py-1.5 text-xs text-fg-2"
                         >
                             ←
                         </button>
-                        <span className="min-w-36 text-center text-xs font-bold text-white">
+                        <span className="min-w-36 text-center text-xs font-bold text-fg">
                             {monthLabel}
                         </span>
                         <button
                             type="button"
                             aria-label="Next month"
                             onClick={() => onMonthChange(shiftMonth(month, 1))}
-                            className="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-slate-300"
+                            className="rounded-lg border border-line-strong px-3 py-1.5 text-xs text-fg-2"
                         >
                             →
                         </button>
@@ -127,7 +127,7 @@ export function PostTrackerCalendar({
                                 onMonthChange(today.slice(0, 7));
                                 onSelectDay(today);
                             }}
-                            className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-bold text-indigo-300"
+                            className="rounded-lg border border-line-strong px-3 py-1.5 text-xs font-bold text-indigo-700 dark:text-indigo-300"
                         >
                             Today
                         </button>
@@ -135,8 +135,8 @@ export function PostTrackerCalendar({
                 </div>
 
                 {connection ? (
-                    <div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-white/5 bg-slate-950/40 px-3 py-2 text-[11px] text-slate-500">
-                        <span className="font-bold text-white">
+                    <div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-line bg-surface-2 px-3 py-2 text-[11px] text-subtle">
+                        <span className="font-bold text-fg">
                             {connection.pageName}
                         </span>
                         <span>
@@ -149,20 +149,20 @@ export function PostTrackerCalendar({
                         </span>
                         <span>
                             Queued:{' '}
-                            <strong className="text-white">
+                            <strong className="text-fg">
                                 {connection.queuedCount ?? 0}
                             </strong>
                         </span>
                         <Link
                             href="/queue"
-                            className="ml-auto font-bold text-indigo-300"
+                            className="ml-auto font-bold text-indigo-700 dark:text-indigo-300"
                         >
                             Open Queue
                         </Link>
                     </div>
                 ) : null}
 
-                <div className="mb-3 flex flex-wrap items-center gap-4 text-[10px] text-slate-500">
+                <div className="mb-3 flex flex-wrap items-center gap-4 text-[10px] text-subtle">
                     <span className="flex items-center gap-1.5">
                         <span className="h-1.5 w-1.5 rounded-full bg-sky-400" />
                         Facebook
@@ -182,7 +182,7 @@ export function PostTrackerCalendar({
                         {WEEKDAYS.map((day) => (
                             <div
                                 key={day}
-                                className="pb-2 text-center text-[10px] font-bold uppercase tracking-widest text-slate-600"
+                                className="pb-2 text-center text-[10px] font-bold uppercase tracking-widest text-faint"
                             >
                                 {day}
                             </div>
@@ -207,16 +207,16 @@ export function PostTrackerCalendar({
                                         isSelected
                                             ? 'border-indigo-500/30 bg-indigo-500/10'
                                             : isToday
-                                              ? 'border-white/15 bg-slate-950/40'
-                                              : 'border-white/5 bg-slate-950/20 hover:border-white/10'
+                                              ? 'border-line-strong bg-surface-2'
+                                              : 'border-line bg-surface-2 hover:border-line-strong'
                                     }`}
                                 >
-                                    <div className="text-[10px] font-bold text-slate-400">
+                                    <div className="text-[10px] font-bold text-muted">
                                         {dayNumber}
                                     </div>
                                     {dayPosts.length > 0 ? (
                                         <div className="mt-1 flex flex-wrap items-center gap-1">
-                                            <span className="rounded-full bg-indigo-500/15 px-1.5 py-0.5 text-[9px] font-bold text-indigo-300">
+                                            <span className="rounded-full bg-indigo-500/15 px-1.5 py-0.5 text-[9px] font-bold text-indigo-700 dark:text-indigo-300">
                                                 {dayPosts.length}
                                             </span>
                                             {platforms?.has('facebook') ? (
@@ -234,14 +234,14 @@ export function PostTrackerCalendar({
                 )}
             </section>
 
-            <section className="rounded-3xl border border-white/5 bg-slate-900/40 p-5">
-                <h2 className="mb-4 text-sm font-bold text-white">
+            <section className="rounded-2xl border border-line bg-surface p-5">
+                <h2 className="mb-4 text-sm font-bold text-fg">
                     {selectedDay
                         ? `Posts on ${selectedLabel} (IST)`
                         : 'Select a day'}
                 </h2>
                 {selectedPosts.length === 0 ? (
-                    <div className="text-sm text-slate-500">
+                    <div className="text-sm text-subtle">
                         {selectedDay
                             ? 'No published posts on this day.'
                             : 'Choose a date on the calendar to see publish times and engagement.'}
@@ -251,17 +251,17 @@ export function PostTrackerCalendar({
                         {selectedPosts.map((post) => (
                             <div
                                 key={post.postId}
-                                className="rounded-2xl border border-white/5 bg-slate-950/40 p-4"
+                                className="rounded-2xl border border-line bg-surface-2 p-4"
                             >
                                 <div className="flex items-center gap-2">
-                                    <span className="text-xs font-bold text-white">
+                                    <span className="text-xs font-bold text-fg">
                                         {post.connection.pageName}
                                     </span>
-                                    <span className="text-[10px] uppercase tracking-widest text-slate-500">
+                                    <span className="text-[10px] uppercase tracking-widest text-subtle">
                                         {post.status}
                                     </span>
                                 </div>
-                                <p className="mt-1 line-clamp-1 text-xs text-slate-400">
+                                <p className="mt-1 line-clamp-1 text-xs text-muted">
                                     {post.caption}
                                 </p>
                                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -274,28 +274,28 @@ export function PostTrackerCalendar({
                                         .map((target) => (
                                             <div
                                                 key={target.platform}
-                                                className="rounded-xl border border-white/5 bg-slate-900/40 p-3"
+                                                className="rounded-xl border border-line bg-surface p-3"
                                             >
                                                 <div className="flex flex-wrap items-center gap-2">
-                                                    <span className="text-[10px] font-bold uppercase tracking-widest text-indigo-300">
+                                                    <span className="text-[10px] font-bold uppercase tracking-widest text-indigo-700 dark:text-indigo-300">
                                                         {target.platform}
                                                     </span>
-                                                    <span className="text-[11px] text-slate-400">
+                                                    <span className="text-[11px] text-muted">
                                                         {formatIstDateTime(
                                                             target.publishedAt
                                                         )}
                                                     </span>
-                                                    <span className="text-[10px] text-slate-600">
+                                                    <span className="text-[10px] text-faint">
                                                         {formatElapsed(
                                                             target.publishedAt,
                                                             now
                                                         )}
                                                     </span>
                                                 </div>
-                                                <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-slate-400">
+                                                <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-muted">
                                                     <span>
                                                         Reach{' '}
-                                                        <strong className="text-white">
+                                                        <strong className="text-fg">
                                                             {target.metrics
                                                                 ?.reach ??
                                                                 '—'}
@@ -303,7 +303,7 @@ export function PostTrackerCalendar({
                                                     </span>
                                                     <span>
                                                         Interactions{' '}
-                                                        <strong className="text-white">
+                                                        <strong className="text-fg">
                                                             {target.metrics
                                                                 ?.interactions ??
                                                                 '—'}
@@ -311,7 +311,7 @@ export function PostTrackerCalendar({
                                                     </span>
                                                     <span>
                                                         Rate{' '}
-                                                        <strong className="text-emerald-300">
+                                                        <strong className="text-emerald-700 dark:text-emerald-300">
                                                             {target.metrics
                                                                 ?.engagementRate ===
                                                                 null ||
@@ -325,7 +325,7 @@ export function PostTrackerCalendar({
                                                 </div>
                                                 {target.status ===
                                                 'permission_error' ? (
-                                                    <div className="mt-2 text-[10px] text-amber-300">
+                                                    <div className="mt-2 text-[10px] text-amber-700 dark:text-amber-300">
                                                         {target.reconnectRequired !==
                                                         false
                                                             ? 'Reconnect this Page to load insights.'

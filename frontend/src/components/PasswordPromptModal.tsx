@@ -13,7 +13,7 @@ interface PasswordPromptModalProps {
 }
 
 const fieldInputClass =
-    'w-full bg-slate-950/80 border border-white/10 rounded-xl px-4 py-3.5 text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50';
+    'w-full bg-surface-2 border border-line-strong rounded-xl px-4 py-3.5 text-fg placeholder:text-faint focus:outline-none focus:ring-2 focus:ring-indigo-500/50';
 
 export function PasswordPromptModal({
     isOpen,
@@ -60,15 +60,15 @@ export function PasswordPromptModal({
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <div
-                className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm"
+                className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm"
                 onClick={loading ? undefined : onClose}
             />
             <form
                 onSubmit={submit}
-                className="relative w-full max-w-md rounded-[28px] border border-white/10 bg-slate-900/95 p-7 shadow-2xl"
+                className="relative w-full max-w-md rounded-3xl border border-line-strong bg-surface p-7 shadow-2xl"
             >
-                <h3 className="text-xl font-bold text-white">{title}</h3>
-                <p className="mt-2 text-sm text-slate-400">{description}</p>
+                <h3 className="text-xl font-bold text-fg">{title}</h3>
+                <p className="mt-2 text-sm text-muted">{description}</p>
 
                 <div className="mt-5">
                     <PasswordInput
@@ -82,7 +82,7 @@ export function PasswordPromptModal({
                 </div>
 
                 {error ? (
-                    <div className="mt-4 rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
+                    <div className="mt-4 rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
                         {error}
                     </div>
                 ) : null}
@@ -92,7 +92,7 @@ export function PasswordPromptModal({
                         type="button"
                         onClick={onClose}
                         disabled={loading}
-                        className="flex-1 rounded-xl border border-white/10 bg-white/5 py-3 text-sm font-bold text-white transition-all hover:bg-white/10 disabled:opacity-60"
+                        className="flex-1 rounded-xl border border-line-strong bg-hover py-3 text-sm font-bold text-fg transition-all hover:bg-hover-strong disabled:opacity-60"
                     >
                         Cancel
                     </button>
