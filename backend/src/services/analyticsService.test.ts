@@ -1649,3 +1649,25 @@ test('separates reconnect tips from permission errors a reconnect cannot fix', (
     assert.equal(reconnect[0]?.title, 'Reconnect to unlock reach data');
     assert.match(reconnect[0]?.body || '', /1 Page needs/);
 });
+
+test('uses the reel cover as the media preview', async (t) => {
+    t.after(() => mock.restoreAll());
+    const range = analyticsRange('2026-10-01', '2026-10-31');
+    mockPostFind([
+        post({
+            _id: POST_1,
+            mediaType: 'reel',
+            mediaUrl: 'https://res.cloudinary.com/demo/video/upload/reel.mp4',
+            mediaCoverUrl: 'https://res.cloudinary.com/demo/video/upload/so_1/reel.jpg',
+            publishedAt: new Date('2026-10-05T09:00:00.000Z'),
+        }),
+    ]);
+
+    const targets = await loadPublishedTargets(USER_ID, range, {});
+
+    assert.ok(targets.length > 0);
+    assert.equal(
+        targets[0]?.mediaUrl,
+        'https://res.cloudinary.com/demo/video/upload/so_1/reel.jpg'
+    );
+});
