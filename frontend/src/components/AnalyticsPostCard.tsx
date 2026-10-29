@@ -3,8 +3,10 @@
 import React from 'react';
 import Link from 'next/link';
 import {
+    formatDuration,
     formatElapsed,
     formatIstDateTime,
+    formatWatchTime,
     type AnalyticsPost,
     type AnalyticsPostTarget,
 } from '@/lib/types';
@@ -19,14 +21,39 @@ function metricTitle(value: number | null, label: string): string | undefined {
         : undefined;
 }
 
+/** How much of the reel people watched, as a bar. */
+function WatchBar({ avgWatchTimeMs, duration }: { avgWatchTimeMs: number; duration: number }) {
+    const percent = Math.min(100, Math.round((avgWatchTimeMs / (duration * 1000)) * 100));
+    const tone =
+        percent >= 60 ? 'bg-emerald-500' : percent >= 35 ? 'bg-amber-500' : 'bg-rose-500';
+    return (
+        <div className="mt-3">
+            <div className="flex items-center justify-between text-[11px]">
+                <span className="text-subtle">
+                    Watched on average: {formatWatchTime(avgWatchTimeMs)} of {formatDuration(duration)}
+                </span>
+                <span className="font-bold text-fg">{percent}%</span>
+            </div>
+            <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-sunken">
+                <div className={`h-full rounded-full ${tone}`} style={{ width: `${percent}%` }} />
+            </div>
+        </div>
+    );
+}
+
 function TargetMetrics({
     target,
     now,
+    reel,
+    duration,
 }: {
     target: AnalyticsPostTarget;
     now: number;
+    reel: boolean;
+    duration: number | null;
 }) {
     const metrics = target.metrics;
+    const avgWatch = metrics?.avgWatchTimeMs ?? null;
     // A failed sync keeps the last numbers Meta reported.
     const keptValues = Boolean(
         metrics &&
@@ -93,10 +120,10 @@ function TargetMetrics({
                         </div>
                     </div>
                     <div>
-                        <span className="text-subtle">Views</span>
+                        <span className="text-subtle">{reel ? 'Plays' : 'Views'}</span>
                         <div
                             className="font-bold text-fg"
-                            title={metricTitle(metrics.views, 'views')}
+                            title={metricTitle(metrics.views, reel ? 'plays' : 'views')}
                         >
                             {metricValue(metrics.views)}
                         </div>
@@ -137,15 +164,27 @@ function TargetMetrics({
                             {metricValue(metrics.saves)}
                         </div>
                     </div>
-                    <div>
-                        <span className="text-subtle">Clicks</span>
-                        <div
-                            className="font-bold text-fg"
-                            title={metricTitle(metrics.clicks, 'clicks')}
-                        >
-                            {metricValue(metrics.clicks)}
+                    {reel ? (
+                        <div>
+                            <span className="text-subtle">Avg watch</span>
+                            <div
+                                className="font-bold text-fg"
+                                title={metricTitle(avgWatch, 'watch time')}
+                            >
+                                {formatWatchTime(avgWatch)}
+                            </div>
                         </div>
-                    </div>
+                    ) : (
+                        <div>
+                            <span className="text-subtle">Clicks</span>
+                            <div
+                                className="font-bold text-fg"
+                                title={metricTitle(metrics.clicks, 'clicks')}
+                            >
+                                {metricValue(metrics.clicks)}
+                            </div>
+                        </div>
+                    )}
                     <div>
                         <span className="text-subtle">Rate</span>
                         <div
@@ -164,6 +203,9 @@ function TargetMetrics({
                     Meta has not reported insights yet.
                 </div>
             ) : null}
+            {reel && duration && avgWatch !== null && avgWatch > 0 ? (
+                <WatchBar avgWatchTimeMs={avgWatch} duration={duration} />
+            ) : null}
             {target.error && target.status !== 'permission_error' ? (
                 <div className="mt-2 text-[10px] text-subtle">
                     {target.error}
@@ -180,10 +222,11 @@ export function AnalyticsPostCard({
     post: AnalyticsPost;
     now: number;
 }) {
+    const reel = post.mediaType === 'reel';
     return (
-        <article className="rounded-2xl border border-line bg-surface p-5 shadow-card">
+        <article className="rounded-2xl border border-line bg-surface p-5 shadow-card transition-[border-color,box-shadow] duration-200 hover:border-line-strong hover:shadow-card-hover">
             <div className="flex flex-col gap-4 sm:flex-row">
-                <div className="flex h-40 w-full items-center justify-center overflow-hidden rounded-2xl border border-line bg-sunken sm:h-28 sm:w-28 sm:shrink-0">
+                <div className="relative flex h-40 w-full items-center justify-center overflow-hidden rounded-2xl border border-line bg-sunken sm:h-28 sm:w-28 sm:shrink-0">
                     {post.mediaUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
@@ -196,12 +239,22 @@ export function AnalyticsPostCard({
                             No media
                         </span>
                     )}
+                    {reel && post.mediaDuration ? (
+                        <span className="absolute bottom-1.5 left-1.5 rounded-md bg-slate-950/70 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                            ▶ {formatDuration(post.mediaDuration)}
+                        </span>
+                    ) : null}
                 </div>
                 <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                         <span className="text-xs font-bold text-fg">
                             {post.connection.pageName}
                         </span>
+                        {reel ? (
+                            <span className="rounded-full border border-fuchsia-500/20 bg-fuchsia-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-fuchsia-700 dark:text-fuchsia-300">
+                                Reel
+                            </span>
+                        ) : null}
                         <span className="text-[10px] uppercase tracking-widest text-subtle">
                             {post.status}
                         </span>
@@ -215,6 +268,8 @@ export function AnalyticsPostCard({
                                 key={target.platform}
                                 target={target}
                                 now={now}
+                                reel={reel}
+                                duration={post.mediaDuration ?? null}
                             />
                         ))}
                     </div>

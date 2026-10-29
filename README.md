@@ -35,7 +35,14 @@ Page and linked Instagram Business account.
 - Admin user approval, per-user password resets, and a read-only activity
   overview
 
-Carousels, long videos over 100 MB, Reel and Story analytics, and billing are
+- Reel analytics: plays, reach, engagement, and average watch time (with how
+  much of each reel people watched) for Facebook and Instagram Reels, an
+  All / Posts / Reels filter, and a Posts-vs-Reels comparison
+- AI analysis with your Profile text model: ranked tips by timing, format,
+  content, consistency, and growth, each with a ready post or reel idea that
+  opens in the Composer or Reels page
+
+Carousels, long videos over 100 MB, Story analytics, and billing are
 intentionally out of scope.
 
 ## Structure

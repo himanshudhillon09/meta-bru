@@ -400,6 +400,9 @@ export interface AnalyticsMetrics {
     clicks: number | null;
     interactions: number | null;
     engagementRate: number | null;
+    /** Reels only: average and total watch time in milliseconds. */
+    avgWatchTimeMs?: number | null;
+    totalWatchTimeMs?: number | null;
 }
 
 export interface AnalyticsSummary {
@@ -415,6 +418,11 @@ export interface AnalyticsSummary {
     saves: number;
     clicks: number;
     engagementRate: number | null;
+    /** Distinct reels among `posts`. */
+    reels?: number;
+    avgWatchTimeMs?: number | null;
+    /** How much of each reel people watched on average, 0-100. */
+    watchedPercent?: number | null;
 }
 
 export interface AnalyticsActivityBucket {
@@ -460,6 +468,7 @@ export interface AnalyticsOverview {
     range: { from: string; to: string; preset: string; timezone: string };
     totals: AnalyticsSummary;
     byPlatform: { facebook: AnalyticsSummary; instagram: AnalyticsSummary };
+    byContentType?: { image: AnalyticsSummary; reel: AnalyticsSummary };
     activity: AnalyticsActivityBucket[];
     bestTimes: AnalyticsBestTime[];
     sync: AnalyticsSyncState;
@@ -488,6 +497,8 @@ export interface AnalyticsMonitor {
         mediaUrl: string;
         pageName: string;
         platform: Platform;
+        mediaType?: MediaType;
+        mediaDuration?: number | null;
         publishedAt: string;
         metrics: AnalyticsMetrics | null;
     }>;
@@ -512,6 +523,9 @@ export interface AnalyticsPost {
     postId: string;
     caption: string;
     mediaUrl: string;
+    mediaType?: MediaType;
+    /** Reel length in seconds. */
+    mediaDuration?: number | null;
     status: PostStatus;
     connection: {
         id: string;
@@ -530,21 +544,48 @@ export interface AnalyticsPostsResponse {
     hasMore: boolean;
 }
 
+export type AnalyticsTipCategory = 'timing' | 'format' | 'content' | 'consistency' | 'growth';
+
+/** A ready-to-make post or reel that acts on a tip. */
+export interface AnalyticsTipIdea {
+    format: 'post' | 'reel';
+    topic: string;
+}
+
 export interface AnalyticsRuleTip {
     id: string;
     title: string;
     body: string;
     severity: 'info' | 'success' | 'warning';
+    category?: AnalyticsTipCategory;
     actionLabel: string;
     actionHref: string;
+    idea?: AnalyticsTipIdea | null;
 }
 
 export interface AnalyticsAiTip {
     title: string;
     body: string;
     severity: 'info' | 'success' | 'warning';
+    category?: AnalyticsTipCategory;
     actionLabel: string;
     actionHref: string;
+    idea?: AnalyticsTipIdea | null;
+}
+
+/** Composer or Reels link with the idea's topic filled in. */
+export function ideaHref(idea: AnalyticsTipIdea): string {
+    return `${idea.format === 'reel' ? '/reels' : '/composer'}?topic=${encodeURIComponent(idea.topic)}`;
+}
+
+/** Milliseconds as a short duration, e.g. "4.2s" or "1m 05s". */
+export function formatWatchTime(ms: number | null | undefined): string {
+    if (ms === null || ms === undefined || !Number.isFinite(ms)) return '—';
+    const totalSeconds = ms / 1000;
+    if (totalSeconds < 60) return `${Math.round(totalSeconds * 10) / 10}s`;
+    const minutes = Math.floor(totalSeconds / 60);
+    const secondsLeft = Math.round(totalSeconds % 60);
+    return `${minutes}m ${String(secondsLeft).padStart(2, '0')}s`;
 }
 
 export interface AnalyticsAiInsight {

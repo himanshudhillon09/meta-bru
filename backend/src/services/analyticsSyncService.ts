@@ -18,7 +18,9 @@ import {
 import type { AnalyticsRange } from './analyticsDateService.js';
 import {
     fetchFacebookMetrics,
+    fetchFacebookReelMetrics,
     fetchInstagramMetrics,
+    fetchInstagramReelMetrics,
     sanitizeErrorMessage,
     type NormalizedInsightMetrics,
 } from './metaInsightsService.js';
@@ -46,6 +48,8 @@ export interface SyncResult {
 export interface SyncDependencies {
     fetchFacebook?: typeof fetchFacebookMetrics;
     fetchInstagram?: typeof fetchInstagramMetrics;
+    fetchFacebookReel?: typeof fetchFacebookReelMetrics;
+    fetchInstagramReel?: typeof fetchInstagramReelMetrics;
     now?: () => Date;
 }
 
@@ -191,6 +195,8 @@ export async function syncAnalytics(
     const clock = deps.now ?? (() => new Date());
     const fetchFacebook = deps.fetchFacebook ?? fetchFacebookMetrics;
     const fetchInstagram = deps.fetchInstagram ?? fetchInstagramMetrics;
+    const fetchFacebookReel = deps.fetchFacebookReel ?? fetchFacebookReelMetrics;
+    const fetchInstagramReel = deps.fetchInstagramReel ?? fetchInstagramReelMetrics;
 
     const targets = await loadPublishedTargets(userId, range, filters);
     const snapshots = await loadLatestSnapshots(userId, targets, range);
@@ -265,10 +271,15 @@ export async function syncAnalytics(
         }
 
         try {
+            const reel = target.mediaType === 'reel';
             const result =
                 target.platform === 'facebook'
-                    ? await fetchFacebook(target.externalId, token)
-                    : await fetchInstagram(target.externalId, token);
+                    ? reel
+                        ? await fetchFacebookReel(target.videoId || target.externalId, token)
+                        : await fetchFacebook(target.externalId, token)
+                    : reel
+                      ? await fetchInstagramReel(target.externalId, token)
+                      : await fetchInstagram(target.externalId, token);
             await upsertSnapshot(
                 userId,
                 target,

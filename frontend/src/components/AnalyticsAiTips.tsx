@@ -2,13 +2,8 @@
 
 import React from 'react';
 import Link from 'next/link';
+import { AnalyticsTipCard } from '@/components/AnalyticsTipCard';
 import { formatIstDateTime, type AnalyticsAiInsight } from '@/lib/types';
-
-const TONES: Record<string, string> = {
-    info: 'border-sky-500/15 bg-sky-500/5 text-sky-700 dark:text-sky-200',
-    success: 'border-emerald-500/15 bg-emerald-500/5 text-emerald-700 dark:text-emerald-200',
-    warning: 'border-amber-500/15 bg-amber-500/5 text-amber-700 dark:text-amber-200',
-};
 
 export function AnalyticsAiTips({
     ai,
@@ -28,7 +23,7 @@ export function AnalyticsAiTips({
             <div className="mb-4 flex flex-wrap items-center gap-2">
                 <h2 className="text-sm font-bold text-fg">AI analysis</h2>
                 <span className="rounded-full bg-indigo-500/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest text-indigo-700 dark:text-indigo-300">
-                    Gemini
+                    Gemini{ai?.model ? ` · ${ai.model}` : ''}
                 </span>
                 <div className="ml-auto flex items-center gap-2">
                     {ai ? (
@@ -40,8 +35,11 @@ export function AnalyticsAiTips({
                         type="button"
                         onClick={onGenerate}
                         disabled={loading}
-                        className="rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white disabled:opacity-50"
+                        className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white hover:bg-indigo-500 disabled:opacity-60"
                     >
+                        {loading ? (
+                            <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                        ) : null}
                         {loading
                             ? 'Analyzing...'
                             : ai
@@ -73,39 +71,27 @@ export function AnalyticsAiTips({
                             wider date range or add more published posts.
                         </div>
                     ) : (
-                        <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="stagger grid gap-3 sm:grid-cols-2">
                             {ai.tips.map((tip, index) => (
-                                <div
+                                <AnalyticsTipCard
                                     key={`${tip.title}-${index}`}
-                                    className={`rounded-2xl border p-4 ${TONES[tip.severity] || TONES.info}`}
-                                >
-                                    <div className="text-sm font-bold">
-                                        {tip.title}
-                                    </div>
-                                    <p className="mt-1 text-xs opacity-80">
-                                        {tip.body}
-                                    </p>
-                                    {tip.actionHref ? (
-                                        <Link
-                                            href={tip.actionHref}
-                                            className="mt-2 inline-block text-xs font-bold underline"
-                                        >
-                                            {tip.actionLabel || 'Open'}
-                                        </Link>
-                                    ) : null}
-                                </div>
+                                    tip={tip}
+                                    highlight={index === 0}
+                                />
                             ))}
                         </div>
                     )}
                     <p className="mt-3 text-[10px] text-subtle">
-                        Cached for 6 hours. AI uses stored page, engagement, and
-                        timing aggregates only.
+                        Cached for 6 hours. AI compares your best and weakest
+                        posts by format, timing, caption, and reel watch time.
+                        Pick the model under Profile.
                     </p>
                 </>
             ) : (
                 <div className="rounded-2xl border border-dashed border-line-strong p-8 text-center text-sm text-subtle">
-                    Run an AI analysis to turn your stored page, engagement, and
-                    posting-time data into specific recommendations.
+                    Run an AI analysis to get a ranked plan: when to post,
+                    reels or images, what to say, and ready-made ideas you can
+                    open straight in the Composer or Reels page.
                 </div>
             )}
         </section>

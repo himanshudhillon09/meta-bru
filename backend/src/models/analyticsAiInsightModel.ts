@@ -2,12 +2,30 @@ import mongoose from 'mongoose';
 
 export type AnalyticsTipSeverity = 'info' | 'success' | 'warning';
 
+export const ANALYTICS_TIP_CATEGORIES = [
+    'timing',
+    'format',
+    'content',
+    'consistency',
+    'growth',
+] as const;
+
+export type AnalyticsTipCategory = (typeof ANALYTICS_TIP_CATEGORIES)[number];
+
+/** A ready-to-make post or reel that puts the tip into practice. */
+export interface IAnalyticsTipIdea {
+    format: 'post' | 'reel';
+    topic: string;
+}
+
 export interface IAnalyticsTip {
     title: string;
     body: string;
     severity: AnalyticsTipSeverity;
+    category: AnalyticsTipCategory;
     actionLabel: string;
     actionHref: string;
+    idea: IAnalyticsTipIdea | null;
 }
 
 /**
@@ -39,8 +57,19 @@ const tipSchema = new mongoose.Schema<IAnalyticsTip>(
         title: { type: String, required: true },
         body: { type: String, required: true },
         severity: { type: String, enum: ['info', 'success', 'warning'], default: 'info' },
+        category: { type: String, enum: ANALYTICS_TIP_CATEGORIES, default: 'growth' },
         actionLabel: { type: String, default: '' },
         actionHref: { type: String, default: '' },
+        idea: {
+            type: new mongoose.Schema<IAnalyticsTipIdea>(
+                {
+                    format: { type: String, enum: ['post', 'reel'], required: true },
+                    topic: { type: String, required: true },
+                },
+                { _id: false }
+            ),
+            default: null,
+        },
     },
     { _id: false }
 );

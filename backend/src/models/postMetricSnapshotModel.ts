@@ -13,6 +13,9 @@ export interface IAnalyticsMetrics {
     clicks: number | null;
     interactions: number | null;
     engagementRate: number | null;
+    /** Reels only: average and total time people watched, in milliseconds. */
+    avgWatchTimeMs: number | null;
+    totalWatchTimeMs: number | null;
 }
 
 export interface IPostMetricSnapshot extends mongoose.Document {
@@ -48,6 +51,8 @@ export const emptyAnalyticsMetrics = (): IAnalyticsMetrics => ({
     clicks: null,
     interactions: null,
     engagementRate: null,
+    avgWatchTimeMs: null,
+    totalWatchTimeMs: null,
 });
 
 const metricsSchema = new mongoose.Schema<IAnalyticsMetrics>(
@@ -61,6 +66,8 @@ const metricsSchema = new mongoose.Schema<IAnalyticsMetrics>(
         clicks: { type: Number, default: null },
         interactions: { type: Number, default: null },
         engagementRate: { type: Number, default: null },
+        avgWatchTimeMs: { type: Number, default: null },
+        totalWatchTimeMs: { type: Number, default: null },
     },
     { _id: false }
 );

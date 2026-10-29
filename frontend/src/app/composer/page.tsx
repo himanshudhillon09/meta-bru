@@ -15,6 +15,7 @@ import { ShareToStoryToggle } from '@/components/ShareToStoryToggle';
 import { ToggleChip } from '@/components/ToggleChip';
 import { useAuth } from '@/context/AuthContext';
 import { aiApi, connectionsApi, mediaApi, postsApi } from '@/lib/apiClient';
+import { useIdeaFromUrl } from '@/lib/useIdeaFromUrl';
 import type { MediaAsset, SocialConnection } from '@/lib/types';
 
 const KNOWN_ASPECTS: Array<[string, number]> = [
@@ -316,6 +317,12 @@ export default function ComposerPage() {
         },
         []
     );
+
+    // "Create this post" on an Analytics tip opens the Composer with its idea.
+    useIdeaFromUrl(hydratedDraftKey !== null, (idea) => {
+        setTopic(idea);
+        setNotice('Idea from Analytics added as the AI topic. Use AI draft caption to write the post.');
+    });
 
     const selectedConnection = useMemo(
         () => connections.find((connection) => connection._id === connectionId),

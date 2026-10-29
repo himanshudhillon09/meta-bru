@@ -65,13 +65,14 @@ interface GeminiErrorBody {
     }>;
 }
 
-export type GeminiTask = 'image' | 'caption' | 'image text' | 'model list';
+export type GeminiTask = 'image' | 'caption' | 'image text' | 'model list' | 'analytics';
 
 const GEMINI_FAILURE_CODES: Record<GeminiTask, string> = {
     image: 'AI_IMAGE_FAILED',
     caption: 'AI_CAPTION_FAILED',
     'image text': 'AI_OVERLAY_FAILED',
     'model list': 'AI_MODELS_FAILED',
+    analytics: 'AI_TIPS_FAILED',
 };
 
 const FREE_TIER = /free_tier|FreeTier/i;

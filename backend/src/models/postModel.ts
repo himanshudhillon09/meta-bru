@@ -32,6 +32,8 @@ export interface IPost extends mongoose.Document {
     mediaDuration: number;
     /** Reel cover JPG used for thumbnails; empty for images. */
     mediaCoverUrl: string;
+    /** The image carries the bold text line from the Composer. */
+    hasTextOverlay: boolean;
     shareToStory: boolean;
     /** Story shares. They never change status, lastError, or publishedAt. */
     storyTargets: IPostTarget[];
@@ -83,6 +85,7 @@ const postSchema = new mongoose.Schema<IPost>(
         mediaType: { type: String, enum: ['image', 'reel'], default: 'image' },
         mediaDuration: { type: Number, default: 0, min: 0 },
         mediaCoverUrl: { type: String, default: '' },
+        hasTextOverlay: { type: Boolean, default: false },
         shareToStory: { type: Boolean, default: false },
         storyTargets: { type: [targetSchema], default: [] },
         platforms: {

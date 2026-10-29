@@ -12,6 +12,7 @@ import {
     loadLatestSnapshots,
     loadPublishedTargets,
     resolvePageName,
+    summarizeByContentType,
     summarizeTargets,
     targetKey,
     uniquePermissionErrors,
@@ -35,6 +36,7 @@ const rangeQuerySchema = z
         to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
         connectionId: z.string().regex(/^[a-f\d]{24}$/i).optional(),
         platform: z.enum(['facebook', 'instagram']).optional(),
+        mediaType: z.enum(['image', 'reel']).optional(),
         userId: z.never().optional(),
     })
     .strict();
@@ -56,6 +58,7 @@ function rangeAndFilters(input: z.infer<typeof rangeQuerySchema>) {
         filters: {
             ...(input.connectionId ? { connectionId: input.connectionId } : {}),
             ...(input.platform ? { platform: input.platform } : {}),
+            ...(input.mediaType ? { mediaType: input.mediaType } : {}),
         } satisfies AnalyticsFilters,
     };
 }
@@ -87,11 +90,13 @@ async function buildTipsContext(
             latest
         ),
     };
+    const byContentType = summarizeByContentType(targets, latest);
     const activity = buildActivity(targets, latest, range);
     const bestTimes = buildBestTimes(targets, latest);
     const permissionErrors = uniquePermissionErrors(targets, latest);
     const posts = targets.map((target) => ({
         caption: target.caption,
+        mediaType: target.mediaType,
         engagementRate:
             latest.get(targetKey(target.postId, target.platform))?.metrics
                 .engagementRate ?? null,
@@ -99,6 +104,7 @@ async function buildTipsContext(
     const ruleBased = buildRuleBasedTips({
         summary,
         byPlatform,
+        byContentType,
         bestTimes,
         activity,
         permissionErrors,
@@ -113,21 +119,20 @@ async function buildTipsContext(
         scopeName,
         summary,
         byPlatform,
+        byContentType,
         activity,
         bestTimes,
         permissionErrors,
-        topPosts: targets.map((target) => {
-            const metrics = latest.get(
-                targetKey(target.postId, target.platform)
-            )?.metrics;
-            return {
-                postId: target.postId,
-                caption: target.caption,
-                reach: metrics?.reach ?? 0,
-                views: metrics?.views ?? null,
-                interactions: metrics?.interactions ?? null,
-            };
-        }),
+        posts: targets.map((target) => ({
+            postId: target.postId,
+            caption: target.caption,
+            mediaType: target.mediaType,
+            mediaDuration: target.mediaDuration,
+            publishedAt: target.publishedAt,
+            sharedToStory: target.sharedToStory,
+            hasTextOverlay: target.hasTextOverlay,
+            metrics: latest.get(targetKey(target.postId, target.platform))?.metrics ?? null,
+        })),
         brandProfile,
     });
 
@@ -135,7 +140,7 @@ async function buildTipsContext(
         ruleBased,
         payload,
         scopeKey: filters.connectionId || 'all',
-        rangeKey: `${range.fromKey}:${range.toKey}:${filters.platform || 'all'}`,
+        rangeKey: `${range.fromKey}:${range.toKey}:${filters.platform || 'all'}:${filters.mediaType || 'all'}`,
     };
 }
 
@@ -221,7 +226,8 @@ export async function generateTips(
         context.scopeKey,
         context.rangeKey,
         context.payload,
-        filters.connectionId || null
+        filters.connectionId || null,
+        typeof req.user!.aiModels?.text === 'string' ? req.user!.aiModels.text : ''
     );
 
     res.json({

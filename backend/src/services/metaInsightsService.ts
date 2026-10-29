@@ -111,6 +111,13 @@ function breakdownTotal(breakdown: Record<string, number>): number | null {
     return Number.isSafeInteger(total) ? total : null;
 }
 
+/** Sums the breakdown keys that match, such as every COMMENT action type. */
+function breakdownMatching(breakdown: Record<string, number>, pattern: RegExp): number {
+    return Object.entries(breakdown)
+        .filter(([key]) => pattern.test(key))
+        .reduce((sum, [, value]) => sum + value, 0);
+}
+
 function isInvalidMetricError(error: unknown): boolean {
     return (
         error instanceof MetaApiError &&
@@ -229,6 +236,8 @@ function finalize(
         'reach',
         'views',
         'clicks',
+        'avgWatchTimeMs',
+        'totalWatchTimeMs',
     ].filter((key) => metrics[key as keyof IAnalyticsMetrics] !== null);
 
     const interactionValues = [
@@ -411,10 +420,122 @@ export async function fetchFacebookMetrics(
     );
 }
 
-export async function fetchInstagramMetrics(
+/**
+ * Facebook Reels are video objects, so their numbers come from the video's own
+ * insights (plays, reach, watch time) rather than Page post insights.
+ */
+export async function fetchFacebookReelMetrics(
+    videoId: string,
+    pageToken: string,
+    request: GraphRequestFn = graphRequest
+): Promise<NormalizedInsightMetrics> {
+    const metrics = emptyAnalyticsMetrics();
+    let permissionError = false;
+    let networkError = false;
+    let permissionMessage = '';
+    let lastError = '';
+
+    const ladders = [
+        'blue_reels_play_count,post_impressions_unique,post_video_avg_time_watched,post_video_view_time,post_video_likes_by_reaction_type,post_video_social_actions',
+        'blue_reels_play_count,post_impressions_unique,post_video_avg_time_watched,post_video_view_time',
+        'blue_reels_play_count,post_impressions_unique',
+        'post_impressions_unique',
+    ];
+
+    for (const metric of ladders) {
+        try {
+            const data = await request(`${videoId}/video_insights`, {
+                accessToken: pageToken,
+                params: { metric, period: 'lifetime' },
+            });
+            metrics.views = metricValue(data, 'blue_reels_play_count');
+            metrics.reach = metricValue(data, 'post_impressions_unique');
+            metrics.avgWatchTimeMs = metricValue(data, 'post_video_avg_time_watched');
+            metrics.totalWatchTimeMs = metricValue(data, 'post_video_view_time');
+            const reactions = metricBreakdown(data, 'post_video_likes_by_reaction_type');
+            if (reactions) metrics.likes = breakdownTotal(reactions);
+            const actions = metricBreakdown(data, 'post_video_social_actions');
+            if (actions) {
+                metrics.comments = breakdownMatching(actions, /comment/i);
+                metrics.shares = breakdownMatching(actions, /share/i);
+            }
+            break;
+        } catch (error) {
+            if (!(error instanceof MetaApiError)) throw error;
+            if (isTokenError(error)) throw error;
+            if (isPermissionError(error)) {
+                permissionError = true;
+                permissionMessage = errorMessage(error);
+                break;
+            }
+            if (isMetricUnavailableError(error)) break;
+            if (isMetricDataUnavailableError(error)) continue;
+            if (isInvalidMetricError(error)) continue;
+            if (isNetworkError(error)) networkError = true;
+            lastError = errorMessage(error);
+            break;
+        }
+    }
+
+    // Likes and comments are also counted on the video itself.
+    if (!permissionError && (metrics.likes === null || metrics.comments === null)) {
+        try {
+            const fields = (await request(videoId, {
+                accessToken: pageToken,
+                params: {
+                    fields: 'likes.limit(0).summary(total_count),comments.limit(0).summary(total_count)',
+                },
+            })) as {
+                likes?: { summary?: { total_count?: number | null } };
+                comments?: { summary?: { total_count?: number | null } };
+            };
+            if (metrics.likes === null) {
+                metrics.likes = numberOrNull(fields?.likes?.summary?.total_count);
+            }
+            if (metrics.comments === null) {
+                metrics.comments = numberOrNull(fields?.comments?.summary?.total_count);
+            }
+        } catch (error) {
+            if (!(error instanceof MetaApiError)) throw error;
+            if (isTokenError(error)) throw error;
+            lastError = lastError || errorMessage(error);
+        }
+    }
+
+    return finalize(
+        metrics,
+        permissionError
+            ? 'permission_error'
+            : networkError
+              ? 'unavailable'
+              : 'partial',
+        permissionError ? permissionMessage : lastError,
+        ['likes', 'comments', 'shares', 'reach', 'views', 'avgWatchTimeMs']
+    );
+}
+
+export function fetchInstagramMetrics(
     mediaId: string,
     accessToken: string,
     request: GraphRequestFn = graphRequest
+): Promise<NormalizedInsightMetrics> {
+    return instagramMetrics(mediaId, accessToken, request, false);
+}
+
+/** Instagram Reels add watch time to the usual media insights. */
+export function fetchInstagramReelMetrics(
+    mediaId: string,
+    accessToken: string,
+    request: GraphRequestFn = graphRequest
+): Promise<NormalizedInsightMetrics> {
+    return instagramMetrics(mediaId, accessToken, request, true);
+}
+
+async function instagramMetrics(
+    mediaId: string,
+    accessToken: string,
+    request: GraphRequestFn,
+    reel: boolean
 ): Promise<NormalizedInsightMetrics> {
     const metrics = emptyAnalyticsMetrics();
     let permissionError = false;
@@ -425,6 +546,9 @@ export async function fetchInstagramMetrics(
     let terminalError = false;
 
     const ladders = [
+        ...(reel
+            ? ['reach,views,likes,comments,shares,saved,ig_reels_avg_watch_time,ig_reels_video_view_total_time']
+            : []),
         'reach,views,likes,comments,shares,saved',
         'reach,likes,comments,shares,saved',
         'reach,likes,comments',
@@ -443,6 +567,8 @@ export async function fetchInstagramMetrics(
             metrics.comments = metricValue(data, 'comments');
             metrics.shares = metricValue(data, 'shares');
             metrics.saves = metricValue(data, 'saved');
+            metrics.avgWatchTimeMs = metricValue(data, 'ig_reels_avg_watch_time');
+            metrics.totalWatchTimeMs = metricValue(data, 'ig_reels_video_view_total_time');
             ladderSucceeded = true;
             break;
         } catch (error) {
@@ -525,6 +651,8 @@ export async function fetchInstagramMetrics(
               ? 'unavailable'
               : 'partial',
         permissionError ? permissionMessage || lastError : lastError,
-        ['likes', 'comments', 'shares', 'saves', 'reach', 'views']
+        reel
+            ? ['likes', 'comments', 'shares', 'saves', 'reach', 'views', 'avgWatchTimeMs']
+            : ['likes', 'comments', 'shares', 'saves', 'reach', 'views']
     );
 }

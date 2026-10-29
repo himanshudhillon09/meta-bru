@@ -1,6 +1,6 @@
 import { Types, type PipelineStage, type QueryFilter } from 'mongoose';
 import { Post } from '../models/postModel.js';
-import type { IPost, Platform, PostStatus } from '../models/postModel.js';
+import type { IPost, MediaType, Platform, PostStatus } from '../models/postModel.js';
 import {
     PostMetricSnapshot,
     type IAnalyticsMetrics,
@@ -10,6 +10,7 @@ import { SocialConnection } from '../models/socialConnectionModel.js';
 import {
     buildAnalyticsBuckets,
     bucketKeyForDate,
+    istHour,
     istHourBlock,
     istWeekday,
     type AnalyticsRange,
@@ -18,6 +19,8 @@ import {
 export interface AnalyticsFilters {
     connectionId?: string;
     platform?: Platform;
+    /** Only image posts or only reels. */
+    mediaType?: MediaType;
 }
 
 export interface PublishedTarget {
@@ -32,6 +35,13 @@ export interface PublishedTarget {
     mediaUrl: string;
     postStatus: PostStatus;
     instagramUsername: string;
+    mediaType: MediaType;
+    /** Reel length in seconds; null for images. */
+    mediaDuration: number | null;
+    /** Facebook Reels: the video id their insights are read from. */
+    videoId: string;
+    sharedToStory: boolean;
+    hasTextOverlay: boolean;
     /** When the Page token was last stored by a Meta login, if known. */
     tokenUpdatedAt: Date | null;
     /** Permissions Meta granted at that login. Empty when unknown. */
@@ -70,6 +80,12 @@ export interface AnalyticsSummary {
     saves: number;
     clicks: number;
     engagementRate: number | null;
+    /** Distinct reels among `posts`. */
+    reels: number;
+    /** Average watch time per reel target, when Meta reported it. */
+    avgWatchTimeMs: number | null;
+    /** How much of each reel people watched on average, 0-100. */
+    watchedPercent: number | null;
 }
 
 export interface ActivityBucket {
@@ -232,14 +248,25 @@ export function summarizeTargets(
     let clicks = 0;
     let rateInteractions = 0;
     let rateDenominatorTotal = 0;
+    const reelIds = new Set<string>();
+    const watchTimes: number[] = [];
+    const watchedShares: number[] = [];
 
     for (const target of targets) {
         postIds.add(target.postId);
+        if (target.mediaType === 'reel') reelIds.add(target.postId);
         if (target.platform === 'facebook') facebookPosts += 1;
         else instagramPosts += 1;
 
         const metrics = latest.get(targetKey(target.postId, target.platform))?.metrics;
         if (!metrics) continue;
+        const watchTime = finiteOrNull(metrics.avgWatchTimeMs);
+        if (target.mediaType === 'reel' && watchTime !== null && watchTime > 0) {
+            watchTimes.push(watchTime);
+            if (target.mediaDuration) {
+                watchedShares.push(Math.min(1, watchTime / (target.mediaDuration * 1000)));
+            }
+        }
         const interactionsForTarget = availableInteractions(metrics);
         reach += finiteOrZero(metrics.reach);
         views += finiteOrZero(metrics.views);
@@ -270,7 +297,15 @@ export function summarizeTargets(
         saves,
         clicks,
         engagementRate: rateFrom(rateInteractions, rateDenominatorTotal),
+        reels: reelIds.size,
+        avgWatchTimeMs: watchTimes.length > 0 ? Math.round(mean(watchTimes)) : null,
+        watchedPercent:
+            watchedShares.length > 0 ? Math.round(mean(watchedShares) * 1000) / 10 : null,
     };
+}
+
+function mean(values: number[]): number {
+    return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
 export function buildActivity(
@@ -469,7 +504,15 @@ export function buildPublishedTargetsQuery(
         ],
     };
     if (filters.connectionId) query.connectionId = filters.connectionId;
+    Object.assign(query, mediaTypeMatch(filters.mediaType));
     return query;
+}
+
+/** Older posts have no mediaType and are images. */
+function mediaTypeMatch(mediaType: MediaType | undefined): Record<string, unknown> {
+    if (mediaType === 'reel') return { mediaType: 'reel' };
+    if (mediaType === 'image') return { mediaType: { $ne: 'reel' } };
+    return {};
 }
 
 interface PostLike {
@@ -481,14 +524,18 @@ interface PostLike {
     mediaUrl?: string;
     mediaType?: 'image' | 'reel';
     mediaCoverUrl?: string;
+    mediaDuration?: number;
+    hasTextOverlay?: boolean;
     status?: PostStatus;
     publishedAt?: Date | null;
     targets?: Array<{
         platform: Platform;
         status: string;
         externalId?: string;
+        creationId?: string;
         publishedAt?: Date | null;
     }>;
+    storyTargets?: Array<{ platform: Platform; status: string }>;
 }
 
 interface ConnectionLike {
@@ -523,6 +570,8 @@ function targetsFromPost(
           ? String(rawId)
           : '';
     if (!connectionId) return [];
+    const mediaType: MediaType = post.mediaType === 'reel' ? 'reel' : 'image';
+    if (filters.mediaType && filters.mediaType !== mediaType) return [];
     const targets: PublishedTarget[] = [];
     for (const target of post.targets ?? []) {
         if (target.status !== 'published') continue;
@@ -547,6 +596,18 @@ function targetsFromPost(
                     : post.mediaUrl || '',
             postStatus: post.status || 'published',
             instagramUsername: connection?.instagram?.username || '',
+            mediaType,
+            mediaDuration:
+                mediaType === 'reel' && post.mediaDuration ? post.mediaDuration : null,
+            // A Facebook reel keeps its video id from the upload in creationId.
+            videoId:
+                mediaType === 'reel' && target.platform === 'facebook'
+                    ? target.creationId || target.externalId || ''
+                    : '',
+            sharedToStory: (post.storyTargets ?? []).some(
+                (story) => story.platform === target.platform && story.status === 'published'
+            ),
+            hasTextOverlay: Boolean(post.hasTextOverlay),
             tokenUpdatedAt: connection?.tokenUpdatedAt ?? null,
             grantedScopes: connection?.grantedScopes ?? [],
         });
@@ -603,6 +664,7 @@ export function buildPublishedTargetsPagePipeline(
     if (filters.connectionId) {
         match.connectionId = new Types.ObjectId(filters.connectionId);
     }
+    Object.assign(match, mediaTypeMatch(filters.mediaType));
 
     const targetPublishedAt = { $ifNull: ['$$target.publishedAt', '$publishedAt'] };
     const targetConditions: Record<string, unknown>[] = [
@@ -978,6 +1040,7 @@ export async function getAnalyticsOverview(
     };
 
     return {
+        byContentType: summarizeByContentType(targets, latest),
         range: {
             from: range.fromKey,
             to: range.toKey,
@@ -994,6 +1057,23 @@ export async function getAnalyticsOverview(
             remainingTargets: remainingTargets(targets, latest),
             permissionErrors: uniquePermissionErrors(targets, latest),
         },
+    };
+}
+
+/** Image posts and reels summarized separately, for the format comparison. */
+export function summarizeByContentType(
+    targets: PublishedTarget[],
+    latest: Map<string, IPostMetricSnapshot>
+): { image: AnalyticsSummary; reel: AnalyticsSummary } {
+    return {
+        image: summarizeTargets(
+            targets.filter((target) => target.mediaType === 'image'),
+            latest
+        ),
+        reel: summarizeTargets(
+            targets.filter((target) => target.mediaType === 'reel'),
+            latest
+        ),
     };
 }
 
@@ -1032,6 +1112,8 @@ export async function getAnalyticsMonitor(
             mediaUrl: target.mediaUrl,
             pageName: target.pageName,
             platform: target.platform,
+            mediaType: target.mediaType,
+            mediaDuration: target.mediaDuration,
             publishedAt: target.publishedAt.toISOString(),
             metrics: latest.get(targetKey(target.postId, target.platform))?.metrics ?? null,
         }));
@@ -1089,6 +1171,8 @@ export async function getAnalyticsPosts(
             postId,
             caption: postTargets[0]?.caption || '',
             mediaUrl: postTargets[0]?.mediaUrl || '',
+            mediaType: postTargets[0]?.mediaType || 'image',
+            mediaDuration: postTargets[0]?.mediaDuration ?? null,
             status: postTargets[0]?.postStatus || 'published',
             connection: {
                 id: postTargets[0]?.connectionId || '',
@@ -1143,22 +1227,38 @@ export async function getAnalyticsPosts(
     };
 }
 
+export type TipCategory = 'timing' | 'format' | 'content' | 'consistency' | 'growth';
+
 export interface RuleBasedTip {
     id: string;
     title: string;
     body: string;
     severity: 'info' | 'success' | 'warning';
+    category: TipCategory;
     actionLabel: string;
     actionHref: string;
+    /** A ready-to-make post or reel that acts on the tip. */
+    idea: { format: 'post' | 'reel'; topic: string } | null;
+}
+
+/** The first line of a caption, short enough to reuse as an AI topic. */
+function captionTopic(caption: string): string {
+    const firstLine = caption.split('\n').find((line) => line.trim()) ?? '';
+    return firstLine.replace(/#\S+/g, '').replace(/\s+/g, ' ').trim().slice(0, 150);
+}
+
+function seconds(ms: number): string {
+    return `${Math.round(ms / 100) / 10}s`;
 }
 
 export function buildRuleBasedTips(input: {
     summary: AnalyticsSummary;
     byPlatform: { facebook: AnalyticsSummary; instagram: AnalyticsSummary };
+    byContentType: { image: AnalyticsSummary; reel: AnalyticsSummary };
     bestTimes: BestTimeBucket[];
     activity: ActivityBucket[];
     permissionErrors: Array<{ pageName: string; reconnectRequired?: boolean }>;
-    posts: Array<{ caption: string; engagementRate: number | null }>;
+    posts: Array<{ caption: string; mediaType: MediaType; engagementRate: number | null }>;
     granularity: 'day' | 'week';
 }): RuleBasedTip[] {
     const tips: RuleBasedTip[] = [];
@@ -1170,8 +1270,10 @@ export function buildRuleBasedTips(input: {
             title: 'No published posts in this range',
             body: 'Publish a post or widen the date range to start building analytics.',
             severity: 'info',
+            category: 'consistency',
             actionLabel: 'Open composer',
             actionHref: '/composer',
+            idea: null,
         }];
     }
 
@@ -1186,9 +1288,82 @@ export function buildRuleBasedTips(input: {
             title: `${best.dayLabel} ${best.label} works best`,
             body: `Your ${best.dayLabel} ${best.label} posts average ${best.avgEngagementRate}% engagement, ${multiplier}× your overall average.`,
             severity: multiplier >= 1.2 ? 'success' : 'info',
-            actionLabel: 'Open composer',
-            actionHref: '/composer',
+            category: 'timing',
+            actionLabel: 'Open connections',
+            actionHref: '/connections',
+            idea: null,
         });
+    }
+
+    // Reels against image posts, once there are a few of each.
+    const images = input.byContentType.image;
+    const reels = input.byContentType.reel;
+    if (
+        images.posts >= 2 &&
+        reels.posts >= 2 &&
+        images.engagementRate !== null &&
+        reels.engagementRate !== null
+    ) {
+        const reelsWin = reels.engagementRate >= images.engagementRate;
+        const high = Math.max(reels.engagementRate, images.engagementRate);
+        const low = Math.min(reels.engagementRate, images.engagementRate);
+        const multiplier = low > 0 ? Math.round((high / low) * 10) / 10 : 0;
+        const reachPerReel = Math.round(reels.reach / reels.posts);
+        const reachPerImage = Math.round(images.reach / images.posts);
+        tips.push({
+            id: 'format',
+            title: reelsWin ? 'Reels are your strongest format' : 'Image posts beat your reels',
+            body: `${reelsWin ? 'Reels' : 'Image posts'} average ${high}% engagement versus ${low}%${
+                multiplier >= 1.1 ? ` (${multiplier}×)` : ''
+            }. Reach per post: reels ${reachPerReel.toLocaleString('en-IN')}, images ${reachPerImage.toLocaleString('en-IN')}.`,
+            severity: multiplier >= 1.2 ? 'success' : 'info',
+            category: 'format',
+            actionLabel: reelsWin ? 'Make a reel' : 'Open composer',
+            actionHref: reelsWin ? '/reels' : '/composer',
+            idea: null,
+        });
+    } else if (images.posts >= 3 && reels.posts === 0) {
+        tips.push({
+            id: 'format',
+            title: 'Try a reel',
+            body: `All ${images.posts} posts in this range are images. Reels are shown to people who don't follow you yet, so a short reel can widen your reach.`,
+            severity: 'info',
+            category: 'format',
+            actionLabel: 'Make a reel',
+            actionHref: '/reels',
+            idea: null,
+        });
+    }
+
+    // Watch time tells whether reels hold attention.
+    if (reels.posts >= 1 && reels.watchedPercent !== null && reels.avgWatchTimeMs !== null) {
+        if (reels.watchedPercent < 35) {
+            tips.push({
+                id: 'watch-time',
+                title: 'Viewers leave your reels early',
+                body: `People watch ${reels.watchedPercent}% of your reels on average (${seconds(
+                    reels.avgWatchTimeMs
+                )}). Show the payoff in the first 2 seconds, add text on screen, or keep reels under 15 seconds.`,
+                severity: 'warning',
+                category: 'content',
+                actionLabel: 'Make a reel',
+                actionHref: '/reels',
+                idea: null,
+            });
+        } else if (reels.watchedPercent >= 60) {
+            tips.push({
+                id: 'watch-time',
+                title: 'Your reels hold attention',
+                body: `People watch ${reels.watchedPercent}% of your reels on average (${seconds(
+                    reels.avgWatchTimeMs
+                )}). Keep the same pacing and length.`,
+                severity: 'success',
+                category: 'content',
+                actionLabel: 'Make a reel',
+                actionHref: '/reels',
+                idea: null,
+            });
+        }
     }
 
     const facebookRate = input.byPlatform.facebook.engagementRate;
@@ -1208,8 +1383,10 @@ export function buildRuleBasedTips(input: {
             title: `${winner} is your stronger platform`,
             body: `${winner} averages ${winnerRate}% engagement versus ${loserRate}% on the other platform${multiplier ? `, about ${multiplier}× better` : ''}.`,
             severity: 'success',
+            category: 'growth',
             actionLabel: 'Open composer',
             actionHref: '/composer',
+            idea: null,
         });
     }
 
@@ -1232,8 +1409,10 @@ export function buildRuleBasedTips(input: {
                 title: 'You had a long posting gap',
                 body: `Your longest gap in this range was ${longestGap} days. A steady cadence can help reach stay consistent.`,
                 severity: 'warning',
+                category: 'consistency',
                 actionLabel: 'Open queue',
                 actionHref: '/queue',
+                idea: null,
             });
         }
     }
@@ -1242,13 +1421,19 @@ export function buildRuleBasedTips(input: {
         .filter((post) => post.engagementRate !== null)
         .sort((a, b) => (b.engagementRate || 0) - (a.engagementRate || 0))[0];
     if (topPost && topPost.engagementRate !== null) {
+        const topic = captionTopic(topPost.caption);
+        const reel = topPost.mediaType === 'reel';
         tips.push({
             id: 'top-post',
-            title: 'Your top post is worth repeating',
-            body: `Your best post earned ${topPost.engagementRate}% engagement. Reuse its angle or format in a future post.`,
+            title: `Your top ${reel ? 'reel' : 'post'} is worth repeating`,
+            body: `Your best ${reel ? 'reel' : 'post'} earned ${topPost.engagementRate}% engagement${
+                topic ? `: "${topic.slice(0, 70)}${topic.length > 70 ? '…' : ''}"` : ''
+            }. Make another on the same angle.`,
             severity: 'success',
-            actionLabel: 'Open composer',
-            actionHref: '/composer',
+            category: 'content',
+            actionLabel: reel ? 'Make a reel' : 'Open composer',
+            actionHref: reel ? '/reels' : '/composer',
+            idea: topic ? { format: reel ? 'reel' : 'post', topic: `A fresh take on: ${topic}` } : null,
         });
     }
 
@@ -1269,8 +1454,10 @@ export function buildRuleBasedTips(input: {
             title: 'Reconnect to unlock reach data',
             body: `${count} Page${count === 1 ? '' : 's'} ${count === 1 ? 'needs' : 'need'} insight permission. Reconnect to load complete engagement data.`,
             severity: 'warning',
+            category: 'growth',
             actionLabel: 'Open connections',
             actionHref: '/connections',
+            idea: null,
         });
     } else if (blockedPages.size > 0) {
         const count = blockedPages.size;
@@ -1279,12 +1466,14 @@ export function buildRuleBasedTips(input: {
             title: 'Meta is still blocking insights',
             body: `${count} Page${count === 1 ? ' was' : 's were'} reconnected, but Meta still refuses insights. Check the Meta app permissions and your Page access; the banner above shows Meta's exact message.`,
             severity: 'warning',
+            category: 'growth',
             actionLabel: 'Open connections',
             actionHref: '/connections',
+            idea: null,
         });
     }
 
-    return tips.slice(0, 6);
+    return tips.slice(0, 8);
 }
 
 function publishingFrequency(activity: ActivityBucket[], uniquePosts: number) {
@@ -1321,68 +1510,116 @@ function longestGapDays(
     return longest;
 }
 
-export function buildAnalyticsAiPayload(input: {
-    range: AnalyticsRange;
-    scopeName: string;
-    summary: AnalyticsSummary;
-    byPlatform: { facebook: AnalyticsSummary; instagram: AnalyticsSummary };
-    activity: ActivityBucket[];
-    bestTimes: BestTimeBucket[];
-    permissionErrors: Array<{ pageName: string }>;
-    topPosts: Array<{
-        postId: string;
-        caption: string;
-        reach: number;
-        views: number | null;
-        interactions: number | null;
-    }>;
-    brandProfile: Record<string, string | undefined>;
-}) {
-    // A cross-posted post appears once per platform. Collapse those entries so
-    // the AI sees one row per post with combined reach and interactions. The
-    // rate keeps its own numerator/denominator so a target that reports only
-    // views contributes views rather than a zero reach.
-    const dedupedTopPosts = new Map<
+export interface AnalyticsAiPostInput {
+    postId: string;
+    caption: string;
+    mediaType: MediaType;
+    mediaDuration: number | null;
+    publishedAt: Date;
+    sharedToStory: boolean;
+    hasTextOverlay: boolean;
+    metrics: IAnalyticsMetrics | null;
+}
+
+/**
+ * One row per post for the AI, with the traits it can compare between strong
+ * and weak posts. A cross-posted post appears once per platform; those rows are
+ * combined, and the rate keeps its own numerator/denominator so a target that
+ * reports only views contributes views rather than a zero reach.
+ */
+function aiPostRows(posts: AnalyticsAiPostInput[]) {
+    const byPost = new Map<
         string,
         {
-            caption: string;
+            post: AnalyticsAiPostInput;
             reach: number;
             views: number;
             interactions: number;
             rateInteractions: number;
             rateDenominator: number;
+            watchTimes: number[];
         }
     >();
-    for (const post of input.topPosts) {
-        const current = dedupedTopPosts.get(post.postId) ?? {
-            caption: post.caption,
+
+    for (const post of posts) {
+        const row = byPost.get(post.postId) ?? {
+            post,
             reach: 0,
             views: 0,
             interactions: 0,
             rateInteractions: 0,
             rateDenominator: 0,
+            watchTimes: [],
         };
-        const reach = finiteOrZero(post.reach);
-        const views = finiteOrZero(post.views);
-        const interactionValue = finiteOrNull(post.interactions);
-        const interactions = interactionValue ?? 0;
-        current.caption = current.caption || post.caption;
-        current.reach += reach;
-        current.views += views;
-        current.interactions += interactions;
-        const denominator = reach > 0 ? reach : views > 0 ? views : 0;
-        if (denominator > 0 && interactionValue !== null) {
-            current.rateInteractions += interactionValue;
-            current.rateDenominator += denominator;
+        if (post.publishedAt < row.post.publishedAt) row.post = { ...row.post, publishedAt: post.publishedAt };
+        row.post = {
+            ...row.post,
+            sharedToStory: row.post.sharedToStory || post.sharedToStory,
+        };
+        const metrics = post.metrics;
+        if (metrics) {
+            const reach = finiteOrZero(metrics.reach);
+            const views = finiteOrZero(metrics.views);
+            const interactions = availableInteractions(metrics);
+            row.reach += reach;
+            row.views += views;
+            row.interactions += interactions ?? 0;
+            const denominator = rateDenominator(metrics);
+            if (denominator > 0 && interactions !== null) {
+                row.rateInteractions += interactions;
+                row.rateDenominator += denominator;
+            }
+            const watch = finiteOrNull(metrics.avgWatchTimeMs);
+            if (watch !== null && watch > 0) row.watchTimes.push(watch);
         }
-        dedupedTopPosts.set(post.postId, current);
+        byPost.set(post.postId, row);
     }
-    const topPosts = [...dedupedTopPosts.values()].map((post) => ({
-        caption: post.caption,
-        reach: post.reach,
-        interactions: post.interactions,
-        engagementRate: rateFrom(post.rateInteractions, post.rateDenominator),
-    }));
+
+    return [...byPost.values()].map((row) => {
+        const { post } = row;
+        const avgWatchMs = row.watchTimes.length > 0 ? mean(row.watchTimes) : null;
+        return {
+            format: post.mediaType,
+            lengthSec: post.mediaDuration,
+            caption: post.caption.replace(/\s+/g, ' ').trim().slice(0, 160),
+            captionLength: post.caption.length,
+            hashtags: (post.caption.match(/#[\p{L}\p{N}_]+/gu) ?? []).length,
+            textOnImage: post.hasTextOverlay,
+            sharedToStory: post.sharedToStory,
+            day: DAY_LABELS[istWeekday(post.publishedAt) - 1] || '',
+            hourIST: istHour(post.publishedAt),
+            reach: row.reach,
+            views: row.views,
+            interactions: row.interactions,
+            engagementRate: rateFrom(row.rateInteractions, row.rateDenominator),
+            avgWatchSec: avgWatchMs === null ? null : Math.round(avgWatchMs / 100) / 10,
+            watchedPercent:
+                avgWatchMs !== null && post.mediaDuration
+                    ? Math.min(100, Math.round((avgWatchMs / (post.mediaDuration * 10)) * 10) / 10)
+                    : null,
+        };
+    });
+}
+
+export function buildAnalyticsAiPayload(input: {
+    range: AnalyticsRange;
+    scopeName: string;
+    summary: AnalyticsSummary;
+    byPlatform: { facebook: AnalyticsSummary; instagram: AnalyticsSummary };
+    byContentType: { image: AnalyticsSummary; reel: AnalyticsSummary };
+    activity: ActivityBucket[];
+    bestTimes: BestTimeBucket[];
+    permissionErrors: Array<{ pageName: string }>;
+    posts: AnalyticsAiPostInput[];
+    brandProfile: Record<string, string | undefined>;
+}) {
+    const rows = aiPostRows(input.posts);
+    const rated = rows.filter((row) => row.engagementRate !== null && row.reach + row.views > 0);
+    const byEngagement = [...rated].sort(
+        (a, b) => (b.engagementRate || 0) - (a.engagementRate || 0)
+    );
+    const best = byEngagement.slice(0, 5);
+    const weakest = byEngagement.slice(5).slice(-5).reverse();
 
     const permissionPages = new Set(
         input.permissionErrors.map((error) => error.pageName)
@@ -1393,33 +1630,15 @@ export function buildAnalyticsAiPayload(input: {
         scopeName: input.scopeName,
         summary: input.summary,
         byPlatform: input.byPlatform,
-        activity: input.activity,
+        byContentType: input.byContentType,
+        activity: input.activity.filter((bucket) => bucket.posts > 0),
         publishingFrequency: publishingFrequency(input.activity, input.summary.posts),
         longestGapDays: longestGapDays(input.activity, input.range.granularity),
         bestTimes: input.bestTimes.filter((bucket) => bucket.posts > 0),
         permissionErrors: [...permissionPages].map((pageName) => ({ pageName })),
-        topPosts: [...topPosts]
-            .sort((a, b) => b.reach - a.reach)
-            .slice(0, 5)
-            .map((post) => ({
-                caption: post.caption.slice(0, 120),
-                reach: post.reach,
-                interactions: post.interactions,
-                engagementRate: post.engagementRate,
-            })),
-        topEngagementPosts: [...topPosts]
-            .filter((post) => post.engagementRate !== null)
-            .sort(
-                (a, b) =>
-                    (b.engagementRate || 0) - (a.engagementRate || 0)
-            )
-            .slice(0, 5)
-            .map((post) => ({
-                caption: post.caption.slice(0, 120),
-                reach: post.reach,
-                interactions: post.interactions,
-                engagementRate: post.engagementRate,
-            })),
+        topReachPosts: [...rows].sort((a, b) => b.reach - a.reach).slice(0, 5),
+        bestEngagementPosts: best,
+        weakestPosts: weakest,
         brandProfile: input.brandProfile,
     };
 }

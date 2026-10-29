@@ -111,6 +111,11 @@ export function istWeekday(value: Date): number {
     return ist(value).weekday;
 }
 
+/** Hour of the day in IST, 0-23. */
+export function istHour(value: Date): number {
+    return ist(value).hour;
+}
+
 /**
  * Returns the 3-hour IST block for a timestamp, as `0..7`:
  * `0 = 00:00-02:59`, `1 = 03:00-05:59`, ..., `7 = 21:00-23:59`.
