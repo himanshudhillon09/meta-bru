@@ -13,8 +13,28 @@ export interface User {
     isActive?: boolean;
     timezone?: string;
     brandProfile?: BrandProfile;
+    /** Gemini model per AI feature; empty means the deployment default. */
+    aiModels?: AiModels;
     hasBrandLogo?: boolean;
     mustChangePassword?: boolean;
+}
+
+export interface AiModels {
+    /** Captions and the text on images. */
+    text: string;
+    /** AI image generation. */
+    image: string;
+}
+
+export interface GeminiModelOption {
+    id: string;
+    name: string;
+}
+
+export interface GeminiModelList {
+    defaults: AiModels;
+    text: GeminiModelOption[];
+    image: GeminiModelOption[];
 }
 
 export interface BrandLogo {
