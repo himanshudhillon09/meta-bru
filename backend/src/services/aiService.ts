@@ -1,6 +1,7 @@
 import { env } from '../config/env.js';
 import { AppError } from '../utils/errors.js';
 import { preparePostImage } from './brandLogoService.js';
+import { editableSourceDataUrl } from './imageProcessingService.js';
 import {
     jpegUrlFor,
     uploadImage,
@@ -614,12 +615,19 @@ export async function generateCaption(
     return caption;
 }
 
+export interface GeneratedImage {
+    /** The feed-ready (framed) image, already in Cloudinary. */
+    media: PostImageMedia;
+    /** The unframed image as a JPEG data URL, so the Composer can re-crop it. */
+    source: string;
+}
+
 export async function generateImage(
     userId: string,
     prompt: string,
     /** The user's image model; empty uses the deployment default. */
     imageModel = ''
-): Promise<PostImageMedia> {
+): Promise<GeneratedImage> {
     const credentials = await getGeminiCredentials(userId);
     const model = resolveImageModel(imageModel || env.gemini.imageModel);
 
@@ -669,10 +677,17 @@ export async function generateImage(
         );
     }
 
-    const prepared = await preparePostImage(userId, Buffer.from(image.data, 'base64'));
+    const raw = Buffer.from(image.data, 'base64');
+    const [prepared, source] = await Promise.all([
+        preparePostImage(userId, raw),
+        editableSourceDataUrl(raw),
+    ]);
     return {
-        ...(await uploadImage(userId, prepared.buffer)),
-        textArea: prepared.textArea,
+        media: {
+            ...(await uploadImage(userId, prepared.buffer)),
+            textArea: prepared.textArea,
+        },
+        source,
     };
 }
 

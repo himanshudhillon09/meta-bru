@@ -48,9 +48,13 @@ export async function draftCaption(req: Request, res: Response): Promise<void> {
 
 export async function createAiImage(req: Request, res: Response): Promise<void> {
     const parsed = parseBody(imageSchema, req);
-    const media = await generateImage(req.user.id, parsed.prompt, chosenModel(req, 'image'));
+    const { media, source } = await generateImage(
+        req.user.id,
+        parsed.prompt,
+        chosenModel(req, 'image')
+    );
 
-    res.status(201).json({ success: true, media });
+    res.status(201).json({ success: true, media, source });
 }
 
 export async function draftOverlayText(req: Request, res: Response): Promise<void> {

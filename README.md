@@ -13,6 +13,9 @@ Page and linked Instagram Business account.
 - Every upload and AI image is resized to 1080px wide within Instagram's
   4:5–1.91:1 feed range before it reaches Cloudinary, so posts are never
   zoomed or letterboxed by Meta
+- Crop editor in the Composer: pick a shape (original, tall 4:5, square, or
+  wide), then zoom and drag uploads and AI images into place before they are
+  framed
 - Optional brand logo under Profile: new post images get a frame that matches
   the photo, with the logo centred in the bottom border
 - Reels: MP4 or MOV videos upload straight from the browser to the user's own

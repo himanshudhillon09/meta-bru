@@ -7,6 +7,7 @@ import type {
     BrandLogoDetails,
     DeleteMediaResult,
     GeminiModelList,
+    MediaAsset,
     MetaLoginResult,
     Platform,
     Post,
@@ -313,11 +314,14 @@ export const postsApi = {
 };
 
 export const mediaApi = {
-    upload: (file: File) => {
+    upload: (file: Blob, fileName = 'image.jpg') => {
         const formData = new FormData();
-        formData.append('file', file);
-        return uploadRequest('/media/upload', formData);
+        formData.append('file', file, file instanceof File ? file.name : fileName);
+        return uploadRequest<{ success: boolean; media: MediaAsset }>('/media/upload', formData);
     },
+    /** Deletes a replaced Composer image unless a post uses it. */
+    discard: (publicId: string) =>
+        api.post<{ success: boolean; deleted: boolean }>('/media/discard', { publicId }),
     storage: () =>
         api.get<{ success: boolean } & StorageOverview>('/media/storage'),
     deleteAssets: (assetIds: string[]) =>
@@ -343,7 +347,9 @@ export const mediaApi = {
 export const aiApi = {
     caption: (data: { topic?: string; platform?: string; mediaPublicId?: string }) =>
         api.post('/ai/caption', data),
-    image: (data: { prompt: string }) => api.post('/ai/image', data),
+    /** `source` is the unframed image as a data URL, for re-cropping. */
+    image: (data: { prompt: string }) =>
+        api.post<{ success: boolean; media: MediaAsset; source: string }>('/ai/image', data),
     models: () =>
         api.get<{ success: boolean } & GeminiModelList>('/ai/models'),
     overlayText: (data: { topic?: string; caption?: string; prompt?: string }) =>

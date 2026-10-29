@@ -4,6 +4,13 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AppShell } from '@/components/AppShell';
+import {
+    ImageCropper,
+    isUntouchedCrop,
+    UNTOUCHED_CROP,
+    type CropResult,
+    type CropState,
+} from '@/components/ImageCropper';
 import { ShareToStoryToggle } from '@/components/ShareToStoryToggle';
 import { ToggleChip } from '@/components/ToggleChip';
 import { useAuth } from '@/context/AuthContext';
@@ -42,6 +49,30 @@ interface ComposerDraft {
 }
 
 const OVERLAY_MAX_CHARS = 90;
+const UPLOAD_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+
+/** The original picture behind the current image, kept so it can be re-cropped. */
+interface ImageSource {
+    /** Object URL for an upload, data URL for an AI image. */
+    url: string;
+    file?: File;
+    /** The crop that produced the current image. */
+    crop: CropState;
+}
+
+function releaseSource(source: ImageSource | null) {
+    if (source?.url.startsWith('blob:')) URL.revokeObjectURL(source.url);
+}
+
+function CropIcon() {
+    return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5" aria-hidden="true">
+            <path d="M6 2v14a2 2 0 0 0 2 2h14" />
+            <path d="M18 22V8a2 2 0 0 0-2-2H2" />
+        </svg>
+    );
+}
 
 export default function ComposerPage() {
     const router = useRouter();
@@ -53,6 +84,9 @@ export default function ComposerPage() {
     const [topic, setTopic] = useState('');
     const [imagePrompt, setImagePrompt] = useState('');
     const [media, setMedia] = useState<MediaAsset | null>(null);
+    const [imageSource, setImageSource] = useState<ImageSource | null>(null);
+    const [cropping, setCropping] = useState<{ source: ImageSource; mode: 'new' | 'adjust' } | null>(null);
+    const [cropError, setCropError] = useState('');
     const [facebook, setFacebook] = useState(true);
     const [instagram, setInstagram] = useState(false);
     const [shareToStory, setShareToStory] = useState(false);
@@ -70,6 +104,7 @@ export default function ComposerPage() {
     const [error, setError] = useState('');
     const [notice, setNotice] = useState('');
     const [hydratedDraftKey, setHydratedDraftKey] = useState<string | null>(null);
+    const sourceUrlRef = useRef('');
     const connectionIdRef = useRef('');
     const connectionsRef = useRef<SocialConnection[]>([]);
     const draftClearedRef = useRef(false);
@@ -271,6 +306,17 @@ export default function ComposerPage() {
         };
     }, [overlayActive, media, overlayText]);
 
+    // Free the last upload's object URL when leaving the Composer.
+    useEffect(() => {
+        sourceUrlRef.current = imageSource?.url ?? '';
+    }, [imageSource]);
+    useEffect(
+        () => () => {
+            if (sourceUrlRef.current.startsWith('blob:')) URL.revokeObjectURL(sourceUrlRef.current);
+        },
+        []
+    );
+
     const selectedConnection = useMemo(
         () => connections.find((connection) => connection._id === connectionId),
         [connections, connectionId]
@@ -291,18 +337,69 @@ export default function ComposerPage() {
         setInstagram(connection.publishToInstagram && Boolean(connection.instagram));
     }
 
-    const handleFile = async (file: File | undefined) => {
+    // A picked file opens the crop editor first; nothing uploads until it is applied.
+    const handleFile = (file: File | undefined) => {
         if (!file) return;
-        setUploading(true);
+        if (!UPLOAD_TYPES.includes(file.type)) {
+            setError('Upload a JPEG, PNG, or WebP image.');
+            return;
+        }
+        if (file.size > MAX_UPLOAD_BYTES) {
+            setError('Images can be at most 10 MB.');
+            return;
+        }
         setError('');
+        setCropError('');
+        setCropping({
+            source: { url: URL.createObjectURL(file), file, crop: UNTOUCHED_CROP },
+            mode: 'new',
+        });
+    };
+
+    const closeCropper = () => {
+        if (uploading) return;
+        if (cropping?.mode === 'new') releaseSource(cropping.source);
+        setCropping(null);
+        setCropError('');
+    };
+
+    const applyCrop = async ({ blob, crop }: CropResult) => {
+        if (!cropping) return;
+        const { source, mode } = cropping;
+
+        // Re-applying the whole, untouched picture changes nothing.
+        if (mode === 'adjust' && isUntouchedCrop(crop) && isUntouchedCrop(source.crop)) {
+            setCropping(null);
+            return;
+        }
+
+        setUploading(true);
+        setCropError('');
         try {
-            const data: any = await mediaApi.upload(file);
+            const upload = blob ?? source.file ?? (await (await fetch(source.url)).blob());
+            const data = await mediaApi.upload(upload);
+            const replaced = media;
+
             setMedia(data.media);
+            if (imageSource && imageSource.url !== source.url) releaseSource(imageSource);
+            setImageSource({ ...source, crop });
+            setCropping(null);
+
+            // The earlier crop of this same picture is no longer needed.
+            if (mode === 'adjust' && replaced && replaced.publicId !== data.media.publicId) {
+                void mediaApi.discard(replaced.publicId).catch(() => undefined);
+            }
         } catch (err: any) {
-            setError(typeof err === 'string' ? err : 'Upload failed');
+            setCropError(typeof err === 'string' ? err : 'Upload failed');
         } finally {
             setUploading(false);
         }
+    };
+
+    const removeImage = () => {
+        releaseSource(imageSource);
+        setImageSource(null);
+        setMedia(null);
     };
 
     const draftCaption = async () => {
@@ -356,8 +453,10 @@ export default function ComposerPage() {
         setGeneratingImage(true);
         setError('');
         try {
-            const data: any = await aiApi.image({ prompt });
+            const data = await aiApi.image({ prompt });
             setMedia(data.media);
+            releaseSource(imageSource);
+            setImageSource(data.source ? { url: data.source, crop: UNTOUCHED_CROP } : null);
             // AI images get a bold text line by default.
             setOverlayEnabled(true);
             void writeOverlay(prompt);
@@ -505,6 +604,7 @@ export default function ComposerPage() {
                     </Link>
                 </div>
             ) : (
+                <>
                 <div className="grid grid-cols-1 lg:grid-cols-[1.15fr_0.85fr] gap-6 items-start">
                     <div className="stagger space-y-6">
                         <section className="rounded-2xl border border-line bg-surface p-6 sm:p-8 shadow-card">
@@ -623,9 +723,11 @@ export default function ComposerPage() {
                                         type="file"
                                         accept="image/jpeg,image/png,image/webp"
                                         className="hidden"
-                                        onChange={(event) =>
-                                            handleFile(event.target.files?.[0])
-                                        }
+                                        onChange={(event) => {
+                                            const file = event.target.files?.[0];
+                                            event.target.value = '';
+                                            handleFile(file);
+                                        }}
                                     />
                                     <div className="text-sm font-bold text-fg">
                                         {uploading ? 'Uploading...' : 'Upload image'}
@@ -634,9 +736,9 @@ export default function ComposerPage() {
                                         JPEG, PNG or WebP · max 10 MB
                                     </div>
                                     <div className="text-[11px] text-subtle mt-2">
-                                        Auto-sized for the Instagram and Facebook feed
+                                        Crop, zoom, and position it before it uploads
                                         {user?.hasBrandLogo
-                                            ? ' and framed with your logo'
+                                            ? '. Framed with your logo'
                                             : ''}
                                         .
                                     </div>
@@ -693,12 +795,28 @@ export default function ComposerPage() {
                                             )}
                                         </div>
                                     </div>
-                                    <button
-                                        onClick={() => setMedia(null)}
-                                        className="text-xs font-bold text-rose-700 dark:text-rose-400 px-3 py-2 rounded-lg hover:bg-rose-500/10"
-                                    >
-                                        Remove
-                                    </button>
+                                    <div className="flex shrink-0 flex-col gap-1.5 sm:flex-row sm:items-center">
+                                        {imageSource ? (
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setCropError('');
+                                                    setCropping({ source: imageSource, mode: 'adjust' });
+                                                }}
+                                                disabled={uploading}
+                                                className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-3 py-2 text-xs font-bold text-indigo-700 hover:bg-indigo-500/15 disabled:opacity-50 dark:text-indigo-300"
+                                            >
+                                                <CropIcon />
+                                                Adjust
+                                            </button>
+                                        ) : null}
+                                        <button
+                                            onClick={removeImage}
+                                            className="text-xs font-bold text-rose-700 dark:text-rose-400 px-3 py-2 rounded-lg hover:bg-rose-500/10"
+                                        >
+                                            Remove
+                                        </button>
+                                    </div>
                                 </div>
                             ) : null}
 
@@ -820,7 +938,7 @@ export default function ComposerPage() {
                                 </div>
                             </div>
                             {media ? (
-                                <div className="relative">
+                                <div className="group relative">
                                     {/* eslint-disable-next-line @next/next/no-img-element */}
                                     <img
                                         src={overlayActive && overlayPreview ? overlayPreview : media.url}
@@ -831,6 +949,20 @@ export default function ComposerPage() {
                                         <span className="absolute top-2 right-2 rounded-full bg-surface-2 px-2.5 py-1 text-[10px] font-bold text-fg-2 backdrop-blur">
                                             Updating text...
                                         </span>
+                                    ) : null}
+                                    {imageSource ? (
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setCropError('');
+                                                setCropping({ source: imageSource, mode: 'adjust' });
+                                            }}
+                                            disabled={uploading}
+                                            className="absolute bottom-3 left-1/2 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-slate-950/70 px-3.5 py-2 text-xs font-bold text-white opacity-0 shadow-lg backdrop-blur transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                                        >
+                                            <CropIcon />
+                                            Adjust crop
+                                        </button>
                                     ) : null}
                                 </div>
                             ) : (
@@ -855,6 +987,17 @@ export default function ComposerPage() {
                         ) : null}
                     </aside>
                 </div>
+
+                <ImageCropper
+                    src={cropping?.source.url ?? null}
+                    framed={Boolean(user?.hasBrandLogo)}
+                    initial={cropping?.mode === 'adjust' ? cropping.source.crop : null}
+                    busy={uploading}
+                    error={cropError}
+                    onCancel={closeCropper}
+                    onApply={(result) => void applyCrop(result)}
+                />
+                </>
             )}
         </AppShell>
     );

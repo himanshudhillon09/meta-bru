@@ -2,6 +2,7 @@ import express from 'express';
 import {
     createVideoSignature,
     deleteMedia,
+    discardImage,
     getStorageOverview,
     previewText,
     registerVideo,
@@ -20,6 +21,7 @@ const router = express.Router();
 router.get('/storage', protect, storageLimiter, getStorageOverview);
 router.post('/delete', protect, storageLimiter, deleteMedia);
 router.post('/upload', protect, mediaLimiter, uploadImageMiddleware, uploadMedia);
+router.post('/discard', protect, mediaLimiter, discardImage);
 router.post('/video-signature', protect, mediaLimiter, createVideoSignature);
 router.post('/videos', protect, mediaLimiter, registerVideo);
 router.post('/text-preview', protect, textPreviewLimiter, previewText);
