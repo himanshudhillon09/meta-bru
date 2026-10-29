@@ -19,6 +19,10 @@ function publicUser(user: any) {
         isActive: user.isActive,
         timezone: user.timezone,
         brandProfile: user.brandProfile || {},
+        aiModels: {
+            text: user.aiModels?.text || '',
+            image: user.aiModels?.image || '',
+        },
         hasBrandLogo: Boolean(user.brandLogo?.updatedAt),
         mustChangePassword: Boolean(user.mustChangePassword),
     };
@@ -266,6 +270,20 @@ export const updateUserStatus = async (req: any, res: Response) => {
 // @desc    Update profile and brand settings
 // @route   PATCH /api/auth/profile
 // @access  Private
+// A Gemini model id such as gemini-2.5-flash; "models/" is accepted and
+// dropped. Empty resets the feature to the deployment default.
+const aiModelId = z.preprocess(
+    (value) =>
+        typeof value === 'string' ? value.trim().replace(/^models\//, '') : value,
+    z
+        .string()
+        .max(80)
+        .regex(
+            /^(?:[a-z0-9][a-z0-9.-]*)?$/i,
+            'Use a Gemini model id such as gemini-2.5-flash'
+        )
+);
+
 const profileSchema = z.object({
     name: z.string().trim().min(1).max(80).optional(),
     email: z
@@ -285,6 +303,12 @@ const profileSchema = z.object({
             tone: z.string().trim().max(100).optional(),
             audience: z.string().trim().max(300).optional(),
             keywords: z.string().trim().max(300).optional(),
+        })
+        .optional(),
+    aiModels: z
+        .object({
+            text: aiModelId.optional(),
+            image: aiModelId.optional(),
         })
         .optional(),
 });
@@ -359,6 +383,14 @@ export const updateProfile = async (req: Request, res: Response) => {
                 'friendly and engaging',
             audience: parsed.brandProfile.audience ?? current.audience ?? '',
             keywords: parsed.brandProfile.keywords ?? current.keywords ?? '',
+        };
+    }
+
+    if (parsed.aiModels) {
+        const current = (user.aiModels || {}) as { text?: string; image?: string };
+        user.aiModels = {
+            text: parsed.aiModels.text ?? current.text ?? '',
+            image: parsed.aiModels.image ?? current.image ?? '',
         };
     }
 
