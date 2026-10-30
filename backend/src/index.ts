@@ -12,7 +12,7 @@ import connectionRoutes from './routes/connectionRoutes.js';
 import mediaRoutes from './routes/mediaRoutes.js';
 import postRoutes from './routes/postRoutes.js';
 import { errorHandler, notFound } from './middlewares/errorMiddleware.js';
-import { startScheduler, stopScheduler } from './services/schedulerService.js';
+import { schedulerStatus, startScheduler, stopScheduler } from './services/schedulerService.js';
 import { migrateConnectionSchedules } from './services/scheduleSyncService.js';
 
 const app = express();
@@ -45,6 +45,9 @@ app.get('/api/health', (_req: Request, res: Response) => {
             scheduler: env.scheduler.enabled,
             perUserCredentials: true,
         },
+        // Shows whether queued posts are being checked (uptime monitors can
+        // watch lastTickAt too).
+        scheduler: schedulerStatus(),
     });
 });
 

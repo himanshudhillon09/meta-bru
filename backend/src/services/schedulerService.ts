@@ -1,3 +1,4 @@
+import { DateTime } from 'luxon';
 import { env } from '../config/env.js';
 import { Post } from '../models/postModel.js';
 import { SocialConnection } from '../models/socialConnectionModel.js';
@@ -11,6 +12,23 @@ let running = false;
 /** When the scheduler last refreshed live Story insights. */
 let lastStorySyncAt = 0;
 let timer: NodeJS.Timeout | null = null;
+/** Heartbeat for /api/health and the Queue: when it started and last checked. */
+let startedAt: Date | null = null;
+let lastTickAt: Date | null = null;
+
+export function schedulerStatus(): {
+    enabled: boolean;
+    startedAt: string | null;
+    lastTickAt: string | null;
+    intervalSeconds: number;
+} {
+    return {
+        enabled: env.scheduler.enabled,
+        startedAt: startedAt?.toISOString() ?? null,
+        lastTickAt: lastTickAt?.toISOString() ?? null,
+        intervalSeconds: env.scheduler.intervalMs / 1000,
+    };
+}
 
 async function ensureSchedules(): Promise<void> {
     const missing = await SocialConnection.find({
@@ -83,6 +101,11 @@ async function processConnection(connectionId: string, now: Date): Promise<void>
             console.warn(
                 `[scheduler] Skipping stale slot for connection ${connection._id} (due ${dueAt.toISOString()})`
             );
+            // Say why nothing posted, so a sleeping server is visible in the app.
+            const missed = DateTime.fromJSDate(dueAt).setZone(connection.timezone);
+            connection.lastError = `Missed the ${
+                missed.isValid ? missed.toFormat('d LLL, HH:mm') : dueAt.toISOString()
+            } slot because the server was not running then. The next queued post goes at the next slot.`;
             scheduleError = advance(connection, now);
             return;
         }
@@ -173,6 +196,7 @@ async function processConnection(connectionId: string, now: Date): Promise<void>
 export async function runSchedulerTick(now: Date = new Date()): Promise<void> {
     if (running) return;
     running = true;
+    lastTickAt = new Date();
 
     try {
         const staleBefore = new Date(now.getTime() - STALE_LOCK_MS);
@@ -227,6 +251,7 @@ export async function runSchedulerTick(now: Date = new Date()): Promise<void> {
 
 export function startScheduler(): void {
     if (!env.scheduler.enabled || timer) return;
+    startedAt = new Date();
 
     void ensureSchedules().catch((error) =>
         console.error('[scheduler] Could not initialize schedules:', error)

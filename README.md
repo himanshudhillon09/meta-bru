@@ -210,3 +210,15 @@ The scheduler must run on an always-on instance. Free tiers that sleep will not
 publish reliably. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the production
 walkthrough (Render backend + Vercel frontend + per-user Meta/Cloudinary/Gemini
 setup).
+
+How queued posts publish: every minute the scheduler checks each Page whose
+schedule is on. At each of the Page's posting times it publishes one queued
+post, oldest first. A slot the server sleeps through by more than
+`SCHEDULER_GRACE_MINUTES` (default 180) is skipped, and the Page shows why.
+
+On a free Render instance, point an uptime monitor at the **backend's**
+`/api/health` (not the frontend) every 5 to 10 minutes. Its `scheduler` field
+shows `startedAt` and `lastTickAt`: a `startedAt` that keeps resetting means the
+instance is still going to sleep, and a `lastTickAt` older than a few minutes
+means the scheduler is not running. The Queue shows the same status, plus when
+each queued post will publish.

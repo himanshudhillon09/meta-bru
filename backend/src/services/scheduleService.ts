@@ -118,6 +118,25 @@ export function nextSlotOrFallback(
     }
 }
 
+/**
+ * The Page's next `count` posting slots, starting with `first` (its stored
+ * next slot). Each slot publishes one queued post, oldest first.
+ */
+export function upcomingSlots(
+    times: unknown,
+    timezone: string,
+    first: Date,
+    count: number
+): Date[] {
+    const slots: Date[] = [];
+    let slot = first;
+    for (let index = 0; index < count; index += 1) {
+        slots.push(slot);
+        slot = nextSlotOrFallback(times, timezone, slot).nextRunAt;
+    }
+    return slots;
+}
+
 /** Evenly spaced times from 09:00 to 21:00, rounded to 5 minutes. */
 export function suggestDailyTimes(count: number): string[] {
     const total = Number.isFinite(count)

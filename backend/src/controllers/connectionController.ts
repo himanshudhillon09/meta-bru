@@ -30,6 +30,7 @@ import {
     computeNextSlot,
     nextSlotOrFallback,
     normalizeDailyTimes,
+    upcomingSlots,
 } from '../services/scheduleService.js';
 import { isValidTimezone } from '../services/timeService.js';
 import { AppError } from '../utils/errors.js';
@@ -73,6 +74,9 @@ async function findOwnedConnection(id: string, userId: string) {
     return connection;
 }
 
+/** Publish times are listed for at most this many queued posts per Page. */
+const MAX_UPCOMING_SLOTS = 30;
+
 async function queuedCountFor(connectionId: string): Promise<number> {
     return Post.countDocuments({ connectionId, status: 'queued' });
 }
@@ -86,11 +90,22 @@ function connectionResponse(
     // The logo itself is only sent from its own endpoint; lists get a thumbnail.
     const logo = safe.brandLogo as { updatedAt?: Date | null; thumb?: string } | null | undefined;
     delete safe.brandLogo;
+    // When each queued post will publish: one per slot, oldest first.
+    const scheduled =
+        connection.isActive && connection.tokenStatus === 'active' && connection.nextRunAt;
     return {
         ...safe,
         hasBrandLogo: Boolean(logo?.updatedAt),
         logoThumb: logo?.thumb || '',
         queuedCount,
+        upcomingSlots: scheduled
+            ? upcomingSlots(
+                  connection.dailyTimes,
+                  connection.timezone,
+                  connection.nextRunAt as Date,
+                  Math.min(Math.max(queuedCount, 1), MAX_UPCOMING_SLOTS)
+              )
+            : [],
     };
 }
 

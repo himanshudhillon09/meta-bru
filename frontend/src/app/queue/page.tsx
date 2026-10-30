@@ -8,10 +8,11 @@ import { StatusBadge } from '@/components/Dashboards';
 import { EmptyState, ListSkeleton } from '@/components/Feedback';
 import { Modal } from '@/components/Modal';
 import { PageFilter, activePageId, postPageId } from '@/components/PageFilter';
+import { PostTimingLine, ScheduleSummary, queuedPostTiming } from '@/components/QueueSchedule';
 import { StoryChip } from '@/components/ShareToStoryToggle';
 import { StoryShareModal } from '@/components/StoryShareModal';
 import { Tabs } from '@/components/Tabs';
-import { postsApi } from '@/lib/apiClient';
+import { connectionsApi, postsApi, systemApi, type SchedulerStatus } from '@/lib/apiClient';
 import {
     connectionName,
     formatDate,
@@ -25,6 +26,7 @@ import {
     unsharedStoryPlatforms,
     type Platform,
     type Post,
+    type SocialConnection,
     type TargetStatus,
     type TokenStatus,
 } from '@/lib/types';
@@ -88,12 +90,23 @@ export default function QueuePage() {
     const [storySelection, setStorySelection] = useState<Platform[]>([]);
     const [error, setError] = useState('');
     const [notice, setNotice] = useState('');
+    // Each Page's schedule and the server's scheduler, for when posts publish.
+    const [pages, setPages] = useState<SocialConnection[]>([]);
+    const [scheduler, setScheduler] = useState<SchedulerStatus | null>(null);
+    const [checkedAt, setCheckedAt] = useState(0);
 
     const load = async (showSpinner = false) => {
         if (showSpinner) setLoading(true);
         try {
-            const data: any = await postsApi.list({ limit: '200' });
+            const [data, pageData, health] = await Promise.all([
+                postsApi.list({ limit: '200' }) as Promise<{ posts?: Post[] }>,
+                (connectionsApi.list() as Promise<{ connections?: SocialConnection[] }>).catch(() => null),
+                systemApi.health().catch(() => null),
+            ]);
             setPosts(data.posts || []);
+            if (pageData) setPages(pageData.connections || []);
+            setScheduler(health?.scheduler ?? null);
+            setCheckedAt(Date.now());
         } catch (err: any) {
             setError(typeof err === 'string' ? err : 'Could not load posts');
         } finally {
@@ -298,6 +311,15 @@ export default function QueuePage() {
                 </div>
             </div>
 
+            {!loading && tab === 'queued' ? (
+                <ScheduleSummary
+                    pages={pages.filter((page) => !pageId || page._id === pageId)}
+                    posts={posts}
+                    scheduler={scheduler}
+                    now={checkedAt}
+                />
+            ) : null}
+
             {loading ? (
                 <ListSkeleton />
             ) : visible.length === 0 ? (
@@ -400,6 +422,7 @@ export default function QueuePage() {
                                         <p className="text-sm text-fg-2 whitespace-pre-wrap line-clamp-3">
                                             {post.caption}
                                         </p>
+                                        <PostTimingLine timing={queuedPostTiming(post, posts, pages)} />
 
                                         <div className="flex flex-wrap gap-2 mt-3">
                                             {post.targets.map((target) => (
