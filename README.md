@@ -5,7 +5,9 @@ Page and linked Instagram Business account.
 
 ## What it does
 
-- Facebook Login / Meta OAuth to connect Pages
+- Facebook Login / Meta OAuth to connect Pages, plus a guide that opens
+  Facebook's Page creation and connects the new Page in one step (Meta's API
+  does not let apps create Pages)
 - Auto-detects the Instagram Business account linked to each Page
 - Per-user Meta app, Cloudinary, and Gemini credentials entered under Profile
 - Encrypted credential and Page token storage (AES-256-GCM)
