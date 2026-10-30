@@ -109,6 +109,7 @@ function syncNotice(
         failed?: number;
         skipped?: number;
         remaining?: number;
+        removed?: { postsDeleted?: number; copiesDropped?: number; mediaDeleted?: number };
     },
     automatic = false
 ): string {
@@ -134,6 +135,23 @@ function syncNotice(
     }
     if (remaining > 0) {
         parts.push(`${remaining} remaining; refresh again`);
+    }
+    // Posts deleted on Facebook or Instagram are flushed during the refresh.
+    const postsDeleted = Number(result.removed?.postsDeleted) || 0;
+    const copiesDropped = Number(result.removed?.copiesDropped) || 0;
+    const mediaDeleted = Number(result.removed?.mediaDeleted) || 0;
+    if (postsDeleted > 0) {
+        parts.push(
+            `Removed ${postsDeleted} post${postsDeleted === 1 ? '' : 's'} you deleted on Facebook or Instagram` +
+                (mediaDeleted > 0
+                    ? `, with ${mediaDeleted} Cloudinary file${mediaDeleted === 1 ? '' : 's'}`
+                    : '')
+        );
+    }
+    if (copiesDropped > 0) {
+        parts.push(
+            `Dropped ${copiesDropped} platform cop${copiesDropped === 1 ? 'y' : 'ies'} you deleted; the other platform is kept`
+        );
     }
     if (parts.length > 0) return `${parts.join('. ')}.`;
     return automatic ? '' : 'Analytics are already up to date.';

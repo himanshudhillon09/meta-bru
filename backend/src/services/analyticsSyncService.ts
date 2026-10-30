@@ -5,6 +5,7 @@ import {
 } from '../models/socialConnectionModel.js';
 import { PostMetricSnapshot } from '../models/postMetricSnapshotModel.js';
 import type { IPostMetricSnapshot } from '../models/postMetricSnapshotModel.js';
+import type { Platform } from '../models/postModel.js';
 import { decryptSecret } from './cryptoService.js';
 import {
     latestSnapshotsByTarget,
@@ -25,6 +26,12 @@ import {
     type NormalizedInsightMetrics,
 } from './metaInsightsService.js';
 import { MetaApiError } from './metaService.js';
+import {
+    checkRemovedOnMeta,
+    looksRemoved,
+    removeDeletedTargets,
+    type RemovedSummary,
+} from './removedPostService.js';
 
 export type SyncMode = 'stale' | 'live';
 
@@ -39,6 +46,8 @@ export interface SyncResult {
         platform: string;
     }>;
     lastSyncedAt: string | null;
+    /** Posts deleted on Facebook or Instagram that were flushed here. */
+    removed: RemovedSummary;
 }
 
 /**
@@ -50,6 +59,7 @@ export interface SyncDependencies {
     fetchInstagram?: typeof fetchInstagramMetrics;
     fetchFacebookReel?: typeof fetchFacebookReelMetrics;
     fetchInstagramReel?: typeof fetchInstagramReelMetrics;
+    checkRemoved?: typeof checkRemovedOnMeta;
     now?: () => Date;
 }
 
@@ -197,6 +207,8 @@ export async function syncAnalytics(
     const fetchInstagram = deps.fetchInstagram ?? fetchInstagramMetrics;
     const fetchFacebookReel = deps.fetchFacebookReel ?? fetchFacebookReelMetrics;
     const fetchInstagramReel = deps.fetchInstagramReel ?? fetchInstagramReelMetrics;
+    const checkRemoved = deps.checkRemoved ?? checkRemovedOnMeta;
+    const removedTargets: Array<{ postId: string; platform: Platform }> = [];
 
     const targets = await loadPublishedTargets(userId, range, filters);
     const snapshots = await loadLatestSnapshots(userId, targets, range);
@@ -280,6 +292,29 @@ export async function syncAnalytics(
                     : reel
                       ? await fetchInstagramReel(target.externalId, token)
                       : await fetchInstagram(target.externalId, token);
+
+            // A post deleted on Facebook or Instagram is flushed instead of
+            // being kept as a permanent "reconnect" error.
+            if (looksRemoved(result.error)) {
+                const check = await checkRemoved(
+                    {
+                        platform: target.platform,
+                        objectId:
+                            reel && target.platform === 'facebook'
+                                ? target.videoId || target.externalId
+                                : target.externalId,
+                        accountId:
+                            target.platform === 'facebook'
+                                ? connection.pageId
+                                : connection.instagram?.id || '',
+                    },
+                    token
+                );
+                if (check === 'deleted') {
+                    removedTargets.push({ postId: target.postId, platform: target.platform });
+                    return;
+                }
+            }
             await upsertSnapshot(
                 userId,
                 target,
@@ -309,6 +344,11 @@ export async function syncAnalytics(
         }
     });
 
+    const removed =
+        removedTargets.length > 0
+            ? await removeDeletedTargets(userId, removedTargets)
+            : { postsDeleted: 0, copiesDropped: 0, mediaDeleted: 0 };
+
     return {
         synced,
         failed,
@@ -316,5 +356,6 @@ export async function syncAnalytics(
         remaining: Math.max(0, eligible.length - selected.length),
         permissionErrors,
         lastSyncedAt: clock().toISOString(),
+        removed,
     };
 }
