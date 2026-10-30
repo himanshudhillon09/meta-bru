@@ -11,6 +11,7 @@ import {
     type CropResult,
     type CropState,
 } from '@/components/ImageCropper';
+import { AiLabelToggle, useAiLabelPreference } from '@/components/AiLabelToggle';
 import { ShareToStoryToggle } from '@/components/ShareToStoryToggle';
 import { ToggleChip } from '@/components/ToggleChip';
 import { useAuth } from '@/context/AuthContext';
@@ -91,6 +92,7 @@ export default function ComposerPage() {
     const [facebook, setFacebook] = useState(true);
     const [instagram, setInstagram] = useState(false);
     const [shareToStory, setShareToStory] = useState(false);
+    const [aiLabel, setAiLabel] = useAiLabelPreference();
     const [overlayEnabled, setOverlayEnabled] = useState(false);
     const [overlayText, setOverlayText] = useState('');
     const [overlayPreview, setOverlayPreview] = useState('');
@@ -523,6 +525,7 @@ export default function ComposerPage() {
                     : {}),
                 platforms: { facebook, instagram },
                 shareToStory,
+                aiGenerated: aiLabel,
                 action,
             });
 
@@ -675,6 +678,7 @@ export default function ComposerPage() {
                                 onChange={setShareToStory}
                                 detail="Shares the image as a 9:16 Story on each platform once the post publishes."
                             />
+                            <AiLabelToggle checked={aiLabel} onChange={setAiLabel} />
                         </section>
 
                         <section className="rounded-2xl border border-line bg-surface p-6 sm:p-8 shadow-card">

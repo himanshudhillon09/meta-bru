@@ -305,25 +305,57 @@ export async function getInstagramPublishingUsage(
     };
 }
 
+/** Instagram's "AI info" label, set when the media container is created. */
+export const AI_LABEL_PARAMS = { is_ai_generated: 'true' } as const;
+
+function rejectsAiLabel(error: unknown): boolean {
+    return error instanceof MetaApiError && /is_ai_generated/i.test(error.message);
+}
+
+/**
+ * Creates a container, and if Instagram refuses the AI label for this kind of
+ * media, creates it again without the label so the post still publishes.
+ */
+async function createContainerWithLabel(
+    igUserId: string,
+    accessToken: string,
+    params: Record<string, string | number>
+): Promise<string> {
+    const create = async (fields: Record<string, string | number>) => {
+        const data = await graphRequest<{ id?: string }>(`${igUserId}/media`, {
+            method: 'POST',
+            accessToken,
+            params: fields,
+        });
+        if (!data.id) {
+            throw new MetaApiError('Instagram did not return a media container ID', 502);
+        }
+        return data.id;
+    };
+
+    try {
+        return await create(params);
+    } catch (error) {
+        if (!('is_ai_generated' in params) || !rejectsAiLabel(error)) throw error;
+        const { is_ai_generated: _label, ...withoutLabel } = params;
+        console.warn('[meta] Instagram refused the AI label for this media; published without it.');
+        return create(withoutLabel);
+    }
+}
+
 export async function createInstagramContainer(params: {
     igUserId: string;
     accessToken: string;
     imageUrl: string;
     caption: string;
+    /** Adds Meta's "AI info" label. */
+    aiGenerated?: boolean;
 }): Promise<string> {
-    const data = await graphRequest<{ id?: string }>(`${params.igUserId}/media`, {
-        method: 'POST',
-        accessToken: params.accessToken,
-        params: {
-            image_url: params.imageUrl,
-            caption: params.caption,
-        },
+    return createContainerWithLabel(params.igUserId, params.accessToken, {
+        image_url: params.imageUrl,
+        caption: params.caption,
+        ...(params.aiGenerated ? AI_LABEL_PARAMS : {}),
     });
-
-    if (!data.id) {
-        throw new MetaApiError('Instagram did not return a media container ID', 502);
-    }
-    return data.id;
 }
 
 export async function publishInstagramContainer(params: {
@@ -386,16 +418,7 @@ export async function createInstagramMediaContainer(
     accessToken: string,
     params: Record<string, string | number>
 ): Promise<string> {
-    const data = await graphRequest<{ id?: string }>(`${igUserId}/media`, {
-        method: 'POST',
-        accessToken,
-        params,
-    });
-
-    if (!data.id) {
-        throw new MetaApiError('Instagram did not return a media container ID', 502);
-    }
-    return data.id;
+    return createContainerWithLabel(igUserId, accessToken, params);
 }
 
 export async function getInstagramContainerState(

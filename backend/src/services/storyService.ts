@@ -10,7 +10,7 @@ import {
     publishInstagramContainerJob,
     type MetaMediaDeps,
 } from './metaMediaJobs.js';
-import { MetaApiError } from './metaService.js';
+import { AI_LABEL_PARAMS, MetaApiError } from './metaService.js';
 import type { Deadline } from './pollService.js';
 
 export interface StoryShare {
@@ -91,7 +91,9 @@ async function shareToInstagram(
     media: StoryMedia,
     target: IPostTarget,
     deps: MetaMediaDeps,
-    deadline: Deadline
+    deadline: Deadline,
+    /** The Story repeats the post's AI label. */
+    aiGenerated: boolean
 ): Promise<void> {
     const igUserId = connection.instagram?.id;
     if (!igUserId) {
@@ -107,10 +109,12 @@ async function shareToInstagram(
             igUserId,
             accessToken,
             target,
-            params:
-                media.kind === 'video'
+            params: {
+                ...(media.kind === 'video'
                     ? { media_type: 'STORIES', video_url: media.url }
-                    : { media_type: 'STORIES', image_url: media.url },
+                    : { media_type: 'STORIES', image_url: media.url }),
+                ...(aiGenerated ? AI_LABEL_PARAMS : {}),
+            },
             waitMs: media.kind === 'video' ? INSTAGRAM_VIDEO_WAIT_MS : INSTAGRAM_IMAGE_WAIT_MS,
             stillProcessingMessage:
                 'Instagram is still processing this Story. Share it again in a few minutes.',
@@ -195,7 +199,15 @@ export async function publishStories(
             }
 
             if (target.platform === 'instagram') {
-                await shareToInstagram(connection, accessToken, media, target, deps, deadline);
+                await shareToInstagram(
+                    connection,
+                    accessToken,
+                    media,
+                    target,
+                    deps,
+                    deadline,
+                    Boolean(post.aiGenerated)
+                );
             } else {
                 await shareToFacebook(connection, accessToken, media, target, deps, deadline);
             }

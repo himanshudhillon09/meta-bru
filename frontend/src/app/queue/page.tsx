@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { AiLabelChip } from '@/components/AiLabelToggle';
 import { AppShell } from '@/components/AppShell';
 import { StatusBadge } from '@/components/Dashboards';
 import { EmptyState, ListSkeleton } from '@/components/Feedback';
@@ -364,6 +365,7 @@ export default function QueuePage() {
                                                     Reel
                                                 </span>
                                             ) : null}
+                                            {post.aiGenerated ? <AiLabelChip /> : null}
                                             <span className="text-xs text-subtle">
                                                 {connectionName(post)}
                                             </span>

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { AiLabelChip } from '@/components/AiLabelToggle';
 import { AppShell } from '@/components/AppShell';
 import { StatusBadge } from '@/components/Dashboards';
 import { EmptyState, ListSkeleton } from '@/components/Feedback';
@@ -199,6 +200,7 @@ export default function ActivityPage() {
                                 <div className="flex-1 min-w-0">
                                     <div className="flex flex-wrap items-center gap-2 mb-2">
                                         <StatusBadge status={post.status} />
+                                        {post.aiGenerated ? <AiLabelChip /> : null}
                                         <span className="text-xs text-subtle">
                                             {connectionName(post)}
                                         </span>
