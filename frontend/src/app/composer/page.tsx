@@ -14,12 +14,14 @@ import {
 } from '@/components/ImageCropper';
 import { AiLabelToggle, useAiLabelPreference } from '@/components/AiLabelToggle';
 import { PageAvatar } from '@/components/PageBrandPanel';
+import { postPageId } from '@/components/PageFilter';
 import { ShareToStoryToggle } from '@/components/ShareToStoryToggle';
 import { ToggleChip } from '@/components/ToggleChip';
 import { useAuth } from '@/context/AuthContext';
 import { aiApi, connectionsApi, mediaApi, postsApi } from '@/lib/apiClient';
 import { useIdeaFromUrl } from '@/lib/useIdeaFromUrl';
-import type { MediaAsset, SocialConnection } from '@/lib/types';
+import { isEditLink, useEditId, useEditedPost } from '@/lib/usePostEditing';
+import type { MediaAsset, Post, SocialConnection } from '@/lib/types';
 
 const KNOWN_ASPECTS: Array<[string, number]> = [
     ['4:5', 4 / 5],
@@ -82,6 +84,9 @@ export default function ComposerPage() {
     const router = useRouter();
     const { user } = useAuth();
     const draftKey = user?.id ? `meta-bru:composer-draft:${user.id}` : null;
+    // Set when the Queue's Edit opened this page; the saved draft is left alone.
+    const editId = useEditId();
+    const [editPost, setEditPost] = useState<Post | null>(null);
     const [connections, setConnections] = useState<SocialConnection[]>([]);
     const [connectionId, setConnectionId] = useState('');
     const [caption, setCaption] = useState('');
@@ -93,8 +98,8 @@ export default function ComposerPage() {
     const [cropError, setCropError] = useState('');
     const [facebook, setFacebook] = useState(true);
     const [instagram, setInstagram] = useState(false);
-    const [shareToStory, setShareToStory] = useState(false);
-    const [aiLabel, setAiLabel] = useAiLabelPreference();
+    const [shareToStory, setShareToStory] = useState(true);
+    const [aiLabel, setAiLabel] = useAiLabelPreference(!editId);
     const [overlayEnabled, setOverlayEnabled] = useState(false);
     const [overlayText, setOverlayText] = useState('');
     const [overlayPreview, setOverlayPreview] = useState('');
@@ -114,9 +119,12 @@ export default function ComposerPage() {
     const connectionsRef = useRef<SocialConnection[]>([]);
     const draftClearedRef = useRef(false);
     const submitDisabled =
-        Boolean(submitting) || uploading || generatingImage;
+        Boolean(submitting) || uploading || generatingImage || (Boolean(editId) && !editPost);
+    // The image a saved post already has. Its text and frame are baked in, so
+    // new text needs a new image.
+    const isPostImage = Boolean(editPost) && media?.publicId === editPost?.mediaPublicId;
     const overlayActive =
-        overlayEnabled && Boolean(media) && overlayText.trim().length > 0;
+        overlayEnabled && Boolean(media) && !isPostImage && overlayText.trim().length > 0;
 
     useEffect(() => {
         if (!draftKey || hydratedDraftKey === draftKey) return;
@@ -131,13 +139,14 @@ export default function ComposerPage() {
             setMedia(null);
             setFacebook(true);
             setInstagram(false);
-            setShareToStory(false);
+            setShareToStory(true);
             setOverlayEnabled(false);
             setOverlayText('');
         }
 
         try {
-            const raw = window.localStorage.getItem(draftKey);
+            // Editing a saved post fills the form from that post instead.
+            const raw = isEditLink() ? null : window.localStorage.getItem(draftKey);
             if (raw) {
                 const draft = JSON.parse(raw) as Partial<ComposerDraft>;
 
@@ -238,7 +247,7 @@ export default function ComposerPage() {
     }, []);
 
     useEffect(() => {
-        if (!draftKey || hydratedDraftKey !== draftKey || draftClearedRef.current) return;
+        if (!draftKey || hydratedDraftKey !== draftKey || draftClearedRef.current || editId) return;
 
         const draft: ComposerDraft = {
             connectionId,
@@ -261,6 +270,7 @@ export default function ComposerPage() {
     }, [
         draftKey,
         hydratedDraftKey,
+        editId,
         connectionId,
         caption,
         topic,
@@ -272,6 +282,47 @@ export default function ComposerPage() {
         overlayEnabled,
         overlayText,
     ]);
+
+    // Fill the form from the post the Queue's Edit opened.
+    useEditedPost(
+        editId,
+        (post) => {
+            const pageId = postPageId(post);
+            setEditPost(post);
+            setConnectionId(pageId);
+            connectionIdRef.current = pageId;
+            setCaption(post.caption);
+            setTopic('');
+            setImagePrompt('');
+            setMedia({
+                url: post.mediaUrl,
+                jpegUrl: post.mediaJpegUrl || '',
+                publicId: post.mediaPublicId,
+                width: 0,
+                height: 0,
+                format: /\.([a-z\d]{3,4})(?:\?|$)/i.exec(post.mediaUrl)?.[1] ?? 'jpg',
+                bytes: 0,
+            });
+            setImageSource(null);
+            setFacebook(post.platforms.facebook);
+            setInstagram(post.platforms.instagram);
+            setShareToStory(Boolean(post.shareToStory));
+            setAiLabel(Boolean(post.aiGenerated));
+            setOverlayEnabled(false);
+            setOverlayText('');
+
+            // The post does not store its size; read it from the image.
+            const image = new Image();
+            image.onload = () =>
+                setMedia((current) =>
+                    current?.publicId === post.mediaPublicId
+                        ? { ...current, width: image.naturalWidth, height: image.naturalHeight }
+                        : current
+                );
+            image.src = post.mediaUrl;
+        },
+        setError
+    );
 
     // Render the exact overlay on the server a moment after typing stops.
     useEffect(() => {
@@ -553,25 +604,45 @@ export default function ComposerPage() {
             return;
         }
 
+        const mediaFields = {
+            mediaUrl: media.url,
+            mediaJpegUrl: media.jpegUrl || '',
+            mediaPublicId: media.publicId,
+            ...(overlayActive
+                ? {
+                      overlayText: overlayText.trim(),
+                      ...(media.textArea ? { mediaTextArea: media.textArea } : {}),
+                  }
+                : {}),
+        };
+
         setSubmitting(action);
         try {
-            const data: any = await postsApi.create({
-                connectionId,
-                caption: caption.trim(),
-                mediaUrl: media.url,
-                mediaJpegUrl: media.jpegUrl || '',
-                mediaPublicId: media.publicId,
-                ...(overlayActive
-                    ? {
-                          overlayText: overlayText.trim(),
-                          ...(media.textArea ? { mediaTextArea: media.textArea } : {}),
-                      }
-                    : {}),
-                platforms: { facebook, instagram },
-                shareToStory,
-                aiGenerated: aiLabel,
-                action,
-            });
+            let data: any;
+            if (editPost) {
+                // Only a new image (or new text on one) replaces the post's image.
+                const mediaChanged = media.publicId !== editPost.mediaPublicId || overlayActive;
+                data = await postsApi.update(editPost._id, {
+                    connectionId,
+                    caption: caption.trim(),
+                    platforms: { facebook, instagram },
+                    shareToStory,
+                    aiGenerated: aiLabel,
+                    action: action === 'draft' ? 'draft' : 'queue',
+                    ...(mediaChanged ? { media: { mediaType: 'image', ...mediaFields } } : {}),
+                });
+                if (action === 'now') data = await postsApi.publishNow(editPost._id);
+            } else {
+                data = await postsApi.create({
+                    connectionId,
+                    caption: caption.trim(),
+                    ...mediaFields,
+                    platforms: { facebook, instagram },
+                    shareToStory,
+                    aiGenerated: aiLabel,
+                    action,
+                });
+            }
 
             if (action === 'now' && data.post?.status === 'failed') {
                 setError(data.post.lastError || 'Publishing failed. Check Activity.');
@@ -579,9 +650,12 @@ export default function ComposerPage() {
                 return;
             }
 
-            draftClearedRef.current = true;
-            if (draftKey) {
-                window.localStorage.removeItem(draftKey);
+            // An edit leaves the new-post draft for next time.
+            if (!editPost) {
+                draftClearedRef.current = true;
+                if (draftKey) {
+                    window.localStorage.removeItem(draftKey);
+                }
             }
 
             const partiallyPublished =
@@ -591,9 +665,13 @@ export default function ComposerPage() {
                     ? partiallyPublished
                         ? 'Partially published. Opening the failed tab so you can retry the failed platform...'
                         : 'Post published. Opening activity...'
-                    : action === 'queue'
-                      ? 'Post added to the queue.'
-                      : 'Draft saved.'
+                    : editPost
+                      ? action === 'queue'
+                          ? 'Changes saved. The post keeps its place in the queue.'
+                          : 'Changes saved as a draft.'
+                      : action === 'queue'
+                        ? 'Post added to the queue.'
+                        : 'Draft saved.'
             );
             setTimeout(() => {
                 router.push(
@@ -607,23 +685,48 @@ export default function ComposerPage() {
                 );
             }, 900);
         } catch (err: any) {
-            setError(typeof err === 'string' ? err : 'Could not create post');
+            setError(typeof err === 'string' ? err : editPost ? 'Could not save the changes' : 'Could not create post');
             setSubmitting('');
         }
     };
 
+    // Saving an edit keeps a draft a draft; anything else goes to the queue.
+    const saveAction = editPost?.status === 'draft' ? 'draft' : 'queue';
+
     return (
         <AppShell
-            title="Composer"
-            subtitle="Build an image post, use AI if you want, then queue it for the daily slot."
+            title={editId ? 'Edit post' : 'Composer'}
+            subtitle={
+                editId
+                    ? 'Change anything below. Saving keeps the post in its place in the queue.'
+                    : 'Build an image post, use AI if you want, then queue it for the daily slot.'
+            }
             actions={
-                <button
-                    onClick={() => submit('queue')}
-                    disabled={submitDisabled}
-                    className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all"
-                >
-                    {submitting === 'queue' ? 'Adding...' : 'Add to queue'}
-                </button>
+                editId ? (
+                    <>
+                        <Link
+                            href="/queue"
+                            className="bg-hover hover:bg-hover-strong text-fg border border-line-strong px-5 py-2.5 rounded-xl text-sm font-bold transition-all"
+                        >
+                            Cancel
+                        </Link>
+                        <button
+                            onClick={() => submit(saveAction)}
+                            disabled={submitDisabled}
+                            className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all"
+                        >
+                            {submitting === saveAction ? 'Saving...' : 'Save changes'}
+                        </button>
+                    </>
+                ) : (
+                    <button
+                        onClick={() => submit('queue')}
+                        disabled={submitDisabled}
+                        className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all"
+                    >
+                        {submitting === 'queue' ? 'Adding...' : 'Add to queue'}
+                    </button>
+                )
             }
         >
             {notice ? (
@@ -837,7 +940,7 @@ export default function ComposerPage() {
                                     />
                                     <div className="min-w-0 flex-1">
                                         <div className="text-xs font-bold text-fg truncate">
-                                            {media.width} × {media.height}
+                                            {media.width ? `${media.width} × ${media.height}` : 'Image'}
                                             {aspectLabel(media.width, media.height)
                                                 ? ` · ${aspectLabel(media.width, media.height)}`
                                                 : ''}{' '}
@@ -847,7 +950,12 @@ export default function ComposerPage() {
                                             {media.publicId}
                                         </div>
                                         <div className="text-[11px] text-subtle mt-1">
-                                            {frameMismatch ? (
+                                            {isPostImage ? (
+                                                <>
+                                                    This post&apos;s current image, as it will publish. Upload or
+                                                    generate a new one to replace it.
+                                                </>
+                                            ) : frameMismatch ? (
                                                 <span className="text-amber-700 dark:text-amber-300">
                                                     {media.brandConnectionId
                                                         ? 'Framed with another Page’s logo.'
@@ -908,7 +1016,16 @@ export default function ComposerPage() {
                                 </div>
                             ) : null}
 
-                            {media ? (
+                            {media && isPostImage ? (
+                                <div className="mt-4 rounded-2xl border border-line bg-surface-2 p-4">
+                                    <div className="text-xs font-bold text-fg">Text on image</div>
+                                    <div className="text-[11px] text-subtle mt-0.5">
+                                        {editPost?.hasTextOverlay
+                                            ? 'This image already has its text. Upload or generate a new image to write different text.'
+                                            : 'Upload or generate a new image to add text to it.'}
+                                    </div>
+                                </div>
+                            ) : media ? (
                                 <div className="mt-4 rounded-2xl border border-line bg-surface-2 p-4">
                                     <div className="flex items-start justify-between gap-3">
                                         <div>
@@ -980,7 +1097,7 @@ export default function ComposerPage() {
                             ) : null}
                         </section>
 
-                        <div className="flex flex-col sm:flex-row gap-3">
+                        <div className="flex flex-col sm:flex-row sm:flex-wrap gap-3">
                             <button
                                 onClick={() => submit('draft')}
                                 disabled={submitDisabled}
@@ -993,7 +1110,13 @@ export default function ComposerPage() {
                                 disabled={submitDisabled}
                                 className="flex-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white px-5 py-3.5 rounded-2xl text-sm font-bold transition-all"
                             >
-                                {submitting === 'queue' ? 'Adding...' : 'Add to queue'}
+                                {submitting === 'queue'
+                                    ? editId
+                                        ? 'Saving...'
+                                        : 'Adding...'
+                                    : editId
+                                      ? 'Save to queue'
+                                      : 'Add to queue'}
                             </button>
                             <button
                                 onClick={() => submit('now')}

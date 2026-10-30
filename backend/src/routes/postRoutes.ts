@@ -3,6 +3,7 @@ import {
     clearActivity,
     createPost,
     deletePost,
+    getPost,
     listPosts,
     publishNow,
     retryPost,
@@ -18,6 +19,7 @@ router.use(protect);
 router.post('/', createPost);
 router.post('/activity/clear', clearActivity);
 router.get('/', listPosts);
+router.get('/:id', getPost);
 router.patch('/:id', updatePost);
 router.delete('/:id', deletePost);
 router.post('/:id/publish-now', publishNow);

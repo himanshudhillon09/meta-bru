@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AppShell } from '@/components/AppShell';
 import { AiLabelToggle, useAiLabelPreference } from '@/components/AiLabelToggle';
+import { postPageId } from '@/components/PageFilter';
 import { ShareToStoryToggle } from '@/components/ShareToStoryToggle';
 import { ToggleChip } from '@/components/ToggleChip';
 import { useAuth } from '@/context/AuthContext';
@@ -23,9 +24,11 @@ import {
     readVideoFileInfo,
     reelFileProblem,
 } from '@/lib/reels';
+import { isEditLink, useEditId, useEditedPost } from '@/lib/usePostEditing';
 import {
     formatBytes,
     formatDuration,
+    type Post,
     type SocialConnection,
     type VideoMedia,
 } from '@/lib/types';
@@ -45,6 +48,9 @@ export default function ReelsPage() {
     const router = useRouter();
     const { user } = useAuth();
     const draftKey = user?.id ? `meta-bru:reel-draft:${user.id}` : null;
+    // Set when the Queue's Edit opened this page; the saved draft is left alone.
+    const editId = useEditId();
+    const [editPost, setEditPost] = useState<Post | null>(null);
     const [connections, setConnections] = useState<SocialConnection[]>([]);
     const [connectionId, setConnectionId] = useState('');
     const [caption, setCaption] = useState('');
@@ -52,8 +58,8 @@ export default function ReelsPage() {
     const [video, setVideo] = useState<VideoMedia | null>(null);
     const [facebook, setFacebook] = useState(true);
     const [instagram, setInstagram] = useState(false);
-    const [shareToStory, setShareToStory] = useState(false);
-    const [aiLabel, setAiLabel] = useAiLabelPreference();
+    const [shareToStory, setShareToStory] = useState(true);
+    const [aiLabel, setAiLabel] = useAiLabelPreference(!editId);
     const [loading, setLoading] = useState(true);
     const [uploadProgress, setUploadProgress] = useState<number | null>(null);
     const [previewFailedFor, setPreviewFailedFor] = useState('');
@@ -67,7 +73,9 @@ export default function ReelsPage() {
     const draftClearedRef = useRef(false);
     const uploadRef = useRef<VideoUploadHandle | null>(null);
     const uploading = uploadProgress !== null;
-    const submitDisabled = Boolean(submitting) || uploading;
+    const submitDisabled = Boolean(submitting) || uploading || (Boolean(editId) && !editPost);
+    // The video a saved reel already has; Cloudinary details are not stored with it.
+    const isPostVideo = Boolean(editPost) && video?.publicId === editPost?.mediaPublicId;
     // Facebook Reels stop at 90 seconds; Instagram takes up to 15 minutes.
     const facebookAllowed =
         !video || video.duration <= REEL_LIMITS.maxFacebookSeconds;
@@ -85,11 +93,12 @@ export default function ReelsPage() {
             setVideo(null);
             setFacebook(true);
             setInstagram(false);
-            setShareToStory(false);
+            setShareToStory(true);
         }
 
         try {
-            const raw = window.localStorage.getItem(draftKey);
+            // Editing a saved reel fills the form from that reel instead.
+            const raw = isEditLink() ? null : window.localStorage.getItem(draftKey);
             if (raw) {
                 const draft = JSON.parse(raw) as Partial<ReelDraft>;
 
@@ -182,7 +191,7 @@ export default function ReelsPage() {
     useEffect(() => () => uploadRef.current?.abort(), []);
 
     useEffect(() => {
-        if (!draftKey || hydratedDraftKey !== draftKey || draftClearedRef.current) return;
+        if (!draftKey || hydratedDraftKey !== draftKey || draftClearedRef.current || editId) return;
 
         const draft: ReelDraft = {
             connectionId,
@@ -202,6 +211,7 @@ export default function ReelsPage() {
     }, [
         draftKey,
         hydratedDraftKey,
+        editId,
         connectionId,
         caption,
         topic,
@@ -210,6 +220,35 @@ export default function ReelsPage() {
         instagram,
         shareToStory,
     ]);
+
+    // Fill the form from the reel the Queue's Edit opened.
+    useEditedPost(
+        editId,
+        (post) => {
+            const pageId = postPageId(post);
+            setEditPost(post);
+            setConnectionId(pageId);
+            connectionIdRef.current = pageId;
+            setCaption(post.caption);
+            setTopic('');
+            setVideo({
+                publicId: post.mediaPublicId,
+                url: post.mediaUrl,
+                coverUrl: post.mediaCoverUrl || '',
+                originalUrl: post.mediaUrl,
+                width: 0,
+                height: 0,
+                duration: post.mediaDuration ?? 0,
+                format: '',
+                bytes: 0,
+            });
+            setFacebook(post.platforms.facebook);
+            setInstagram(post.platforms.instagram);
+            setShareToStory(Boolean(post.shareToStory));
+            setAiLabel(Boolean(post.aiGenerated));
+        },
+        setError
+    );
 
     // "Create this reel" on an Analytics tip opens this page with its idea.
     useIdeaFromUrl(hydratedDraftKey !== null, (idea) => {
@@ -331,16 +370,33 @@ export default function ReelsPage() {
 
         setSubmitting(action);
         try {
-            const data: any = await postsApi.create({
-                connectionId,
-                caption: caption.trim(),
-                mediaType: 'reel',
-                mediaPublicId: video.publicId,
-                platforms: { facebook: publishFacebook, instagram },
-                shareToStory,
-                aiGenerated: aiLabel,
-                action,
-            });
+            let data: any;
+            if (editPost) {
+                data = await postsApi.update(editPost._id, {
+                    connectionId,
+                    caption: caption.trim(),
+                    platforms: { facebook: publishFacebook, instagram },
+                    shareToStory,
+                    aiGenerated: aiLabel,
+                    action: action === 'draft' ? 'draft' : 'queue',
+                    // Only a new upload replaces the reel's video.
+                    ...(isPostVideo
+                        ? {}
+                        : { media: { mediaType: 'reel', mediaPublicId: video.publicId } }),
+                });
+                if (action === 'now') data = await postsApi.publishNow(editPost._id);
+            } else {
+                data = await postsApi.create({
+                    connectionId,
+                    caption: caption.trim(),
+                    mediaType: 'reel',
+                    mediaPublicId: video.publicId,
+                    platforms: { facebook: publishFacebook, instagram },
+                    shareToStory,
+                    aiGenerated: aiLabel,
+                    action,
+                });
+            }
 
             if (action === 'now' && data.post?.status === 'failed') {
                 setError(data.post.lastError || 'Publishing failed. Check Activity.');
@@ -348,9 +404,12 @@ export default function ReelsPage() {
                 return;
             }
 
-            draftClearedRef.current = true;
-            if (draftKey) {
-                window.localStorage.removeItem(draftKey);
+            // An edit leaves the new-reel draft for next time.
+            if (!editPost) {
+                draftClearedRef.current = true;
+                if (draftKey) {
+                    window.localStorage.removeItem(draftKey);
+                }
             }
 
             const partiallyPublished = action === 'now' && data.post?.status === 'partial';
@@ -359,9 +418,13 @@ export default function ReelsPage() {
                     ? partiallyPublished
                         ? 'Partially published. Opening the failed tab so you can retry the failed platform...'
                         : 'Reel published. Opening activity...'
-                    : action === 'queue'
-                      ? 'Reel added to the queue.'
-                      : 'Draft saved.'
+                    : editPost
+                      ? action === 'queue'
+                          ? 'Changes saved. The reel keeps its place in the queue.'
+                          : 'Changes saved as a draft.'
+                      : action === 'queue'
+                        ? 'Reel added to the queue.'
+                        : 'Draft saved.'
             );
             setTimeout(() => {
                 router.push(
@@ -375,26 +438,51 @@ export default function ReelsPage() {
                 );
             }, 900);
         } catch (err: any) {
-            setError(typeof err === 'string' ? err : 'Could not create reel');
+            setError(typeof err === 'string' ? err : editPost ? 'Could not save the changes' : 'Could not create reel');
             setSubmitting('');
         }
     };
+
+    // Saving an edit keeps a draft a draft; anything else goes to the queue.
+    const saveAction = editPost?.status === 'draft' ? 'draft' : 'queue';
 
     const previewSrc =
         video && previewFailedFor === video.publicId ? video.originalUrl : video?.url;
 
     return (
         <AppShell
-            title="Reels"
-            subtitle="Upload a vertical video, then queue it or post it now. Reels use each Page's daily posting times."
+            title={editId ? 'Edit reel' : 'Reels'}
+            subtitle={
+                editId
+                    ? 'Change anything below. Saving keeps the reel in its place in the queue.'
+                    : "Upload a vertical video, then queue it or post it now. Reels use each Page's daily posting times."
+            }
             actions={
-                <button
-                    onClick={() => submit('queue')}
-                    disabled={submitDisabled}
-                    className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all"
-                >
-                    {submitting === 'queue' ? 'Adding...' : 'Add to queue'}
-                </button>
+                editId ? (
+                    <>
+                        <Link
+                            href="/queue"
+                            className="bg-hover hover:bg-hover-strong text-fg border border-line-strong px-5 py-2.5 rounded-xl text-sm font-bold transition-all"
+                        >
+                            Cancel
+                        </Link>
+                        <button
+                            onClick={() => submit(saveAction)}
+                            disabled={submitDisabled}
+                            className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all"
+                        >
+                            {submitting === saveAction ? 'Saving...' : 'Save changes'}
+                        </button>
+                    </>
+                ) : (
+                    <button
+                        onClick={() => submit('queue')}
+                        disabled={submitDisabled}
+                        className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all"
+                    >
+                        {submitting === 'queue' ? 'Adding...' : 'Add to queue'}
+                    </button>
+                )
             }
         >
             {notice ? (
@@ -569,17 +657,19 @@ export default function ReelsPage() {
                                     />
                                     <div className="min-w-0 flex-1">
                                         <div className="text-xs font-bold text-fg truncate">
-                                            {formatDuration(video.duration)} · {video.width} ×{' '}
-                                            {video.height} · {video.format.toUpperCase()} ·{' '}
-                                            {formatBytes(video.bytes)}
+                                            {isPostVideo
+                                                ? `${formatDuration(video.duration)} · Current video`
+                                                : `${formatDuration(video.duration)} · ${video.width} × ${video.height} · ${video.format.toUpperCase()} · ${formatBytes(video.bytes)}`}
                                         </div>
                                         <div className="text-[11px] text-subtle truncate">
                                             {video.publicId}
                                         </div>
                                         <div className="text-[11px] text-subtle mt-1">
-                                            {isNineBySixteen(video.width, video.height)
-                                                ? 'Vertical 9:16, ready for Reels.'
-                                                : 'Not 9:16, so it will be padded to 9:16 with a blurred background.'}
+                                            {isPostVideo
+                                                ? "This reel's current video. Upload a new one to replace it."
+                                                : isNineBySixteen(video.width, video.height)
+                                                  ? 'Vertical 9:16, ready for Reels.'
+                                                  : 'Not 9:16, so it will be padded to 9:16 with a blurred background.'}
                                         </div>
                                     </div>
                                     <button
@@ -635,7 +725,7 @@ export default function ReelsPage() {
                             </p>
                         </section>
 
-                        <div className="flex flex-col sm:flex-row gap-3">
+                        <div className="flex flex-col sm:flex-row sm:flex-wrap gap-3">
                             <button
                                 onClick={() => submit('draft')}
                                 disabled={submitDisabled}
@@ -648,7 +738,13 @@ export default function ReelsPage() {
                                 disabled={submitDisabled}
                                 className="flex-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white px-5 py-3.5 rounded-2xl text-sm font-bold transition-all"
                             >
-                                {submitting === 'queue' ? 'Adding...' : 'Add to queue'}
+                                {submitting === 'queue'
+                                    ? editId
+                                        ? 'Saving...'
+                                        : 'Adding...'
+                                    : editId
+                                      ? 'Save to queue'
+                                      : 'Add to queue'}
                             </button>
                             <button
                                 onClick={() => submit('now')}

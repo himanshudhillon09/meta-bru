@@ -8,6 +8,7 @@ import { StatusBadge } from '@/components/Dashboards';
 import { EmptyState, ListSkeleton } from '@/components/Feedback';
 import { Modal } from '@/components/Modal';
 import { PageFilter, activePageId, postPageId } from '@/components/PageFilter';
+import { StoryChip } from '@/components/ShareToStoryToggle';
 import { StoryShareModal } from '@/components/StoryShareModal';
 import { Tabs } from '@/components/Tabs';
 import { postsApi } from '@/lib/apiClient';
@@ -82,8 +83,6 @@ export default function QueuePage() {
     const [loading, setLoading] = useState(true);
     const [busyId, setBusyId] = useState('');
     const [sharingId, setSharingId] = useState('');
-    const [editingId, setEditingId] = useState('');
-    const [editCaption, setEditCaption] = useState('');
     const [deleteTarget, setDeleteTarget] = useState<Post | null>(null);
     const [storyPost, setStoryPost] = useState<Post | null>(null);
     const [storySelection, setStorySelection] = useState<Platform[]>([]);
@@ -237,31 +236,6 @@ export default function QueuePage() {
         }
     };
 
-    const startEdit = (post: Post) => {
-        setEditingId(post._id);
-        setEditCaption(post.caption);
-    };
-
-    const saveEdit = async (post: Post) => {
-        if (!editCaption.trim()) return;
-        setBusyId(post._id);
-        setError('');
-        setNotice('');
-        try {
-            const data: any = await postsApi.update(post._id, {
-                caption: editCaption.trim(),
-            });
-            setPosts((current) =>
-                current.map((item) => (item._id === post._id ? data.post : item))
-            );
-            setEditingId('');
-            setNotice('Caption updated.');
-        } catch (err: any) {
-            setError(typeof err === 'string' ? err : 'Could not update post');
-        } finally {
-            setBusyId('');
-        }
-    };
 
     const kindPosts = posts.filter(
         (post) => matchesKind(post, kind) && (!pageId || postPageId(post) === pageId)
@@ -374,6 +348,9 @@ export default function QueuePage() {
                                                 </span>
                                             ) : null}
                                             {post.aiGenerated ? <AiLabelChip /> : null}
+                                            {post.status !== 'published' && post.status !== 'partial' ? (
+                                                <StoryChip on={Boolean(post.shareToStory)} />
+                                            ) : null}
                                             <span className="text-xs text-subtle">
                                                 {connectionName(post)}
                                             </span>
@@ -420,39 +397,9 @@ export default function QueuePage() {
                                             ) : null}
                                         </div>
 
-                                        {editingId === post._id ? (
-                                            <div className="mt-2">
-                                                <textarea
-                                                    value={editCaption}
-                                                    onChange={(event) =>
-                                                        setEditCaption(
-                                                            event.target.value.slice(0, 2200)
-                                                        )
-                                                    }
-                                                    rows={5}
-                                                    className="w-full bg-surface-2 border border-line-strong rounded-xl px-4 py-3 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
-                                                />
-                                                <div className="flex gap-3 mt-2">
-                                                    <button
-                                                        onClick={() => saveEdit(post)}
-                                                        disabled={busyId === post._id}
-                                                        className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-xs font-bold"
-                                                    >
-                                                        Save
-                                                    </button>
-                                                    <button
-                                                        onClick={() => setEditingId('')}
-                                                        className="text-muted px-4 py-2 rounded-lg text-xs font-bold hover:text-fg"
-                                                    >
-                                                        Cancel
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        ) : (
-                                            <p className="text-sm text-fg-2 whitespace-pre-wrap line-clamp-3">
-                                                {post.caption}
-                                            </p>
-                                        )}
+                                        <p className="text-sm text-fg-2 whitespace-pre-wrap line-clamp-3">
+                                            {post.caption}
+                                        </p>
 
                                         <div className="flex flex-wrap gap-2 mt-3">
                                             {post.targets.map((target) => (
@@ -543,12 +490,13 @@ export default function QueuePage() {
                                             post.status !== 'published' &&
                                             post.status !== 'partial' && (
                                                 <>
-                                                    <button
-                                                        onClick={() => startEdit(post)}
-                                                        className="bg-hover hover:bg-hover-strong text-fg border border-line-strong px-4 py-2.5 rounded-xl text-xs font-bold transition-all"
+                                                    {/* Opens the Composer (or Reels page) filled with this post. */}
+                                                    <Link
+                                                        href={`${isReel(post) ? '/reels' : '/composer'}?edit=${post._id}`}
+                                                        className="bg-hover hover:bg-hover-strong text-fg border border-line-strong px-4 py-2.5 rounded-xl text-xs font-bold text-center transition-all"
                                                     >
                                                         Edit
-                                                    </button>
+                                                    </Link>
                                                     <button
                                                         onClick={() => setDeleteTarget(post)}
                                                         disabled={busyId === post._id}

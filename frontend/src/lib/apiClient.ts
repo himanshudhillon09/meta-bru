@@ -300,6 +300,7 @@ export const connectionsApi = {
 
 export const postsApi = {
     list: (params?: Record<string, string>) => api.get('/posts', params),
+    get: (postId: string) => api.get<{ success: boolean; post: Post }>(`/posts/${postId}`),
     create: (data: any) => api.post('/posts', data),
     update: (postId: string, data: any) => api.patch(`/posts/${postId}`, data),
     remove: (postId: string) =>

@@ -54,24 +54,25 @@ const postFields = {
     aiGenerated: z.boolean().default(false),
 };
 
-const createImagePostSchema = z.object({
-    ...postFields,
+const imageMediaFields = {
     mediaType: z.literal('image'),
     mediaUrl: publicUrl('mediaUrl'),
     mediaJpegUrl: publicUrl('mediaJpegUrl').optional().default(''),
     mediaPublicId: z.string().max(300).optional().default(''),
-    /** Burned into the image when the post is created; `*word*` is highlighted. */
+    /** Burned into the image when the post is saved; `*word*` is highlighted. */
     overlayText: z.string().max(500).optional().default(''),
     mediaTextArea: textAreaSchema.optional(),
-});
+};
 
 // A reel's URLs and duration are read back from Cloudinary, never taken from
 // the client.
-const createReelPostSchema = z.object({
-    ...postFields,
+const reelMediaFields = {
     mediaType: z.literal('reel'),
     mediaPublicId: z.string().trim().min(1, 'Upload a reel video first').max(300),
-});
+};
+
+const createImagePostSchema = z.object({ ...postFields, ...imageMediaFields });
+const createReelPostSchema = z.object({ ...postFields, ...reelMediaFields });
 
 const createPostSchema = z.preprocess(
     (body) =>
@@ -81,7 +82,12 @@ const createPostSchema = z.preprocess(
     z.discriminatedUnion('mediaType', [createImagePostSchema, createReelPostSchema])
 );
 
-type CreatePostInput = z.infer<typeof createPostSchema>;
+const mediaSchema = z.discriminatedUnion('mediaType', [
+    z.object(imageMediaFields),
+    z.object(reelMediaFields),
+]);
+
+type MediaInput = z.infer<typeof mediaSchema>;
 
 interface PostMediaFields {
     mediaType: MediaType;
@@ -95,9 +101,21 @@ interface PostMediaFields {
     replacedPublicId?: string;
 }
 
+function assertFacebookReelLength(facebook: boolean, duration: number): void {
+    if (facebook && duration > REEL_LIMITS.maxFacebookSeconds) {
+        throw new AppError(
+            400,
+            'Facebook Reels can be at most 90 seconds long. Turn off Facebook or upload a shorter reel.',
+            'FACEBOOK_REEL_TOO_LONG'
+        );
+    }
+}
+
+/** `target` is the Page the post is for and whether it goes to Facebook. */
 async function resolvePostMedia(
     userId: string,
-    parsed: CreatePostInput
+    parsed: MediaInput,
+    target: { connectionId: string; facebook: boolean }
 ): Promise<PostMediaFields> {
     if (parsed.mediaType === 'image') {
         const image: PostMediaFields = {
@@ -124,7 +142,7 @@ async function resolvePostMedia(
             parsed.mediaPublicId,
             parsed.overlayText,
             parsed.mediaTextArea,
-            parsed.connectionId
+            target.connectionId
         );
         return {
             ...image,
@@ -138,13 +156,7 @@ async function resolvePostMedia(
 
     const credentials = await getCloudinaryCredentials(userId);
     const video = await loadReelVideo(userId, parsed.mediaPublicId, credentials);
-    if (parsed.platforms.facebook && video.duration > REEL_LIMITS.maxFacebookSeconds) {
-        throw new AppError(
-            400,
-            'Facebook Reels can be at most 90 seconds long. Turn off Facebook or upload a shorter reel.',
-            'FACEBOOK_REEL_TOO_LONG'
-        );
-    }
+    assertFacebookReelLength(target.facebook, video.duration);
 
     return {
         mediaType: 'reel',
@@ -157,10 +169,33 @@ async function resolvePostMedia(
     };
 }
 
+// Every field is optional; the editor sends the whole post, the Queue only
+// what changed. `media` replaces the post's image or video.
 const updatePostSchema = z.object({
     caption: z.string().trim().min(1).max(2200).optional(),
     action: z.enum(['draft', 'queue']).optional(),
+    connectionId: z.string().regex(/^[a-f\d]{24}$/i, 'Invalid connection ID').optional(),
+    platforms: platformSchema.optional(),
+    shareToStory: z.boolean().optional(),
+    aiGenerated: z.boolean().optional(),
+    media: mediaSchema.optional(),
 });
+
+const EDITABLE_STATUSES: PostStatus[] = ['draft', 'queued', 'failed'];
+
+/** Removes media a post no longer uses, unless another post still does. */
+async function cleanUpMedia(
+    userId: string,
+    publicIds: string[],
+    resourceType: 'image' | 'video'
+): Promise<void> {
+    for (const publicId of new Set(publicIds.filter(Boolean))) {
+        const cleanup = await deletePostMediaIfUnused(userId, { publicId, resourceType });
+        if (cleanup.mediaError) {
+            console.error(`[posts] Could not remove unused media ${publicId}: ${cleanup.mediaError}`);
+        }
+    }
+}
 
 const shareStorySchema = z.object({
     platforms: z.array(z.enum(['facebook', 'instagram'])).min(1).max(2),
@@ -359,20 +394,13 @@ export async function createPost(req: Request, res: Response): Promise<void> {
         }
     }
 
-    const { replacedPublicId, ...media } = await resolvePostMedia(req.user.id, parsed);
+    const { replacedPublicId, ...media } = await resolvePostMedia(req.user.id, parsed, {
+        connectionId: parsed.connectionId,
+        facebook: parsed.platforms.facebook,
+    });
     // The plain image is only a Composer working copy once the text is burned in.
-    const cleanUpReplaced = async () => {
-        if (!replacedPublicId) return;
-        const cleanup = await deletePostMediaIfUnused(req.user.id, {
-            publicId: replacedPublicId,
-            resourceType: 'image',
-        });
-        if (cleanup.mediaError) {
-            console.error(
-                `[posts] Could not remove replaced image ${replacedPublicId}: ${cleanup.mediaError}`
-            );
-        }
-    };
+    const cleanUpReplaced = () =>
+        cleanUpMedia(req.user.id, replacedPublicId ? [replacedPublicId] : [], 'image');
 
     if (parsed.action === 'now') {
         const { connection: claimedConnection, lockedAt } =
@@ -452,13 +480,104 @@ export async function listPosts(req: Request, res: Response): Promise<void> {
     res.json({ success: true, posts });
 }
 
+/** One post with its Page, for the Composer or Reels page to edit. */
+export async function getPost(req: Request, res: Response): Promise<void> {
+    const post = await ownedPost(String(req.params.id), req.user.id);
+    await post.populate('connectionId', 'pageName pageId instagram tokenStatus');
+    res.json({ success: true, post });
+}
+
+/**
+ * Edits a draft, queued, or failed post. The post keeps its place in its
+ * Page's queue (the queue is ordered by creation time). New media replaces
+ * the old, which is removed from Cloudinary unless another post uses it.
+ */
 export async function updatePost(req: Request, res: Response): Promise<void> {
     const parsed = parseBody(updatePostSchema, req);
     const existing = await ownedPost(String(req.params.id), req.user.id);
 
+    if (!EDITABLE_STATUSES.includes(existing.status)) {
+        throw new AppError(409, 'This post can no longer be edited', 'POST_LOCKED');
+    }
+    if (parsed.media && parsed.media.mediaType !== existing.mediaType) {
+        throw new AppError(
+            400,
+            existing.mediaType === 'reel'
+                ? 'A reel can only be replaced with another video.'
+                : 'A post can only be replaced with another image.',
+            'MEDIA_TYPE_CHANGED'
+        );
+    }
+
+    const connectionId = parsed.connectionId ?? existing.connectionId.toString();
+    const platforms = parsed.platforms ?? {
+        facebook: existing.platforms.facebook,
+        instagram: existing.platforms.instagram,
+    };
+    // A new Page, platform set, or file means a fresh publish on every target.
+    const retarget =
+        parsed.media !== undefined ||
+        (parsed.connectionId !== undefined && connectionId !== existing.connectionId.toString()) ||
+        (parsed.platforms !== undefined &&
+            (platforms.facebook !== existing.platforms.facebook ||
+                platforms.instagram !== existing.platforms.instagram));
+
+    if (retarget) {
+        const connection = await SocialConnection.findOne({ _id: connectionId, userId: req.user.id });
+        if (!connection) {
+            throw new AppError(404, 'Connection not found', 'CONNECTION_NOT_FOUND');
+        }
+        if (!platforms.facebook && !platforms.instagram) {
+            throw new AppError(400, 'Select at least one platform', 'NO_PLATFORMS');
+        }
+        if (platforms.instagram && !connection.instagram?.id) {
+            throw new AppError(
+                400,
+                'This Page has no linked Instagram Business account',
+                'INSTAGRAM_NOT_LINKED'
+            );
+        }
+        if (platforms.instagram && !(parsed.media?.mediaPublicId ?? existing.mediaPublicId)) {
+            throw new AppError(
+                400,
+                'Instagram requires an image uploaded through Meta-Bru',
+                'CLOUDINARY_MEDIA_REQUIRED'
+            );
+        }
+        if (!parsed.media && existing.mediaType === 'reel') {
+            assertFacebookReelLength(platforms.facebook, existing.mediaDuration);
+        }
+    }
+
+    const resolved = parsed.media
+        ? await resolvePostMedia(req.user.id, parsed.media, {
+              connectionId,
+              facebook: platforms.facebook,
+          })
+        : null;
+    const newPublicId = resolved?.mediaPublicId ?? '';
+
     const updates: Record<string, unknown> = {};
-    if (parsed.caption !== undefined) {
-        updates.caption = parsed.caption;
+    if (resolved) {
+        Object.assign(updates, resolved);
+        delete updates.replacedPublicId;
+    }
+    if (parsed.caption !== undefined) updates.caption = parsed.caption;
+    if (parsed.connectionId !== undefined) updates.connectionId = connectionId;
+    if (parsed.platforms !== undefined) updates.platforms = platforms;
+    if (parsed.shareToStory !== undefined) updates.shareToStory = parsed.shareToStory;
+    if (parsed.aiGenerated !== undefined) updates.aiGenerated = parsed.aiGenerated;
+    if (parsed.action !== undefined) {
+        updates.status = parsed.action === 'queue' ? 'queued' : 'draft';
+    }
+
+    // A failed post sent back to the queue starts over, without its old error.
+    const requeued = parsed.action === 'queue' && existing.status === 'failed';
+    if (requeued) updates.lastError = '';
+
+    if (retarget || requeued) {
+        updates.targets = buildTargets(platforms);
+    } else if (parsed.caption !== undefined) {
         // A caption change makes any existing Instagram container stale. Keep
         // failed containers on a plain retry so a previously published
         // container can still be detected instead of creating a duplicate.
@@ -474,9 +593,6 @@ export async function updatePost(req: Request, res: Response): Promise<void> {
             publishedAt: target.publishedAt,
         }));
     }
-    if (parsed.action !== undefined) {
-        updates.status = parsed.action === 'queue' ? 'queued' : 'draft';
-    }
 
     if (Object.keys(updates).length === 0) {
         res.json({ success: true, post: existing });
@@ -489,14 +605,27 @@ export async function updatePost(req: Request, res: Response): Promise<void> {
         {
             _id: existing._id,
             userId: req.user.id,
-            status: { $in: ['draft', 'queued', 'failed'] },
+            status: { $in: EDITABLE_STATUSES },
         },
         { $set: updates },
         { new: true, runValidators: true }
     );
 
+    const resourceType = existing.mediaType === 'reel' ? 'video' : 'image';
     if (!post) {
+        // The new file was never attached to the post.
+        if (newPublicId) await cleanUpMedia(req.user.id, [newPublicId], resourceType);
         throw new AppError(409, 'This post can no longer be edited', 'POST_LOCKED');
+    }
+
+    if (resolved) {
+        await cleanUpMedia(
+            req.user.id,
+            [existing.mediaPublicId, resolved.replacedPublicId ?? ''].filter(
+                (publicId) => publicId !== newPublicId
+            ),
+            resourceType
+        );
     }
 
     res.json({ success: true, post });
