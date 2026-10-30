@@ -513,6 +513,8 @@ const ACTIVITY_STATUSES: Record<'all' | 'published' | 'failed', PostStatus[]> = 
 
 const clearActivitySchema = z.object({
     filter: z.enum(['all', 'published', 'failed']).default('all'),
+    /** Only this Page's posts; every Page when left out. */
+    connectionId: z.string().regex(/^[a-f\d]{24}$/i).optional(),
 });
 
 /**
@@ -549,10 +551,11 @@ export async function deletePost(req: Request, res: Response): Promise<void> {
  * files. Posts stay live on Facebook and Instagram.
  */
 export async function clearActivity(req: Request, res: Response): Promise<void> {
-    const { filter } = parseBody(clearActivitySchema, req);
+    const { filter, connectionId } = parseBody(clearActivitySchema, req);
     const posts = await Post.find({
         userId: req.user.id,
         status: { $in: ACTIVITY_STATUSES[filter] },
+        ...(connectionId ? { connectionId } : {}),
     }).select('_id mediaPublicId mediaType');
 
     const ids = posts.map((post) => post._id);

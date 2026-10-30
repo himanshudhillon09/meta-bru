@@ -7,6 +7,7 @@ import { AppShell } from '@/components/AppShell';
 import { StatusBadge } from '@/components/Dashboards';
 import { EmptyState, ListSkeleton } from '@/components/Feedback';
 import { Modal } from '@/components/Modal';
+import { PageFilter, activePageId, postPageId } from '@/components/PageFilter';
 import { StoryShareModal } from '@/components/StoryShareModal';
 import { Tabs } from '@/components/Tabs';
 import { postsApi } from '@/lib/apiClient';
@@ -76,6 +77,8 @@ export default function QueuePage() {
     const [posts, setPosts] = useState<Post[]>([]);
     const [tab, setTab] = useState<TabKey>('queued');
     const [kind, setKind] = useState<KindKey>('all');
+    const [chosenPageId, setPageId] = useState('');
+    const pageId = activePageId(posts, chosenPageId);
     const [loading, setLoading] = useState(true);
     const [busyId, setBusyId] = useState('');
     const [sharingId, setSharingId] = useState('');
@@ -260,7 +263,9 @@ export default function QueuePage() {
         }
     };
 
-    const kindPosts = posts.filter((post) => matchesKind(post, kind));
+    const kindPosts = posts.filter(
+        (post) => matchesKind(post, kind) && (!pageId || postPageId(post) === pageId)
+    );
     const visible = kindPosts.filter((post) => matchesTab(post, tab));
 
     return (
@@ -295,7 +300,8 @@ export default function QueuePage() {
                 </div>
             ) : null}
 
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-7">
+            {/* The filters move to their own line when they do not fit beside the tabs. */}
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-7">
                 <Tabs
                     label="Post status"
                     items={TABS.map((item) => ({
@@ -306,14 +312,16 @@ export default function QueuePage() {
                     onChange={setTab}
                 />
 
-                <Tabs
-                    label="Post type"
-                    variant="segmented"
-                    items={KINDS}
-                    value={kind}
-                    onChange={setKind}
-                    className="self-start"
-                />
+                <div className="flex flex-wrap items-center gap-2">
+                    <PageFilter posts={posts} value={pageId} onChange={setPageId} />
+                    <Tabs
+                        label="Post type"
+                        variant="segmented"
+                        items={KINDS}
+                        value={kind}
+                        onChange={setKind}
+                    />
+                </div>
             </div>
 
             {loading ? (
@@ -325,7 +333,7 @@ export default function QueuePage() {
                     body="Posts from the Composer and reels from the Reels page show up here."
                 />
             ) : (
-                <div key={`${tab}-${kind}`} className="stagger space-y-4">
+                <div key={`${tab}-${kind}-${pageId}`} className="stagger space-y-4">
                     {visible.map((post) => {
                         const status = destinationStatus(post);
                         const publishBlocked = status !== 'active';

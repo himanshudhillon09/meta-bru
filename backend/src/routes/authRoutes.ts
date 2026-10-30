@@ -20,18 +20,8 @@ import {
     saveGeminiCredentials,
     saveMetaCredentials,
 } from '../controllers/credentialController.js';
-import {
-    deleteBrandLogo,
-    getBrandLogo,
-    uploadBrandLogo,
-} from '../controllers/brandLogoController.js';
 import { protect, authorize } from '../middlewares/authMiddleware.js';
-import {
-    authLimiter,
-    mediaLimiter,
-    passwordLimiter,
-} from '../middlewares/rateLimiters.js';
-import { uploadImageMiddleware } from '../middlewares/uploadMiddleware.js';
+import { authLimiter, passwordLimiter } from '../middlewares/rateLimiters.js';
 
 const router = express.Router();
 
@@ -57,16 +47,6 @@ router.delete('/credentials/cloudinary', protect, removeCloudinaryCredentials);
 router.put('/credentials/gemini', protect, saveGeminiCredentials);
 router.delete('/credentials/gemini', protect, removeGeminiCredentials);
 
-// Brand logo embedded in the frame of every new post image.
-router.get('/brand-logo', protect, getBrandLogo);
-router.post(
-    '/brand-logo',
-    protect,
-    mediaLimiter,
-    uploadImageMiddleware,
-    uploadBrandLogo
-);
-router.delete('/brand-logo', protect, deleteBrandLogo);
 
 // Admin routes
 router.get('/users', protect, authorize('admin'), getUsers);

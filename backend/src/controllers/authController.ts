@@ -18,12 +18,10 @@ function publicUser(user: any) {
         role: user.role,
         isActive: user.isActive,
         timezone: user.timezone,
-        brandProfile: user.brandProfile || {},
         aiModels: {
             text: user.aiModels?.text || '',
             image: user.aiModels?.image || '',
         },
-        hasBrandLogo: Boolean(user.brandLogo?.updatedAt),
         mustChangePassword: Boolean(user.mustChangePassword),
     };
 }
@@ -88,7 +86,6 @@ export const registerUser = async (req: Request, res: Response) => {
                 role: user.role,
                 isActive: user.isActive,
                 timezone: user.timezone,
-                brandProfile: user.brandProfile || {},
                 mustChangePassword: false,
                 token: generateToken(
                     user._id.toString(),
@@ -145,8 +142,6 @@ export const loginUser = async (req: Request, res: Response) => {
                 role: user.role,
                 isActive: user.isActive,
                 timezone: user.timezone,
-                brandProfile: user.brandProfile || {},
-                hasBrandLogo: Boolean(user.brandLogo?.updatedAt),
                 mustChangePassword: Boolean(user.mustChangePassword),
                 token: generateToken(
                     user._id.toString(),
@@ -297,14 +292,6 @@ const profileSchema = z.object({
         .optional(),
     currentPassword: z.string().max(128).optional(),
     timezone: z.string().min(1).max(64).optional(),
-    brandProfile: z
-        .object({
-            niche: z.string().trim().max(200).optional(),
-            tone: z.string().trim().max(100).optional(),
-            audience: z.string().trim().max(300).optional(),
-            keywords: z.string().trim().max(300).optional(),
-        })
-        .optional(),
     aiModels: z
         .object({
             text: aiModelId.optional(),
@@ -367,24 +354,6 @@ export const updateProfile = async (req: Request, res: Response) => {
 
     if (parsed.name !== undefined) user.name = parsed.name;
     if (parsed.timezone !== undefined) user.timezone = parsed.timezone;
-
-    if (parsed.brandProfile) {
-        const current = (user.brandProfile || {}) as {
-            niche?: string;
-            tone?: string;
-            audience?: string;
-            keywords?: string;
-        };
-        user.brandProfile = {
-            niche: parsed.brandProfile.niche ?? current.niche ?? '',
-            tone:
-                parsed.brandProfile.tone ??
-                current.tone ??
-                'friendly and engaging',
-            audience: parsed.brandProfile.audience ?? current.audience ?? '',
-            keywords: parsed.brandProfile.keywords ?? current.keywords ?? '',
-        };
-    }
 
     if (parsed.aiModels) {
         const current = (user.aiModels || {}) as { text?: string; image?: string };

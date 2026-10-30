@@ -1,5 +1,5 @@
 import sharp from 'sharp';
-import { User } from '../models/userModel.js';
+import { SocialConnection } from '../models/socialConnectionModel.js';
 import { AppError } from '../utils/errors.js';
 import {
     prepareLogo,
@@ -35,13 +35,22 @@ interface StoredLogo {
     updatedAt: Date;
 }
 
-async function readStoredLogo(userId: string): Promise<StoredLogo | null> {
-    const user = await User.findById(userId).select('+brandLogo.data');
-    if (!user) {
-        throw new AppError(404, 'User not found', 'USER_NOT_FOUND');
+/** The user's own Page; another user's Page is reported as not found. */
+async function findOwnedPage(userId: string, connectionId: string, withLogo = false) {
+    if (!/^[a-f\d]{24}$/i.test(connectionId)) {
+        throw new AppError(400, 'Invalid connection ID', 'INVALID_ID');
     }
+    const query = SocialConnection.findOne({ _id: connectionId, userId });
+    const page = await (withLogo ? query.select('+brandLogo.data') : query);
+    if (!page) {
+        throw new AppError(404, 'Connection not found', 'CONNECTION_NOT_FOUND');
+    }
+    return page;
+}
 
-    const logo = user.brandLogo;
+async function readStoredLogo(userId: string, connectionId: string): Promise<StoredLogo | null> {
+    const page = await findOwnedPage(userId, connectionId, true);
+    const logo = page.brandLogo;
     if (!logo?.data || logo.data.length === 0 || !logo.updatedAt) return null;
 
     return {
@@ -125,8 +134,20 @@ function summary(logo: StoredLogo): BrandLogoSummary {
     };
 }
 
-export async function getBrandLogoDetails(userId: string): Promise<BrandLogoDetails> {
-    const logo = await readStoredLogo(userId);
+/** A small square version of the logo for Page avatars and lists. */
+export async function logoThumbDataUrl(logo: Buffer): Promise<string> {
+    const thumb = await sharp(logo)
+        .resize(96, 96, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+        .png()
+        .toBuffer();
+    return `data:image/png;base64,${thumb.toString('base64')}`;
+}
+
+export async function getBrandLogoDetails(
+    userId: string,
+    connectionId: string
+): Promise<BrandLogoDetails> {
+    const logo = await readStoredLogo(userId, connectionId);
     if (!logo) return { logo: null, previews: [] };
 
     return { logo: summary(logo), previews: await renderPreviews(logo.data) };
@@ -134,8 +155,10 @@ export async function getBrandLogoDetails(userId: string): Promise<BrandLogoDeta
 
 export async function saveBrandLogo(
     userId: string,
+    connectionId: string,
     input: Buffer
-): Promise<BrandLogoDetails> {
+): Promise<BrandLogoDetails & { thumb: string }> {
+    await findOwnedPage(userId, connectionId);
     const prepared = await prepareLogo(input);
     const stored: StoredLogo = {
         data: prepared.data,
@@ -144,31 +167,34 @@ export async function saveBrandLogo(
         bytes: prepared.data.length,
         updatedAt: new Date(),
     };
+    const thumb = await logoThumbDataUrl(stored.data);
 
-    const result = await User.updateOne(
-        { _id: userId },
-        { $set: { brandLogo: stored } }
+    await SocialConnection.updateOne(
+        { _id: connectionId, userId },
+        { $set: { brandLogo: { ...stored, thumb } } }
     );
-    if (result.matchedCount === 0) {
-        throw new AppError(404, 'User not found', 'USER_NOT_FOUND');
-    }
 
-    return { logo: summary(stored), previews: await renderPreviews(stored.data) };
+    return { logo: summary(stored), previews: await renderPreviews(stored.data), thumb };
 }
 
-export async function removeBrandLogo(userId: string): Promise<void> {
-    await User.updateOne({ _id: userId }, { $unset: { brandLogo: 1 } });
+export async function removeBrandLogo(userId: string, connectionId: string): Promise<void> {
+    await findOwnedPage(userId, connectionId);
+    await SocialConnection.updateOne({ _id: connectionId, userId }, { $unset: { brandLogo: 1 } });
 }
 
 /**
- * Turns any post image (upload or AI) into a feed-ready JPEG for the owning
- * user: framed with their logo when they have one, otherwise only resized.
- * The result also says where the photo sits, for overlay text.
+ * Turns any post image (upload or AI) into a feed-ready JPEG for one of the
+ * user's Pages: framed with that Page's logo when it has one, otherwise only
+ * resized. Without a Page the image is only resized. The result also says
+ * where the photo sits, for overlay text.
  */
 export async function preparePostImage(
     userId: string,
+    connectionId: string | null,
     input: Buffer
-): Promise<RenderedPostImage> {
-    const logo = await readStoredLogo(userId);
-    return renderPostImage(input, logo?.data ?? null);
+): Promise<RenderedPostImage & { framedFor: string }> {
+    const logo = connectionId ? await readStoredLogo(userId, connectionId) : null;
+    const image = await renderPostImage(input, logo?.data ?? null);
+    // The Page whose logo framed it; empty when no logo was used.
+    return { ...image, framedFor: logo?.data && connectionId ? connectionId : '' };
 }

@@ -281,6 +281,8 @@ export default function ReelsPage() {
                         : instagram
                           ? 'instagram'
                           : 'facebook',
+                // The Page's brand voice shapes the caption.
+                ...(connectionId ? { connectionId } : {}),
             });
             setCaption(data.caption || '');
         } catch (err: any) {
@@ -623,9 +625,11 @@ export default function ReelsPage() {
                                 </button>
                             </div>
                             <p className="text-xs text-subtle mt-2">
-                                AI uses your topic and the brand profile from{' '}
-                                <Link href="/settings" className="text-indigo-700 dark:text-indigo-400">
-                                    Profile
+                                AI uses your topic and{' '}
+                                {selectedConnection ? `${selectedConnection.pageName}'s` : 'the chosen Page’s'} brand
+                                voice from{' '}
+                                <Link href="/connections" className="text-indigo-700 dark:text-indigo-400">
+                                    Connections
                                 </Link>
                                 . It does not watch the video.
                             </p>

@@ -269,18 +269,6 @@ export const authApi = {
     saveGeminiCredentials: (data: { apiKey: string }) =>
         api.put('/auth/credentials/gemini', data),
     removeGeminiCredentials: () => api.delete('/auth/credentials/gemini'),
-    getBrandLogo: () =>
-        api.get<{ success: boolean } & BrandLogoDetails>('/auth/brand-logo'),
-    uploadBrandLogo: (file: File) => {
-        const formData = new FormData();
-        formData.append('file', file);
-        return uploadRequest<{ success: boolean } & BrandLogoDetails>(
-            '/auth/brand-logo',
-            formData
-        );
-    },
-    removeBrandLogo: () =>
-        api.delete<{ success: boolean } & BrandLogoDetails>('/auth/brand-logo'),
 };
 
 export const connectionsApi = {
@@ -293,6 +281,19 @@ export const connectionsApi = {
         ),
     update: (connectionId: string, data: any) =>
         api.patch(`/connections/${connectionId}`, data),
+    /** Each Page's logo for the post frame. */
+    getBrandLogo: (connectionId: string) =>
+        api.get<{ success: boolean } & BrandLogoDetails>(`/connections/${connectionId}/brand-logo`),
+    uploadBrandLogo: (connectionId: string, file: File) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        return uploadRequest<{ success: boolean; thumb: string } & BrandLogoDetails>(
+            `/connections/${connectionId}/brand-logo`,
+            formData
+        );
+    },
+    removeBrandLogo: (connectionId: string) =>
+        api.delete<{ success: boolean } & BrandLogoDetails>(`/connections/${connectionId}/brand-logo`),
     disconnect: (connectionId: string) =>
         api.delete(`/connections/${connectionId}`),
 };
@@ -309,13 +310,13 @@ export const postsApi = {
             mediaError?: string;
         }>(`/posts/${postId}`),
     /** Deletes every post the Activity filter shows, with its history. */
-    clearActivity: (filter: 'all' | 'published' | 'failed') =>
+    clearActivity: (filter: 'all' | 'published' | 'failed', connectionId = '') =>
         api.post<{
             success: boolean;
             deleted: number;
             mediaDeleted: number;
             mediaErrors: number;
-        }>('/posts/activity/clear', { filter }),
+        }>('/posts/activity/clear', { filter, ...(connectionId ? { connectionId } : {}) }),
     shareStory: (postId: string, platforms: Platform[]) =>
         api.post<{ success: boolean; post: Post }>(`/posts/${postId}/story`, {
             platforms,
@@ -325,9 +326,11 @@ export const postsApi = {
 };
 
 export const mediaApi = {
-    upload: (file: Blob, fileName = 'image.jpg') => {
+    /** `connectionId` is the Page whose logo frames the image. */
+    upload: (file: Blob, connectionId = '', fileName = 'image.jpg') => {
         const formData = new FormData();
         formData.append('file', file, file instanceof File ? file.name : fileName);
+        if (connectionId) formData.append('connectionId', connectionId);
         return uploadRequest<{ success: boolean; media: MediaAsset }>('/media/upload', formData);
     },
     /** Deletes a replaced Composer image unless a post uses it. */
@@ -356,14 +359,14 @@ export const mediaApi = {
 };
 
 export const aiApi = {
-    caption: (data: { topic?: string; platform?: string; mediaPublicId?: string }) =>
+    caption: (data: { topic?: string; platform?: string; mediaPublicId?: string; connectionId?: string }) =>
         api.post('/ai/caption', data),
     /** `source` is the unframed image as a data URL, for re-cropping. */
-    image: (data: { prompt: string }) =>
+    image: (data: { prompt: string; connectionId?: string }) =>
         api.post<{ success: boolean; media: MediaAsset; source: string }>('/ai/image', data),
     models: () =>
         api.get<{ success: boolean } & GeminiModelList>('/ai/models'),
-    overlayText: (data: { topic?: string; caption?: string; prompt?: string }) =>
+    overlayText: (data: { topic?: string; caption?: string; prompt?: string; connectionId?: string }) =>
         api.post<{ success: boolean; text: string }>('/ai/overlay-text', data),
 };
 

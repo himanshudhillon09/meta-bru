@@ -44,12 +44,19 @@ export async function uploadMedia(req: Request, res: Response): Promise<void> {
         throw new AppError(400, 'No image file was uploaded', 'NO_FILE');
     }
 
-    // Resize to feed limits (and frame with the user's logo) before upload, so
+    // The Page the post is for decides which logo frames it.
+    const connectionId =
+        typeof req.body?.connectionId === 'string' && req.body.connectionId
+            ? req.body.connectionId
+            : null;
+
+    // Resize to feed limits (and frame with the Page's logo) before upload, so
     // Cloudinary only ever stores the exact image that will be published.
-    const image = await preparePostImage(req.user.id, req.file.buffer);
+    const image = await preparePostImage(req.user.id, connectionId, req.file.buffer);
     const media = {
         ...(await uploadToCloudinary(req.user.id, image.buffer)),
         textArea: image.textArea,
+        brandConnectionId: image.framedFor,
     };
 
     res.status(201).json({ success: true, media });

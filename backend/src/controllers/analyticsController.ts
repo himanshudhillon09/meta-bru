@@ -23,6 +23,7 @@ import {
     type AnalyticsRange,
 } from '../services/analyticsDateService.js';
 import { syncAnalytics } from '../services/analyticsSyncService.js';
+import { getPageBrandProfile } from '../services/pageBrandService.js';
 import { getStoryAnalytics } from '../services/storyAnalyticsService.js';
 import { syncStoryInsights } from '../services/storySyncService.js';
 import {
@@ -207,7 +208,7 @@ export async function tips(req: Request, res: Response): Promise<void> {
         req.user!.id,
         range,
         filters,
-        req.user!.brandProfile || {}
+        { ...(await getPageBrandProfile(req.user!.id, filters.connectionId)) }
     );
     const latest = await getLatestAnalyticsAiInsight(
         req.user!.id,
@@ -243,7 +244,7 @@ export async function generateTips(
         req.user!.id,
         range,
         filters,
-        req.user!.brandProfile || {}
+        { ...(await getPageBrandProfile(req.user!.id, filters.connectionId)) }
     );
     const result = await generateAnalyticsAiInsight(
         req.user!.id,

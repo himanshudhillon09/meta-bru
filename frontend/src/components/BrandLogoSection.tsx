@@ -2,13 +2,17 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Modal } from '@/components/Modal';
-import { useAuth } from '@/context/AuthContext';
-import { authApi } from '@/lib/apiClient';
+import { connectionsApi } from '@/lib/apiClient';
 import { formatBytes, type BrandLogoDetails } from '@/lib/types';
 
 interface BrandLogoSectionProps {
+    /** The Page whose logo frames its post images. */
+    connectionId: string;
+    pageName: string;
     onNotice: (message: string) => void;
     onError: (message: string) => void;
+    /** Reports the new logo state so the Page card can update its avatar. */
+    onLogoChange: (hasLogo: boolean, thumb: string) => void;
 }
 
 const EMPTY: BrandLogoDetails = { logo: null, previews: [] };
@@ -41,8 +45,13 @@ function LogoSwatch({
     );
 }
 
-export function BrandLogoSection({ onNotice, onError }: BrandLogoSectionProps) {
-    const { user, updateUser } = useAuth();
+export function BrandLogoSection({
+    connectionId,
+    pageName,
+    onNotice,
+    onError,
+    onLogoChange,
+}: BrandLogoSectionProps) {
     const [details, setDetails] = useState<BrandLogoDetails>(EMPTY);
     const [loading, setLoading] = useState(true);
     const [busy, setBusy] = useState<'' | 'upload' | 'remove'>('');
@@ -51,8 +60,8 @@ export function BrandLogoSection({ onNotice, onError }: BrandLogoSectionProps) {
 
     useEffect(() => {
         let cancelled = false;
-        authApi
-            .getBrandLogo()
+        connectionsApi
+            .getBrandLogo(connectionId)
             .then((data) => {
                 if (!cancelled && data.success) {
                     setDetails({ logo: data.logo, previews: data.previews });
@@ -63,7 +72,7 @@ export function BrandLogoSection({ onNotice, onError }: BrandLogoSectionProps) {
                     onError(
                         typeof err === 'string'
                             ? err
-                            : 'Could not load your brand logo'
+                            : 'Could not load this Page logo'
                     );
                 }
             })
@@ -74,15 +83,9 @@ export function BrandLogoSection({ onNotice, onError }: BrandLogoSectionProps) {
         return () => {
             cancelled = true;
         };
-        // Load once; the callbacks only report into the page banners.
+        // Load once per Page; the callbacks only report into the banners.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
-
-    const syncUser = (hasBrandLogo: boolean) => {
-        if (user && user.hasBrandLogo !== hasBrandLogo) {
-            updateUser({ ...user, hasBrandLogo });
-        }
-    };
+    }, [connectionId]);
 
     const upload = async (file: File | undefined) => {
         if (!file) return;
@@ -90,12 +93,12 @@ export function BrandLogoSection({ onNotice, onError }: BrandLogoSectionProps) {
         onError('');
         onNotice('');
         try {
-            const data = await authApi.uploadBrandLogo(file);
+            const data = await connectionsApi.uploadBrandLogo(connectionId, file);
             if (data.success) {
                 setDetails({ logo: data.logo, previews: data.previews });
-                syncUser(true);
+                onLogoChange(true, data.thumb);
                 onNotice(
-                    'Logo saved. New uploads and AI images will be framed with it.'
+                    `Logo saved. New ${pageName} uploads and AI images will be framed with it.`
                 );
             }
         } catch (err: unknown) {
@@ -112,12 +115,12 @@ export function BrandLogoSection({ onNotice, onError }: BrandLogoSectionProps) {
         onError('');
         onNotice('');
         try {
-            const data = await authApi.removeBrandLogo();
+            const data = await connectionsApi.removeBrandLogo(connectionId);
             if (data.success) {
                 setDetails(EMPTY);
-                syncUser(false);
+                onLogoChange(false, '');
                 onNotice(
-                    'Logo removed. New post images are only resized, without a frame.'
+                    `Logo removed. New ${pageName} post images are only resized, without a frame.`
                 );
             }
         } catch (err: unknown) {
@@ -130,34 +133,35 @@ export function BrandLogoSection({ onNotice, onError }: BrandLogoSectionProps) {
     const { logo, previews } = details;
 
     return (
-        <section className="mt-6 rounded-2xl border border-line bg-surface p-6 sm:p-8 shadow-card">
+        <div>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                    <h2 className="text-lg font-bold text-fg">Post branding</h2>
-                    <p className="mt-1 max-w-2xl text-sm text-muted">
-                        Every new upload and AI image is resized for the
-                        Instagram and Facebook feed before it is stored. Add a
-                        logo to also place each photo in a branded frame, with
-                        your logo in the bottom border.
+                    <h4 className="text-sm font-bold text-fg">Logo frame</h4>
+                    <p className="mt-1 max-w-2xl text-xs text-muted">
+                        New uploads and AI images for {pageName} are resized for the feed. With a
+                        logo, each photo also gets a branded frame with this logo in the bottom
+                        border.
                     </p>
                 </div>
-                <span
-                    className={`inline-flex shrink-0 items-center gap-1.5 self-start rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-wider ${
-                        logo
-                            ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-                            : 'border-slate-500/20 bg-slate-500/10 text-fg-2'
-                    }`}
-                >
+                {loading ? null : (
                     <span
-                        className={`h-1.5 w-1.5 rounded-full ${
-                            logo ? 'bg-emerald-400' : 'bg-slate-400'
+                        className={`inline-flex shrink-0 items-center gap-1.5 self-start rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-wider ${
+                            logo
+                                ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                                : 'border-slate-500/20 bg-slate-500/10 text-fg-2'
                         }`}
-                    />
-                    {logo ? 'Frame on' : 'No logo'}
-                </span>
+                    >
+                        <span
+                            className={`h-1.5 w-1.5 rounded-full ${
+                                logo ? 'bg-emerald-400' : 'bg-slate-400'
+                            }`}
+                        />
+                        {logo ? 'Frame on' : 'No logo'}
+                    </span>
+                )}
             </div>
 
-            <div className="mt-6 grid grid-cols-1 items-start gap-6 lg:grid-cols-[0.8fr_1.2fr]">
+            <div className="mt-4 grid grid-cols-1 items-start gap-6 lg:grid-cols-[0.8fr_1.2fr]">
                 <div>
                     <div className="text-xs font-bold uppercase tracking-widest text-subtle">
                         Logo
@@ -184,7 +188,7 @@ export function BrandLogoSection({ onNotice, onError }: BrandLogoSectionProps) {
                             className="mt-3 flex h-28 w-full flex-col items-center justify-center rounded-2xl border border-dashed border-line-strong bg-surface-2 text-center transition-all hover:border-indigo-500/40 disabled:opacity-60"
                         >
                             <span className="text-sm font-bold text-fg">
-                                {busy === 'upload' ? 'Uploading...' : 'Upload your logo'}
+                                {busy === 'upload' ? 'Uploading...' : `Upload ${pageName}'s logo`}
                             </span>
                             <span className="mt-1 text-xs text-subtle">
                                 PNG with a transparent background works best
@@ -284,10 +288,10 @@ export function BrandLogoSection({ onNotice, onError }: BrandLogoSectionProps) {
                 onClose={() => setConfirmRemove(false)}
                 onConfirm={remove}
                 title="Remove logo?"
-                message="New uploads and AI images will only be resized, without the branded frame. Images you already uploaded keep their frame."
+                message={`New ${pageName} uploads and AI images will only be resized, without the branded frame. Images you already uploaded keep their frame.`}
                 confirmText="Remove logo"
                 type="danger"
             />
-        </section>
+        </div>
     );
 }

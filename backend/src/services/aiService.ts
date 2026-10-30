@@ -629,7 +629,7 @@ export async function generateCaption(
 
 export interface GeneratedImage {
     /** The feed-ready (framed) image, already in Cloudinary. */
-    media: PostImageMedia;
+    media: PostImageMedia & { brandConnectionId: string };
     /** The unframed image as a JPEG data URL, so the Composer can re-crop it. */
     source: string;
 }
@@ -638,7 +638,9 @@ export async function generateImage(
     userId: string,
     prompt: string,
     /** The user's image model; empty uses the deployment default. */
-    imageModel = ''
+    imageModel = '',
+    /** The Page whose logo frames the image; null leaves it unframed. */
+    connectionId: string | null = null
 ): Promise<GeneratedImage> {
     const credentials = await getGeminiCredentials(userId);
     const model = resolveImageModel(imageModel || env.gemini.imageModel);
@@ -698,13 +700,14 @@ export async function generateImage(
 
     const raw = Buffer.from(image.data, 'base64');
     const [prepared, source] = await Promise.all([
-        preparePostImage(userId, raw),
+        preparePostImage(userId, connectionId, raw),
         editableSourceDataUrl(raw),
     ]);
     return {
         media: {
             ...(await uploadImage(userId, prepared.buffer)),
             textArea: prepared.textArea,
+            brandConnectionId: prepared.framedFor,
         },
         source,
     };

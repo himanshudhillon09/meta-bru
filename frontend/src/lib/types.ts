@@ -12,10 +12,8 @@ export interface User {
     role: string;
     isActive?: boolean;
     timezone?: string;
-    brandProfile?: BrandProfile;
     /** Gemini model per AI feature; empty means the deployment default. */
     aiModels?: AiModels;
-    hasBrandLogo?: boolean;
     mustChangePassword?: boolean;
 }
 
@@ -111,6 +109,12 @@ export interface SocialConnection {
     queuedCount?: number;
     tokenUpdatedAt?: string | null;
     grantedScopes?: string[];
+    /** The Page's brand voice for AI captions, image text, and analysis. */
+    brandProfile?: BrandProfile;
+    /** The Page frames its post images with its own logo. */
+    hasBrandLogo?: boolean;
+    /** Small data URL of the logo, for avatars. */
+    logoThumb?: string;
     createdAt: string;
     updatedAt: string;
 }
@@ -197,6 +201,8 @@ export interface MediaAsset {
     format: string;
     bytes: number;
     textArea?: TextArea;
+    /** The Page whose logo framed this image; empty when unframed. */
+    brandConnectionId?: string;
 }
 
 export interface VideoMedia {

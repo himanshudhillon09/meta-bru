@@ -125,6 +125,22 @@ function renderCrop(image: HTMLImageElement, crop: CropState, framed: boolean): 
     });
 }
 
+/**
+ * Renders a saved crop of a picture without opening the editor, for example
+ * to re-frame it for a Page whose logo frame has a different shape.
+ */
+export function renderCropFromSource(src: string, crop: CropState, framed: boolean): Promise<Blob> {
+    return new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => {
+            const natural = { width: image.naturalWidth, height: image.naturalHeight };
+            renderCrop(image, clampCrop(crop, natural, framed), framed).then(resolve, reject);
+        };
+        image.onerror = () => reject('This image could not be opened.');
+        image.src = src;
+    });
+}
+
 export interface CropResult {
     /** The cropped JPEG, or null when the whole image is kept unchanged. */
     blob: Blob | null;
