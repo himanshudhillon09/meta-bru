@@ -140,7 +140,7 @@ export function StorageAssetCard({
                 <div className="absolute top-3 right-3 flex flex-col items-end gap-1.5">
                     {isVideo ? (
                         <span className="rounded-full border border-fuchsia-500/25 bg-surface-2 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-fuchsia-700 dark:text-fuchsia-300 backdrop-blur">
-                            ▶ Reel · {formatDuration(asset.duration)}
+                            ▶ Reel{asset.duration > 0 ? ` · ${formatDuration(asset.duration)}` : ''}
                         </span>
                     ) : null}
                     {duplicate ? (
@@ -187,7 +187,7 @@ export function StorageAssetCard({
                                   ? 'Video'
                                   : 'Image'}{' '}
                             · {asset.width}×{asset.height} ·{' '}
-                            {isVideo ? `${formatDuration(asset.duration)} · ` : ''}
+                            {isVideo && asset.duration > 0 ? `${formatDuration(asset.duration)} · ` : ''}
                             {formatBytes(asset.bytes)}
                         </div>
                         <div className="text-[11px] text-subtle mt-0.5">
