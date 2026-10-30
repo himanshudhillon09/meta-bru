@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AppShell } from '@/components/AppShell';
+import { AiLabelToggle, useAiLabelPreference } from '@/components/AiLabelToggle';
 import { ShareToStoryToggle } from '@/components/ShareToStoryToggle';
 import { ToggleChip } from '@/components/ToggleChip';
 import { useAuth } from '@/context/AuthContext';
@@ -52,6 +53,7 @@ export default function ReelsPage() {
     const [facebook, setFacebook] = useState(true);
     const [instagram, setInstagram] = useState(false);
     const [shareToStory, setShareToStory] = useState(false);
+    const [aiLabel, setAiLabel] = useAiLabelPreference();
     const [loading, setLoading] = useState(true);
     const [uploadProgress, setUploadProgress] = useState<number | null>(null);
     const [previewFailedFor, setPreviewFailedFor] = useState('');
@@ -334,6 +336,7 @@ export default function ReelsPage() {
                 mediaPublicId: video.publicId,
                 platforms: { facebook: publishFacebook, instagram },
                 shareToStory,
+                aiGenerated: aiLabel,
                 action,
             });
 
@@ -491,6 +494,7 @@ export default function ReelsPage() {
                                 onChange={setShareToStory}
                                 detail={`Shares the first ${REEL_LIMITS.storySeconds} seconds as a 9:16 Story once the reel publishes.`}
                             />
+                            <AiLabelToggle checked={aiLabel} onChange={setAiLabel} />
                         </section>
 
                         <section className="rounded-2xl border border-line bg-surface p-6 sm:p-8 shadow-card">

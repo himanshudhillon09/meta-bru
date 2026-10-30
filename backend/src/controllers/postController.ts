@@ -50,6 +50,8 @@ const postFields = {
     platforms: platformSchema,
     action: z.enum(['draft', 'queue', 'now']).default('queue'),
     shareToStory: z.boolean().default(false),
+    /** Meta's "AI info" label (Instagram). */
+    aiGenerated: z.boolean().default(false),
 };
 
 const createImagePostSchema = z.object({
@@ -385,6 +387,7 @@ export async function createPost(req: Request, res: Response): Promise<void> {
                 caption: parsed.caption,
                 ...media,
                 shareToStory: parsed.shareToStory,
+                aiGenerated: parsed.aiGenerated,
                 platforms: parsed.platforms,
                 status: 'publishing',
                 targets: buildTargets(parsed.platforms),
@@ -408,6 +411,7 @@ export async function createPost(req: Request, res: Response): Promise<void> {
         caption: parsed.caption,
         ...media,
         shareToStory: parsed.shareToStory,
+        aiGenerated: parsed.aiGenerated,
         platforms: parsed.platforms,
         status: parsed.action === 'draft' ? 'draft' : 'queued',
         targets: buildTargets(parsed.platforms),

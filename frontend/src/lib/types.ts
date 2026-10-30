@@ -166,6 +166,8 @@ export interface Post {
     /** Reel cover JPG; empty for images. */
     mediaCoverUrl?: string;
     shareToStory?: boolean;
+    /** Published with Meta's "AI info" label (Instagram). */
+    aiGenerated?: boolean;
     storyTargets?: PostTarget[];
     platforms: { facebook: boolean; instagram: boolean };
     status: PostStatus;

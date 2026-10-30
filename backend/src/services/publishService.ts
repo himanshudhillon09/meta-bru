@@ -16,6 +16,7 @@ import {
 } from './metaMediaJobs.js';
 import {
     MetaApiError,
+    AI_LABEL_PARAMS,
     createInstagramContainer,
     getInstagramContainerStatus,
     publishFacebookPhoto,
@@ -154,6 +155,7 @@ async function publishToInstagram(
             accessToken,
             imageUrl,
             caption: post.caption,
+            aiGenerated: post.aiGenerated,
         });
     }
 
@@ -190,6 +192,7 @@ async function publishToInstagram(
                     accessToken,
                     imageUrl,
                     caption: post.caption,
+                    aiGenerated: post.aiGenerated,
                 });
                 status = await getInstagramContainerStatus(
                     target.creationId,
@@ -281,6 +284,7 @@ async function publishReel(
                 caption: post.caption,
                 share_to_feed: 'true',
                 thumb_offset: REEL_THUMB_OFFSET_MS,
+                ...(post.aiGenerated ? AI_LABEL_PARAMS : {}),
             },
             waitMs: INSTAGRAM_VIDEO_WAIT_MS,
             stillProcessingMessage:

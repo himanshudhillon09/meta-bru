@@ -41,6 +41,9 @@ Page and linked Instagram Business account.
 - Usage page: Gemini requests, tokens, and images per day and month against
   your own limits and the limits Google reports, plus Cloudinary plan credits,
   storage, bandwidth, and transformations
+- "Mark as AI-generated" toggle in the Composer and Reels (on by default):
+  Instagram posts, reels, and their Stories get Meta's "AI info" label.
+  Facebook's publishing API has no AI label, so Facebook posts go out without it
 - Per-connection daily time and IANA timezone
 - FIFO queue with one automatic publish per connection per day
 - Immediate **Post now** and **Retry failed** actions

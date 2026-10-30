@@ -34,6 +34,8 @@ export interface IPost extends mongoose.Document {
     mediaCoverUrl: string;
     /** The image carries the bold text line from the Composer. */
     hasTextOverlay: boolean;
+    /** Publish with Meta's "AI info" label where the platform supports it. */
+    aiGenerated: boolean;
     shareToStory: boolean;
     /** Story shares. They never change status, lastError, or publishedAt. */
     storyTargets: IPostTarget[];
@@ -86,6 +88,7 @@ const postSchema = new mongoose.Schema<IPost>(
         mediaDuration: { type: Number, default: 0, min: 0 },
         mediaCoverUrl: { type: String, default: '' },
         hasTextOverlay: { type: Boolean, default: false },
+        aiGenerated: { type: Boolean, default: false },
         shareToStory: { type: Boolean, default: false },
         storyTargets: { type: [targetSchema], default: [] },
         platforms: {
