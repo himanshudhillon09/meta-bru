@@ -169,6 +169,8 @@ export interface Post {
     mediaDuration?: number;
     /** Reel cover JPG; empty for images. */
     mediaCoverUrl?: string;
+    /** The image already carries the bold text line from the Composer. */
+    hasTextOverlay?: boolean;
     shareToStory?: boolean;
     /** Published with Meta's "AI info" label (Instagram). */
     aiGenerated?: boolean;

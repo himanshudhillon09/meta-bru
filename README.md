@@ -33,8 +33,9 @@ Page and linked Instagram Business account.
   Cloudinary account, then publish to Facebook Reels (3–90 seconds) and
   Instagram Reels (up to 15 minutes) from the same queue as image posts
 - Story sharing: share any published post or reel to Facebook and Instagram
-  Stories, automatically after publishing or on demand from Overview, Activity,
-  Queue, or Analytics
+  Stories, automatically after publishing (on by default for new posts and
+  reels; Queue shows "Story on" or "No story" on each waiting post) or on
+  demand from Overview, Activity, Queue, or Analytics
 - Story analytics: reach, views, replies, shares, and how viewers tapped
   forward, back, or out. Meta only reports Story insights for 24 hours, so the
   scheduler saves them every 30 minutes while a Story is live
@@ -56,6 +57,10 @@ Page and linked Instagram Business account.
 - Per-connection daily time and IANA timezone
 - FIFO queue with one automatic publish per connection per day
 - Immediate **Post now** and **Retry failed** actions
+- **Edit** on a draft, queued, or failed post opens the Composer (or Reels
+  page) filled with everything the post has: Page, platforms, caption, image or
+  video, Story, and AI label. Saving keeps its place in the queue; a new image
+  or video replaces the old one, which is removed from Cloudinary
 - Gemini caption drafting and Imagen image generation, guided by each Page's
   brand voice
 - Facebook + Instagram publishing, per-platform status and errors

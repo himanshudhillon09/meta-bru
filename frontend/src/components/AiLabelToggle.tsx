@@ -7,8 +7,9 @@ const PREFERENCE_KEY = 'meta-bru:ai-label';
 /**
  * Whether new posts carry Meta's "AI info" label. On by default; the last
  * choice is remembered in this browser so it does not need setting each time.
+ * Editing a saved post passes `remember: false`, so it keeps its own setting.
  */
-export function useAiLabelPreference(): [boolean, (value: boolean) => void] {
+export function useAiLabelPreference(remember = true): [boolean, (value: boolean) => void] {
     const [value, setValue] = useState<boolean>(() => {
         if (typeof window === 'undefined') return true;
         try {
@@ -20,6 +21,7 @@ export function useAiLabelPreference(): [boolean, (value: boolean) => void] {
 
     const update = (next: boolean) => {
         setValue(next);
+        if (!remember) return;
         try {
             window.localStorage.setItem(PREFERENCE_KEY, next ? 'on' : 'off');
         } catch {

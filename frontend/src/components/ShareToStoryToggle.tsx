@@ -9,6 +9,22 @@ interface ShareToStoryToggleProps {
     detail: string;
 }
 
+/** Whether a post that has not published yet will also go to Stories. */
+export function StoryChip({ on }: { on: boolean }) {
+    return (
+        <span
+            title={on ? 'Also shares to Story once it publishes' : 'Not shared to Story when it publishes'}
+            className={`text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full border ${
+                on
+                    ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20'
+                    : 'bg-slate-500/10 text-subtle border-slate-500/20'
+            }`}
+        >
+            {on ? 'Story on' : 'No story'}
+        </span>
+    );
+}
+
 export function ShareToStoryToggle({
     checked,
     onChange,
