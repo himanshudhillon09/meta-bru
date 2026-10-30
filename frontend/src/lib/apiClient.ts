@@ -24,6 +24,9 @@ const BASE_URL = (
     process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api'
 ).replace(/\/+$/, '');
 
+/** The backend health check, which uptime monitors should ping to keep it awake. */
+export const HEALTH_URL = `${BASE_URL}/health`;
+
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 interface RequestOptions {
@@ -269,6 +272,17 @@ export const authApi = {
     saveGeminiCredentials: (data: { apiKey: string }) =>
         api.put('/auth/credentials/gemini', data),
     removeGeminiCredentials: () => api.delete('/auth/credentials/gemini'),
+};
+
+export interface SchedulerStatus {
+    enabled: boolean;
+    startedAt: string | null;
+    lastTickAt: string | null;
+    intervalSeconds: number;
+}
+
+export const systemApi = {
+    health: () => api.get<{ status: string; scheduler?: SchedulerStatus }>('/health'),
 };
 
 export const connectionsApi = {

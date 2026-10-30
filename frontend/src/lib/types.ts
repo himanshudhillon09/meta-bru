@@ -107,6 +107,8 @@ export interface SocialConnection {
     lastRunAt: string | null;
     lastError: string;
     queuedCount?: number;
+    /** When the queued posts publish, one per slot, oldest first; empty when paused. */
+    upcomingSlots?: string[];
     tokenUpdatedAt?: string | null;
     grantedScopes?: string[];
     /** The Page's brand voice for AI captions, image text, and analysis. */
@@ -694,6 +696,18 @@ export function formatIstDateTime(value: string | null | undefined): string {
         hourCycle: 'h23',
     }).format(date);
     return `${formatted} IST`;
+}
+
+/** "in 16h 5m" until a future time; "now" once it has passed. */
+export function formatTimeUntil(value: string, now = Date.now()): string {
+    const minutes = Math.ceil((new Date(value).getTime() - now) / 60_000);
+    if (Number.isNaN(minutes)) return '';
+    if (minutes <= 0) return 'now';
+    if (minutes < 60) return `in ${minutes}m`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `in ${hours}h ${minutes % 60}m`;
+    const days = Math.floor(hours / 24);
+    return `in ${days}d ${hours % 24}h`;
 }
 
 export function formatElapsed(
