@@ -5,7 +5,9 @@ import { AppError } from '../utils/errors.js';
 
 /**
  * Burns a short, bold, meme-style line into a post image: white words with
- * *starred* words in yellow, centred near the bottom of the photo.
+ * *starred* words in yellow, centred near the bottom of the photo. Framed
+ * photos instead get it as a caption in the frame's border (fitCaption and
+ * captionSvg), drawn by imageProcessingService.
  *
  * Text is drawn as vector outlines from a bundled font. sharp's own text
  * rendering uses the operating system's font stack (CoreText on macOS) and
@@ -28,6 +30,10 @@ const MIN_SIZE_SHARE = 0.035;
 const LINE_HEIGHT = 1.22;
 const BOTTOM_MARGIN_SHARE = 0.07;
 const MIN_AREA = 32;
+
+// Captions in a frame's border are a little smaller than text on a photo.
+const CAPTION_START_SIZE_SHARE = 0.058;
+const CAPTION_MIN_SIZE_SHARE = 0.034;
 
 const EMOJI = /[\p{Extended_Pictographic}\u{1F1E6}-\u{1F1FF}\u{1F3FB}-\u{1F3FF}︎️‍⃣]/gu;
 const UNSUPPORTED_SCRIPT = /[^\p{Script=Latin}\p{Script=Common}\p{Script=Inherited}]/u;
@@ -198,6 +204,88 @@ export function fitOverlay(
     }
 }
 
+/**
+ * Picks the largest caption size, from 5.8% of the width down to 3.4%, at
+ * which the line fits the width in at most three lines.
+ */
+export function fitCaption(
+    words: OverlayWord[],
+    font: opentype.Font,
+    width: number
+): FittedOverlay {
+    const minSize = Math.max(12, Math.round(width * CAPTION_MIN_SIZE_SHARE));
+    let size = Math.max(minSize, Math.round(width * CAPTION_START_SIZE_SHARE));
+
+    for (;;) {
+        const lineHeight = size * LINE_HEIGHT;
+        const lines = wrapWords(words, font, size, width);
+        const fits =
+            lines.length <= MAX_LINES && lines.every((line) => line.width <= width);
+
+        if (fits || size <= minSize) return { size, lineHeight, lines };
+        size = Math.max(minSize, Math.floor(size * 0.93));
+    }
+}
+
+export interface CaptionStyle {
+    text: string;
+    highlight: string;
+    /** Drawn behind highlighted words, for light frames where yellow text is unreadable. */
+    marker: string | null;
+}
+
+/**
+ * SVG for a caption centred in a band of `width`, its first line starting at
+ * `top`. Coordinates are those of the image the band is part of.
+ */
+export function captionSvg(
+    fitted: FittedOverlay,
+    font: opentype.Font,
+    band: { left: number; top: number; width: number },
+    style: CaptionStyle
+): string {
+    const { size, lineHeight, lines } = fitted;
+    const ascender = (font.ascender / font.unitsPerEm) * size;
+    const descender = (font.descender / font.unitsPerEm) * size;
+    const glyphHeight = ascender - descender;
+    const space = font.getAdvanceWidth(' ', size);
+    const padX = size * 0.1;
+    const markers: string[] = [];
+    const paths: string[] = [];
+
+    lines.forEach((line, index) => {
+        const lineTop = band.top + index * lineHeight;
+        const baseline = lineTop + (lineHeight - glyphHeight) / 2 + ascender;
+        let x = band.left + (band.width - line.width) / 2;
+        // Consecutive highlighted words share one marker.
+        const runs: Array<{ start: number; end: number }> = [];
+        let inRun = false;
+
+        for (const word of line.words) {
+            if (word.highlight) {
+                const last = runs[runs.length - 1];
+                if (inRun && last) last.end = x + word.width;
+                else runs.push({ start: x, end: x + word.width });
+            }
+            inRun = word.highlight;
+            const color = word.highlight ? style.highlight : style.text;
+            const d = font.getPath(word.text, x, baseline, size).toPathData(2);
+            paths.push(`<path d="${d}" fill="${color}"/>`);
+            x += word.width + space;
+        }
+
+        if (style.marker) {
+            for (const run of runs) {
+                markers.push(
+                    `<rect x="${(run.start - padX).toFixed(1)}" y="${(baseline - ascender * 0.82).toFixed(1)}" width="${(run.end - run.start + padX * 2).toFixed(1)}" height="${(ascender * 0.82 - descender * 0.55).toFixed(1)}" rx="${(size * 0.14).toFixed(1)}" fill="${style.marker}"/>`
+                );
+            }
+        }
+    });
+
+    return markers.join('') + paths.join('');
+}
+
 function drawableWords(words: OverlayWord[], font: opentype.Font): OverlayWord[] {
     return words
         .map((word) => ({
@@ -205,6 +293,11 @@ function drawableWords(words: OverlayWord[], font: opentype.Font): OverlayWord[]
             text: [...word.text].filter((char) => font.charToGlyphIndex(char) > 0).join(''),
         }))
         .filter((word) => word.text.length > 0);
+}
+
+/** The words of a line that the bundled font can draw. */
+export function drawableOverlayWords(rawText: string): OverlayWord[] {
+    return drawableWords(parseOverlayText(rawText), loadOverlayFont());
 }
 
 function overlaySvg(fitted: FittedOverlay, box: TextArea, font: opentype.Font): string {

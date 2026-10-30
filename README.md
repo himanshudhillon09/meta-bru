@@ -24,6 +24,10 @@ Page and linked Instagram Business account.
   the bottom border; AI captions, image text, and AI analysis follow that
   Page's voice. Switching Pages in the Composer re-frames the image with the
   new Page's logo. Profile keeps only account settings and credentials
+- Text on image: on a photo framed with a Page logo, the line becomes a
+  caption in the frame's border, between the photo and the logo, so the photo
+  stays clear (the photo is kept whole and the frame grows, up to 4:5). Photos
+  without a logo frame get the line across the bottom of the photo
 - Page filter on Queue and Activity once posts come from more than one Page
 - Reels: MP4 or MOV videos upload straight from the browser to the user's own
   Cloudinary account, then publish to Facebook Reels (3–90 seconds) and

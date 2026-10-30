@@ -350,11 +350,12 @@ export const mediaApi = {
         api.post<{ success: boolean; media: VideoMedia }>('/media/videos', {
             publicId,
         }),
-    textPreview: (publicId: string, text: string, textArea?: TextArea) =>
+    textPreview: (publicId: string, text: string, textArea?: TextArea, connectionId = '') =>
         api.post<{ success: boolean; dataUrl: string }>('/media/text-preview', {
             publicId,
             text,
             ...(textArea ? { textArea } : {}),
+            ...(connectionId ? { connectionId } : {}),
         }),
 };
 
