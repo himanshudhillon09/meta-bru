@@ -1,5 +1,4 @@
 import type { Request, Response } from 'express';
-import type { Types } from 'mongoose';
 import { z } from 'zod';
 import {
     Post,
@@ -9,9 +8,7 @@ import {
     type Platform,
     type PostStatus,
 } from '../models/postModel.js';
-import { PostMetricSnapshot } from '../models/postMetricSnapshotModel.js';
 import { SocialConnection } from '../models/socialConnectionModel.js';
-import { StoryMetricSnapshot } from '../models/storyMetricSnapshotModel.js';
 import type {
     ConnectionTokenStatus,
     ISocialConnection,
@@ -25,6 +22,7 @@ import { getCloudinaryCredentials } from '../services/credentialService.js';
 import { applyImageText } from '../services/imageTextService.js';
 import { REEL_LIMITS } from '../services/mediaDerivativeService.js';
 import { publishPost, sharePostToStory } from '../services/publishService.js';
+import { deletePostAnalytics } from '../services/removedPostService.js';
 import { storyPlatforms } from '../services/storyService.js';
 import { parseOverlayText } from '../services/textOverlayService.js';
 import { loadReelVideo } from '../services/videoUploadService.js';
@@ -512,15 +510,6 @@ const ACTIVITY_STATUSES: Record<'all' | 'published' | 'failed', PostStatus[]> = 
 const clearActivitySchema = z.object({
     filter: z.enum(['all', 'published', 'failed']).default('all'),
 });
-
-/** Removes a deleted post's insight history so Analytics stops counting it. */
-async function deletePostAnalytics(userId: string, postIds: Types.ObjectId[]): Promise<void> {
-    if (postIds.length === 0) return;
-    await Promise.all([
-        PostMetricSnapshot.deleteMany({ userId, postId: { $in: postIds } }),
-        StoryMetricSnapshot.deleteMany({ userId, postId: { $in: postIds } }),
-    ]);
-}
 
 /**
  * Deletes a post from Meta-Bru, including published ones: its Analytics

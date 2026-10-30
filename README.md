@@ -34,6 +34,10 @@ Page and linked Instagram Business account.
   once, along with its Analytics history; Storage can also select every
   published file at once to free space. Posts stay live on Facebook and
   Instagram
+- Posts you delete directly on Facebook or Instagram are flushed on the next
+  insights refresh, with their Analytics history and unused Cloudinary file.
+  Meta-Bru first confirms the post is gone while the Page is still readable,
+  so a permission problem never removes anything
 - Usage page: Gemini requests, tokens, and images per day and month against
   your own limits and the limits Google reports, plus Cloudinary plan credits,
   storage, bandwidth, and transformations
