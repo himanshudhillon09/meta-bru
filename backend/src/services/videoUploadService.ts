@@ -49,6 +49,8 @@ export interface VideoResource {
     width?: unknown;
     height?: unknown;
     duration?: unknown;
+    /** Probe details Cloudinary returns with media_metadata. */
+    video_metadata?: { format?: { duration?: unknown } };
 }
 
 export interface VideoStore {
@@ -97,15 +99,31 @@ function formatOf(resource: VideoResource): string {
     return typeof resource.format === 'string' ? resource.format.toLowerCase() : '';
 }
 
+/** The video's length in seconds, or 0 when Cloudinary did not report it. */
+export function videoDuration(resource: VideoResource): number {
+    return (
+        numberOrZero(resource.duration) ||
+        numberOrZero(resource.video_metadata?.format?.duration)
+    );
+}
+
 /** Why a video cannot be a reel, or null when it can. */
 export function videoRejection(resource: VideoResource): AppError | null {
-    const duration = numberOrZero(resource.duration);
+    const duration = videoDuration(resource);
 
     if (!REEL_LIMITS.formats.includes(formatOf(resource))) {
         return new AppError(400, 'Unsupported video type. Use MP4 or MOV.', 'UNSUPPORTED_MEDIA_TYPE');
     }
     if (numberOrZero(resource.bytes) > REEL_LIMITS.maxBytes) {
         return new AppError(400, 'Reels can be at most 100 MB.', 'MEDIA_TOO_LARGE');
+    }
+    // An unknown length is not a short video; say so instead of rejecting it as one.
+    if (duration === 0) {
+        return new AppError(
+            502,
+            'Cloudinary did not report how long this video is. Upload it again.',
+            'VIDEO_DURATION_UNKNOWN'
+        );
     }
     if (duration < REEL_LIMITS.minSeconds) {
         return new AppError(400, 'Reels must be at least 3 seconds long.', 'REEL_TOO_SHORT');
@@ -122,7 +140,12 @@ export function cloudinaryVideoStore(credentials: CloudinaryCredentials): VideoS
     return {
         async find(publicId) {
             try {
-                return (await cloudinary.api.resource(publicId, options)) as VideoResource;
+                // Without media_metadata the Admin API leaves out the video's
+                // duration, which made every reel look shorter than 3 seconds.
+                return (await cloudinary.api.resource(publicId, {
+                    ...options,
+                    media_metadata: true,
+                })) as VideoResource;
             } catch (error) {
                 if (cloudinaryHttpCode(error) === 404) return null;
                 throw new AppError(502, cloudinaryErrorMessage(error), 'CLOUDINARY_API_FAILED');
@@ -179,7 +202,7 @@ export async function loadReelVideo(
         originalUrl: typeof resource.secure_url === 'string' ? resource.secure_url : '',
         width: numberOrZero(resource.width),
         height: numberOrZero(resource.height),
-        duration: Math.round(numberOrZero(resource.duration) * 10) / 10,
+        duration: Math.round(videoDuration(resource) * 10) / 10,
         format: formatOf(resource),
         bytes: numberOrZero(resource.bytes),
     };
