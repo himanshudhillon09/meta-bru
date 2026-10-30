@@ -38,6 +38,72 @@ function writeReturnTo(value: string | null): void {
     }
 }
 
+// Meta's API does not let apps create Pages, so the guide sends people to
+// Facebook's own Page creation and brings them back to connect it.
+const FACEBOOK_CREATE_PAGE_URL = 'https://www.facebook.com/pages/create';
+const BUSINESS_SUITE_URL = 'https://business.facebook.com/';
+
+function CreatePageSteps() {
+    return (
+        <ol className="space-y-4 text-sm text-fg-2">
+            <li className="flex gap-3">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-xs font-bold text-white">
+                    1
+                </span>
+                <div>
+                    <div className="font-semibold text-fg">Create the Page on Facebook</div>
+                    <p className="mt-0.5 text-xs text-muted">
+                        Pick a name and a category; a photo and bio can come later. Using a Meta
+                        Business portfolio? Create it in{' '}
+                        <a
+                            href={BUSINESS_SUITE_URL}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="font-semibold text-indigo-700 hover:underline dark:text-indigo-300"
+                        >
+                            Business Suite
+                        </a>{' '}
+                        so the business owns it.
+                    </p>
+                    <a
+                        href={FACEBOOK_CREATE_PAGE_URL}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-2 inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-bold text-white shadow-sm shadow-blue-600/25 hover:bg-blue-500"
+                    >
+                        Open Facebook to create a Page ↗
+                    </a>
+                </div>
+            </li>
+            <li className="flex gap-3">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-xs font-bold text-white">
+                    2
+                </span>
+                <div>
+                    <div className="font-semibold text-fg">Link Instagram (optional)</div>
+                    <p className="mt-0.5 text-xs text-muted">
+                        On the new Page, open Settings → Linked accounts → Instagram and connect a
+                        professional (business or creator) account, so Meta-Bru can post there too.
+                    </p>
+                </div>
+            </li>
+            <li className="flex gap-3">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-xs font-bold text-white">
+                    3
+                </span>
+                <div>
+                    <div className="font-semibold text-fg">Come back and connect it</div>
+                    <p className="mt-0.5 text-xs text-muted">
+                        Press Connect my new Page below. When Facebook asks which Pages to allow,
+                        tick the new one and keep your other Pages ticked, or choose all current
+                        and future Pages.
+                    </p>
+                </div>
+            </li>
+        </ol>
+    );
+}
+
 function loginSummary(result: MetaLoginResult): {
     notice: string;
     warnings: string[];
@@ -90,6 +156,7 @@ export default function ConnectionsPage() {
     const [loading, setLoading] = useState(true);
     const [connecting, setConnecting] = useState(false);
     const [guideOpen, setGuideOpen] = useState(false);
+    const [createOpen, setCreateOpen] = useState(false);
     const [error, setError] = useState('');
     const [notice, setNotice] = useState('');
     const [warnings, setWarnings] = useState<string[]>([]);
@@ -232,17 +299,29 @@ export default function ConnectionsPage() {
             title="Connections"
             subtitle="Connect the Facebook Pages and Instagram accounts this workspace can publish to."
             actions={
-                <button
-                    onClick={() => setGuideOpen(true)}
-                    disabled={connecting}
-                    className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all"
-                >
-                    {connecting
-                        ? 'Connecting...'
-                        : connections.length > 0
-                          ? 'Add or reconnect Pages'
-                          : 'Connect Facebook Page'}
-                </button>
+                <>
+                    <button
+                        onClick={() => setCreateOpen(true)}
+                        disabled={connecting}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-line-strong bg-surface px-5 py-2.5 text-sm font-bold text-fg transition-all hover:bg-hover disabled:opacity-60"
+                    >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" className="h-4 w-4" aria-hidden="true">
+                            <path d="M12 5v14M5 12h14" />
+                        </svg>
+                        Create new Page
+                    </button>
+                    <button
+                        onClick={() => setGuideOpen(true)}
+                        disabled={connecting}
+                        className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all"
+                    >
+                        {connecting
+                            ? 'Connecting...'
+                            : connections.length > 0
+                              ? 'Add or reconnect Pages'
+                              : 'Connect Facebook Page'}
+                    </button>
+                </>
             }
         >
             <Modal
@@ -277,6 +356,18 @@ export default function ConnectionsPage() {
                         </li>
                     ) : null}
                 </ul>
+            </Modal>
+
+            <Modal
+                isOpen={createOpen}
+                onClose={() => setCreateOpen(false)}
+                onConfirm={() => void connect()}
+                title="Create a new Facebook Page"
+                message="Facebook only lets you create Pages on Facebook itself. Make it there, then connect it here in one step."
+                confirmText="Connect my new Page"
+                cancelText="Not now"
+            >
+                <CreatePageSteps />
             </Modal>
 
             {notice ? (
@@ -321,13 +412,22 @@ export default function ConnectionsPage() {
                         Instagram Business account linked, Meta-Bru will detect
                         it automatically.
                     </p>
-                    <button
-                        onClick={() => setGuideOpen(true)}
-                        disabled={connecting}
-                        className="mt-6 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white px-6 py-3 rounded-xl text-sm font-bold transition-all"
-                    >
-                        {connecting ? 'Connecting...' : 'Connect Facebook Page'}
-                    </button>
+                    <div className="mt-6 flex flex-col items-center justify-center gap-3 sm:flex-row">
+                        <button
+                            onClick={() => setGuideOpen(true)}
+                            disabled={connecting}
+                            className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white px-6 py-3 rounded-xl text-sm font-bold transition-all"
+                        >
+                            {connecting ? 'Connecting...' : 'Connect Facebook Page'}
+                        </button>
+                        <button
+                            onClick={() => setCreateOpen(true)}
+                            disabled={connecting}
+                            className="rounded-xl border border-line-strong bg-surface px-6 py-3 text-sm font-bold text-fg transition-all hover:bg-hover disabled:opacity-60"
+                        >
+                            No Page yet? Create one
+                        </button>
+                    </div>
                 </div>
             ) : (
                 <div className="stagger grid grid-cols-1 gap-6">
