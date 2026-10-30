@@ -1,4 +1,5 @@
 import type { Request, Response } from 'express';
+import type { Types } from 'mongoose';
 import { z } from 'zod';
 import {
     Post,
@@ -8,7 +9,9 @@ import {
     type Platform,
     type PostStatus,
 } from '../models/postModel.js';
+import { PostMetricSnapshot } from '../models/postMetricSnapshotModel.js';
 import { SocialConnection } from '../models/socialConnectionModel.js';
+import { StoryMetricSnapshot } from '../models/storyMetricSnapshotModel.js';
 import type {
     ConnectionTokenStatus,
     ISocialConnection,
@@ -496,34 +499,95 @@ export async function updatePost(req: Request, res: Response): Promise<void> {
     res.json({ success: true, post });
 }
 
+/** Every status except "publishing", which a publish run still owns. */
+const DELETABLE_STATUSES: PostStatus[] = ['draft', 'queued', 'failed', 'published', 'partial'];
+
+/** Activity filters and the post statuses each one shows. */
+const ACTIVITY_STATUSES: Record<'all' | 'published' | 'failed', PostStatus[]> = {
+    all: ['published', 'partial', 'failed'],
+    published: ['published', 'partial'],
+    failed: ['failed', 'partial'],
+};
+
+const clearActivitySchema = z.object({
+    filter: z.enum(['all', 'published', 'failed']).default('all'),
+});
+
+/** Removes a deleted post's insight history so Analytics stops counting it. */
+async function deletePostAnalytics(userId: string, postIds: Types.ObjectId[]): Promise<void> {
+    if (postIds.length === 0) return;
+    await Promise.all([
+        PostMetricSnapshot.deleteMany({ userId, postId: { $in: postIds } }),
+        StoryMetricSnapshot.deleteMany({ userId, postId: { $in: postIds } }),
+    ]);
+}
+
+/**
+ * Deletes a post from Meta-Bru, including published ones: its Analytics
+ * history goes too, and its Cloudinary file when no other post uses it. A
+ * published post stays live on Facebook and Instagram.
+ */
 export async function deletePost(req: Request, res: Response): Promise<void> {
     const existing = await ownedPost(String(req.params.id), req.user.id);
-
-    if (existing.status === 'published' || existing.status === 'partial') {
-        throw new AppError(
-            409,
-            'Published posts cannot be deleted from Meta-Bru',
-            'POST_LOCKED'
-        );
-    }
 
     // Delete atomically so a scheduler claim cannot race the delete.
     const post = await Post.findOneAndDelete({
         _id: existing._id,
         userId: req.user.id,
-        status: { $in: ['draft', 'queued', 'failed'] },
+        status: { $in: DELETABLE_STATUSES },
     });
 
     if (!post) {
         throw new AppError(409, 'This post is currently publishing', 'POST_LOCKED');
     }
 
+    await deletePostAnalytics(req.user.id, [post._id]);
     const cleanup = await deletePostMediaIfUnused(req.user.id, {
         publicId: post.mediaPublicId,
         resourceType: post.mediaType === 'reel' ? 'video' : 'image',
     });
 
     res.json({ success: true, message: 'Post deleted', ...cleanup });
+}
+
+/**
+ * Flushes Activity: deletes every published, partial, or failed post the
+ * chosen filter shows, with their Analytics history and unused Cloudinary
+ * files. Posts stay live on Facebook and Instagram.
+ */
+export async function clearActivity(req: Request, res: Response): Promise<void> {
+    const { filter } = parseBody(clearActivitySchema, req);
+    const posts = await Post.find({
+        userId: req.user.id,
+        status: { $in: ACTIVITY_STATUSES[filter] },
+    }).select('_id mediaPublicId mediaType');
+
+    const ids = posts.map((post) => post._id);
+    const { deletedCount } = await Post.deleteMany({
+        _id: { $in: ids },
+        userId: req.user.id,
+        status: { $in: ACTIVITY_STATUSES[filter] },
+    });
+    await deletePostAnalytics(req.user.id, ids);
+
+    // One cleanup per file; several posts can share one upload.
+    const files = new Map(
+        posts
+            .filter((post) => post.mediaPublicId)
+            .map((post) => [
+                post.mediaPublicId,
+                post.mediaType === 'reel' ? ('video' as const) : ('image' as const),
+            ])
+    );
+    let mediaDeleted = 0;
+    let mediaErrors = 0;
+    for (const [publicId, resourceType] of files) {
+        const cleanup = await deletePostMediaIfUnused(req.user.id, { publicId, resourceType });
+        if (cleanup.mediaDeleted) mediaDeleted += 1;
+        if (cleanup.mediaError) mediaErrors += 1;
+    }
+
+    res.json({ success: true, deleted: deletedCount, mediaDeleted, mediaErrors });
 }
 
 export async function publishNow(req: Request, res: Response): Promise<void> {

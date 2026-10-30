@@ -308,6 +308,14 @@ export const postsApi = {
             mediaDeleted?: boolean;
             mediaError?: string;
         }>(`/posts/${postId}`),
+    /** Deletes every post the Activity filter shows, with its history. */
+    clearActivity: (filter: 'all' | 'published' | 'failed') =>
+        api.post<{
+            success: boolean;
+            deleted: number;
+            mediaDeleted: number;
+            mediaErrors: number;
+        }>('/posts/activity/clear', { filter }),
     shareStory: (postId: string, platforms: Platform[]) =>
         api.post<{ success: boolean; post: Post }>(`/posts/${postId}/story`, {
             platforms,

@@ -1,5 +1,6 @@
 import express from 'express';
 import {
+    clearActivity,
     createPost,
     deletePost,
     listPosts,
@@ -15,6 +16,7 @@ const router = express.Router();
 router.use(protect);
 
 router.post('/', createPost);
+router.post('/activity/clear', clearActivity);
 router.get('/', listPosts);
 router.patch('/:id', updatePost);
 router.delete('/:id', deletePost);
