@@ -62,6 +62,17 @@ async function readStoredLogo(userId: string, connectionId: string): Promise<Sto
     };
 }
 
+/** The Page's logo for framing, or null when the Page has none or is not the user's. */
+export async function pageLogo(userId: string, connectionId: string): Promise<Buffer | null> {
+    if (!/^[a-f\d]{24}$/i.test(connectionId)) return null;
+    try {
+        return (await readStoredLogo(userId, connectionId))?.data ?? null;
+    } catch (error) {
+        if (error instanceof AppError) return null;
+        throw error;
+    }
+}
+
 /** A simple illustrated scene, so previews show the frame on a real-looking photo. */
 function sampleScene(
     width: number,

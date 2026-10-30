@@ -1,6 +1,14 @@
 import sharp, { type Sharp } from 'sharp';
 import { AppError } from '../utils/errors.js';
-import type { TextArea } from './textOverlayService.js';
+import {
+    OVERLAY_COLORS,
+    captionSvg,
+    fitCaption,
+    loadOverlayFont,
+    type CaptionStyle,
+    type OverlayWord,
+    type TextArea,
+} from './textOverlayService.js';
 
 /**
  * Instagram feed posts must be between 4:5 (tallest) and 1.91:1 (widest), and
@@ -20,6 +28,12 @@ export const MAX_COVER_CROP = 0.12;
 const MAX_WORKING_EDGE = 2160;
 const LOGO_MAX_EDGE = 640;
 const LOGO_MIN_EDGE = 48;
+
+// A caption in the frame sits between the photo and the logo, with these gaps
+// (as shares of the frame margin) above and below its text.
+const CAPTION_GAP_ABOVE = 0.6;
+const CAPTION_GAP_BELOW = 0.2;
+const CAPTION_WIDTH_SHARE = 0.94;
 
 export interface RawImage {
     data: Buffer;
@@ -48,6 +62,8 @@ export interface FrameLayout {
     height: number;
     scale: number;
     margin: number;
+    /** Height of the caption band under the photo; 0 without a caption. */
+    caption: number;
     band: number;
     radius: number;
     hairlineInset: number;
@@ -69,6 +85,7 @@ interface FramePalette {
     accentOpacity: number;
     glowOpacity: number;
     shadowOpacity: number;
+    caption: CaptionStyle;
 }
 
 function fromRaw(image: RawImage): Sharp {
@@ -120,14 +137,15 @@ export function plainPostSize(
  * Frame metrics are derived from the fixed post width, so the border, logo
  * band, and logo spacing are identical on every post. The canvas height follows
  * the photo so it fills the frame without cropping, within the feed limits.
+ * A caption adds its band under the photo.
  */
-export function frameLayout(width: number, height: number): FrameLayout {
+export function frameLayout(width: number, height: number, caption = 0): FrameLayout {
     const scale = POST_WIDTH;
     const margin = Math.round(scale * 0.045);
     const band = Math.round(scale * 0.14);
     const maxPhotoWidth = POST_WIDTH - margin * 2;
     const canvasHeight = clampPostHeight(
-        margin + (maxPhotoWidth * height) / width + band
+        margin + (maxPhotoWidth * height) / width + caption + band
     );
 
     return {
@@ -135,11 +153,12 @@ export function frameLayout(width: number, height: number): FrameLayout {
         height: canvasHeight,
         scale,
         margin,
+        caption,
         band,
         radius: Math.round(scale * 0.022),
         hairlineInset: Math.round(margin * 0.42),
         maxPhotoWidth,
-        maxPhotoHeight: canvasHeight - margin - band,
+        maxPhotoHeight: canvasHeight - margin - caption - band,
     };
 }
 
@@ -296,6 +315,7 @@ export function framePalette(
     );
 
     if (lightContrast > darkContrast) {
+        const ink = hex(hslToRgb(hue, Math.min(saturation, 0.5), 0.13));
         return {
             tone: 'light',
             start: hex(hslToRgb(hue, Math.min(saturation, 0.4), 0.97)),
@@ -304,6 +324,8 @@ export function framePalette(
             accentOpacity: 0.35,
             glowOpacity: 0.55,
             shadowOpacity: 0.22,
+            // Yellow text is unreadable on a light frame, so highlights get a marker.
+            caption: { text: ink, highlight: ink, marker: OVERLAY_COLORS.highlight },
         };
     }
 
@@ -315,6 +337,7 @@ export function framePalette(
         accentOpacity: 0.5,
         glowOpacity: 0.1,
         shadowOpacity: 0.5,
+        caption: { text: OVERLAY_COLORS.text, highlight: OVERLAY_COLORS.highlight, marker: null },
     };
 }
 
@@ -469,7 +492,8 @@ function frameSvg(
     layout: FrameLayout,
     palette: FramePalette,
     photoRect: Rect,
-    logoRect: Rect
+    logoRect: Rect,
+    caption = ''
 ): Buffer {
     const { width, height } = layout;
     const inset = layout.hairlineInset;
@@ -489,14 +513,36 @@ function frameSvg(
             `<rect x="${inset}" y="${inset}" width="${width - inset * 2}" height="${height - inset * 2}" rx="${Math.round(layout.radius * 1.4)}" fill="none" stroke="${palette.accent}" stroke-opacity="${palette.accentOpacity}" stroke-width="${stroke}"/>` +
             `<rect x="${photoRect.left}" y="${photoRect.top + shadowOffset}" width="${photoRect.width}" height="${photoRect.height}" rx="${layout.radius}" fill="#000000" fill-opacity="${palette.shadowOpacity}" filter="url(#shadow)"/>` +
             ornamentsSvg(layout, palette, logoRect) +
+            caption +
             '</svg>'
     );
 }
 
-async function renderFramed(photo: RawImage, logo: Buffer): Promise<RenderedPostImage> {
-    const layout = frameLayout(photo.width, photo.height);
+async function renderFramed(
+    photo: RawImage,
+    logo: Buffer,
+    caption: OverlayWord[] = []
+): Promise<RenderedPostImage> {
+    const font = caption.length ? loadOverlayFont() : null;
+    const base = frameLayout(photo.width, photo.height);
+    const fittedCaption = font
+        ? fitCaption(caption, font, base.maxPhotoWidth * CAPTION_WIDTH_SHARE)
+        : null;
+    const layout = fittedCaption
+        ? frameLayout(
+              photo.width,
+              photo.height,
+              Math.round(
+                  fittedCaption.lines.length * fittedCaption.lineHeight +
+                      base.margin * (CAPTION_GAP_ABOVE + CAPTION_GAP_BELOW)
+              )
+          )
+        : base;
 
+    // A captioned photo was already cropped in the Composer, so it is shown
+    // whole even when the caption leaves it less room.
     const photoSize =
+        !fittedCaption &&
         cropFraction(
             photo.width / photo.height,
             layout.maxPhotoWidth / layout.maxPhotoHeight
@@ -521,7 +567,8 @@ async function renderFramed(photo: RawImage, logo: Buffer): Promise<RenderedPost
 
     const logoMeta = await sharp(logo).metadata();
     const logoDims = logoSize(logoMeta.width ?? 1, logoMeta.height ?? 1, layout);
-    const bandTop = photoRect.top + photoRect.height;
+    const photoBottom = photoRect.top + photoRect.height;
+    const bandTop = photoBottom + layout.caption;
     const logoRect: Rect = {
         left: Math.round((layout.width - logoDims.width) / 2),
         top: Math.round(bandTop + (logoBandSpace(layout) - logoDims.height) / 2),
@@ -547,7 +594,21 @@ async function renderFramed(photo: RawImage, logo: Buffer): Promise<RenderedPost
         .png()
         .toBuffer();
 
-    const buffer = await sharp(frameSvg(layout, palette, photoRect, logoRect))
+    const captionMarkup =
+        font && fittedCaption
+            ? captionSvg(
+                  fittedCaption,
+                  font,
+                  {
+                      left: layout.margin,
+                      top: photoBottom + Math.round(layout.margin * CAPTION_GAP_ABOVE),
+                      width: layout.maxPhotoWidth,
+                  },
+                  palette.caption
+              )
+            : '';
+
+    const buffer = await sharp(frameSvg(layout, palette, photoRect, logoRect, captionMarkup))
         .composite([
             { input: photoLayer, left: photoRect.left, top: photoRect.top },
             { input: logoLayer, left: logoRect.left, top: logoRect.top },
@@ -590,6 +651,31 @@ export async function renderPostImage(
 ): Promise<RenderedPostImage> {
     const photo = await loadPhoto(input);
     return logo ? renderFramed(photo, logo) : renderPlain(photo);
+}
+
+/**
+ * Rebuilds a framed post image with a caption in the border, between the
+ * photo and the logo, so the text never covers the photo. The photo is cut
+ * from the framed image at `photoArea` and the frame is redrawn around it.
+ */
+export async function renderCaptionedFrame(
+    image: Buffer,
+    photoArea: TextArea,
+    logo: Buffer,
+    caption: OverlayWord[]
+): Promise<RenderedPostImage> {
+    const photo = await loadPhoto(
+        await sharp(image)
+            .extract({
+                left: photoArea.left,
+                top: photoArea.top,
+                width: photoArea.width,
+                height: photoArea.height,
+            })
+            .png()
+            .toBuffer()
+    );
+    return renderFramed(photo, logo, caption);
 }
 
 /**

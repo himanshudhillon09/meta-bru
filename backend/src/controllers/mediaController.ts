@@ -37,6 +37,8 @@ const textPreviewSchema = z.object({
     publicId: z.string().trim().min(1).max(300),
     text: z.string().max(500),
     textArea: textAreaSchema.optional(),
+    /** The Page the post is for; its logo frames the caption. */
+    connectionId: z.string().regex(/^[a-f\d]{24}$/i).optional(),
 });
 
 export async function uploadMedia(req: Request, res: Response): Promise<void> {
@@ -153,8 +155,8 @@ export async function registerVideo(req: Request, res: Response): Promise<void> 
  * data URL for the Composer preview. Nothing is uploaded.
  */
 export async function previewText(req: Request, res: Response): Promise<void> {
-    const { publicId, text, textArea } = parseBody(textPreviewSchema, req);
-    const dataUrl = await previewImageText(req.user.id, publicId, text, textArea);
+    const { publicId, text, textArea, connectionId } = parseBody(textPreviewSchema, req);
+    const dataUrl = await previewImageText(req.user.id, publicId, text, textArea, connectionId);
 
     res.json({ success: true, dataUrl });
 }

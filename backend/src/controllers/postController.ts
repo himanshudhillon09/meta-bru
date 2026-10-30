@@ -123,7 +123,8 @@ async function resolvePostMedia(
             userId,
             parsed.mediaPublicId,
             parsed.overlayText,
-            parsed.mediaTextArea
+            parsed.mediaTextArea,
+            parsed.connectionId
         );
         return {
             ...image,

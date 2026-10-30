@@ -287,7 +287,8 @@ export default function ComposerPage() {
                 const data = await mediaApi.textPreview(
                     media.publicId,
                     overlayText,
-                    media.textArea
+                    media.textArea,
+                    connectionId
                 );
                 if (!cancelled) {
                     setOverlayPreview(data.dataUrl);
@@ -309,7 +310,7 @@ export default function ComposerPage() {
             cancelled = true;
             clearTimeout(timer);
         };
-    }, [overlayActive, media, overlayText]);
+    }, [overlayActive, media, overlayText, connectionId]);
 
     // Free the last upload's object URL when leaving the Composer.
     useEffect(() => {
@@ -915,7 +916,9 @@ export default function ComposerPage() {
                                                 Text on image
                                             </div>
                                             <div className="text-[11px] text-subtle mt-0.5">
-                                                A bold line across the bottom of the photo, like a reel caption.
+                                                {media.brandConnectionId && selectedConnection?.hasBrandLogo
+                                                    ? `A bold caption in the frame, between the photo and ${selectedConnection.pageName}'s logo. The photo stays clear.`
+                                                    : 'A bold line across the bottom of the photo, like a reel caption.'}
                                             </div>
                                         </div>
                                         <button
