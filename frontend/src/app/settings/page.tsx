@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AppShell } from '@/components/AppShell';
 import { AiModelsSection } from '@/components/AiModelsSection';
-import { BrandLogoSection } from '@/components/BrandLogoSection';
+import { PagesBrandSummary } from '@/components/PagesBrandSummary';
 import { Modal } from '@/components/Modal';
 import { PasswordChangeForm } from '@/components/PasswordChangeForm';
 import { PasswordInput } from '@/components/PasswordInput';
@@ -154,10 +154,6 @@ export default function SettingsPage() {
     const [email, setEmail] = useState('');
     const [currentPassword, setCurrentPassword] = useState('');
     const [timezone, setTimezone] = useState('Asia/Kolkata');
-    const [niche, setNiche] = useState('');
-    const [tone, setTone] = useState('');
-    const [audience, setAudience] = useState('');
-    const [keywords, setKeywords] = useState('');
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
     const [notice, setNotice] = useState('');
@@ -195,10 +191,6 @@ export default function SettingsPage() {
         setName(user.name || '');
         setEmail(user.email || '');
         setTimezone(user.timezone || 'Asia/Kolkata');
-        setNiche(user.brandProfile?.niche || '');
-        setTone(user.brandProfile?.tone || '');
-        setAudience(user.brandProfile?.audience || '');
-        setKeywords(user.brandProfile?.keywords || '');
     }, [user]);
 
     useEffect(() => {
@@ -303,7 +295,6 @@ export default function SettingsPage() {
                 email,
                 ...(emailChanged ? { currentPassword } : {}),
                 timezone,
-                brandProfile: { niche, tone, audience, keywords },
             });
             if (data.success) {
                 updateUser(data.user);
@@ -533,7 +524,7 @@ export default function SettingsPage() {
     return (
         <AppShell
             title="Profile & credentials"
-            subtitle="Your account, brand context, and the integrations that belong only to you."
+            subtitle="Your account and the integrations that belong only to you. Logos and brand voice live on each Page."
         >
             {notice ? (
                 <div className="animate-fade-up mb-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-300">
@@ -640,66 +631,8 @@ export default function SettingsPage() {
                     </div>
                 </section>
 
-                <section className="rounded-2xl border border-line bg-surface p-6 sm:p-8 shadow-card">
-                    <h2 className="text-lg font-bold text-fg">Brand profile</h2>
-                    <p className="text-sm text-muted mt-1 mb-6">
-                        Gemini uses this to write captions that sound like your
-                        brand.
-                    </p>
-
-                    <div className="space-y-5">
-                        <div>
-                            <FieldLabel>Niche</FieldLabel>
-                            <input
-                                value={niche}
-                                onChange={(event) => setNiche(event.target.value)}
-                                placeholder="e.g. sustainable fashion, local bakery, fitness coaching"
-                                className={inputClass}
-                            />
-                        </div>
-
-                        <div>
-                            <FieldLabel>Tone</FieldLabel>
-                            <input
-                                value={tone}
-                                onChange={(event) => setTone(event.target.value)}
-                                placeholder="e.g. warm, bold, playful, professional"
-                                className={inputClass}
-                            />
-                        </div>
-
-                        <div>
-                            <FieldLabel>Audience</FieldLabel>
-                            <input
-                                value={audience}
-                                onChange={(event) => setAudience(event.target.value)}
-                                placeholder="Who are you talking to?"
-                                className={inputClass}
-                            />
-                        </div>
-
-                        <div>
-                            <FieldLabel>Keywords</FieldLabel>
-                            <input
-                                value={keywords}
-                                onChange={(event) => setKeywords(event.target.value)}
-                                placeholder="Words or phrases to include naturally"
-                                className={inputClass}
-                            />
-                        </div>
-                    </div>
-
-                    <button
-                        type="submit"
-                        disabled={saving}
-                        className="mt-7 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white px-6 py-3 rounded-xl text-sm font-bold transition-all"
-                    >
-                        {saving ? 'Saving...' : 'Save brand profile'}
-                    </button>
-                </section>
+                <PagesBrandSummary />
             </form>
-
-            <BrandLogoSection onNotice={setNotice} onError={setError} />
 
             <AiModelsSection onNotice={setNotice} onError={setError} />
 

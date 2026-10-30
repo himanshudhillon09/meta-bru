@@ -438,6 +438,7 @@ export default function ConnectionsPage() {
                             onUpdated={updateConnection}
                             onDisconnected={disconnectConnection}
                             onReconnect={() => setGuideOpen(true)}
+                            onBrandChanged={mergeConnection}
                         />
                     ))}
                 </div>

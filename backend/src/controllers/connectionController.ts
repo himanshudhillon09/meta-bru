@@ -11,6 +11,7 @@ import {
     shouldRecomputeScheduleOnReconnect,
     STALE_LOCK_MS,
 } from '../services/connectionLifecycleService.js';
+import { moveLegacyBranding } from '../services/pageBrandService.js';
 import { getMetaCredentials } from '../services/credentialService.js';
 import { encryptSecret } from '../services/cryptoService.js';
 import {
@@ -49,6 +50,15 @@ const updateConnectionSchema = z.object({
     publishToFacebook: z.boolean().optional(),
     publishToInstagram: z.boolean().optional(),
     isActive: z.boolean().optional(),
+    /** The Page's brand voice for AI captions, image text, and analysis. */
+    brandProfile: z
+        .object({
+            niche: z.string().trim().max(200).optional(),
+            tone: z.string().trim().max(200).optional(),
+            audience: z.string().trim().max(300).optional(),
+            keywords: z.string().trim().max(500).optional(),
+        })
+        .optional(),
 });
 
 async function findOwnedConnection(id: string, userId: string) {
@@ -73,10 +83,22 @@ function connectionResponse(
 ): Record<string, unknown> {
     const safe = connection.toObject() as Record<string, unknown>;
     delete safe.pageAccessTokenEnc;
-    return { ...safe, queuedCount };
+    // The logo itself is only sent from its own endpoint; lists get a thumbnail.
+    const logo = safe.brandLogo as { updatedAt?: Date | null; thumb?: string } | null | undefined;
+    delete safe.brandLogo;
+    return {
+        ...safe,
+        hasBrandLogo: Boolean(logo?.updatedAt),
+        logoThumb: logo?.thumb || '',
+        queuedCount,
+    };
 }
 
 export async function listConnections(req: Request, res: Response): Promise<void> {
+    // A failed move is retried on the next load; it never blocks the Page list.
+    await moveLegacyBranding(req.user.id).catch((error) =>
+        console.error('[branding] Could not move account branding to a Page:', error)
+    );
     const connections = await SocialConnection.find({ userId: req.user.id })
         .select('-pageAccessTokenEnc')
         .sort({ createdAt: -1 });
@@ -454,6 +476,15 @@ export async function updateConnection(req: Request, res: Response): Promise<voi
         connection.publishToInstagram = parsed.publishToInstagram;
     }
     if (parsed.isActive !== undefined) connection.isActive = parsed.isActive;
+    if (parsed.brandProfile) {
+        const current = connection.brandProfile ?? { niche: '', tone: '', audience: '', keywords: '' };
+        connection.brandProfile = {
+            niche: parsed.brandProfile.niche ?? current.niche ?? '',
+            tone: parsed.brandProfile.tone ?? current.tone ?? '',
+            audience: parsed.brandProfile.audience ?? current.audience ?? '',
+            keywords: parsed.brandProfile.keywords ?? current.keywords ?? '',
+        };
+    }
 
     if (!connection.publishToFacebook && !connection.publishToInstagram) {
         throw new AppError(

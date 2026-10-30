@@ -35,7 +35,6 @@ export default function RegisterPage() {
                         role: data.role,
                         isActive: data.isActive,
                         timezone: data.timezone,
-                        brandProfile: data.brandProfile,
                         mustChangePassword: Boolean(data.mustChangePassword),
                     });
                 } else {

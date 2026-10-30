@@ -6,6 +6,7 @@ import { AppShell } from '@/components/AppShell';
 import { StatusBadge } from '@/components/Dashboards';
 import { EmptyState, ListSkeleton } from '@/components/Feedback';
 import { Modal } from '@/components/Modal';
+import { PageFilter, activePageId, postPageId } from '@/components/PageFilter';
 import { ShareStoryButton, StoryShareNotice, useStoryShare } from '@/components/ShareStory';
 import { Tabs } from '@/components/Tabs';
 import { postsApi } from '@/lib/apiClient';
@@ -37,6 +38,8 @@ export default function ActivityPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [filter, setFilter] = useState<FilterKey>('all');
+    const [chosenPageId, setPageId] = useState('');
+    const pageId = activePageId(posts, chosenPageId);
     const [notice, setNotice] = useState('');
     const [deleteTarget, setDeleteTarget] = useState<Post | null>(null);
     const [deletingId, setDeletingId] = useState('');
@@ -76,6 +79,7 @@ export default function ActivityPage() {
     }, []);
 
     const visible = posts.filter((post) => {
+        if (pageId && postPageId(post) !== pageId) return false;
         if (filter === 'published') {
             return post.status === 'published' || post.status === 'partial';
         }
@@ -111,14 +115,19 @@ export default function ActivityPage() {
         setError('');
         setNotice('');
         try {
-            const data = await postsApi.clearActivity(filter);
+            const data = await postsApi.clearActivity(filter, pageId);
             const statuses =
                 filter === 'published'
                     ? ['published', 'partial']
                     : filter === 'failed'
                       ? ['failed', 'partial']
                       : ['published', 'partial', 'failed'];
-            setPosts((current) => current.filter((post) => !statuses.includes(post.status)));
+            setPosts((current) =>
+                current.filter(
+                    (post) =>
+                        !statuses.includes(post.status) || (pageId !== '' && postPageId(post) !== pageId)
+                )
+            );
             setNotice(
                 `Deleted ${data.deleted} post${data.deleted === 1 ? '' : 's'} from Meta-Bru` +
                     (data.mediaDeleted > 0
@@ -164,13 +173,10 @@ export default function ActivityPage() {
             ) : null}
             <StoryShareNotice outcome={story.outcome} onDismiss={story.clearOutcome} />
 
-            <Tabs
-                label="Activity filter"
-                items={FILTERS}
-                value={filter}
-                onChange={setFilter}
-                className="mb-7"
-            />
+            <div className="mb-7 flex flex-wrap items-center justify-between gap-3">
+                <Tabs label="Activity filter" items={FILTERS} value={filter} onChange={setFilter} />
+                <PageFilter posts={posts} value={pageId} onChange={setPageId} />
+            </div>
 
             {loading ? (
                 <ListSkeleton />
@@ -181,7 +187,7 @@ export default function ActivityPage() {
                     body="Published and failed posts will appear here."
                 />
             ) : (
-                <div key={filter} className="stagger space-y-4">
+                <div key={`${filter}-${pageId}`} className="stagger space-y-4">
                     {visible.map((post) => (
                         <article
                             key={post._id}
@@ -318,7 +324,9 @@ export default function ActivityPage() {
                 onClose={() => setClearOpen(false)}
                 onConfirm={() => void clearAll()}
                 title={`Delete ${visible.length} post${visible.length === 1 ? '' : 's'} from Meta-Bru?`}
-                message={`Every post in ${filter === 'all' ? 'Activity' : `the ${filterLabel} filter`} is removed from Activity, Queue, Overview, and Analytics, with Cloudinary files no other post uses. The posts stay live on Facebook and Instagram. This cannot be undone.`}
+                message={`Every post in ${filter === 'all' ? 'Activity' : `the ${filterLabel} filter`}${
+                    pageId ? ' for this Page' : ''
+                } is removed from Activity, Queue, Overview, and Analytics, with Cloudinary files no other post uses. The posts stay live on Facebook and Instagram. This cannot be undone.`}
                 confirmText={`Delete ${visible.length}`}
                 type="danger"
             />

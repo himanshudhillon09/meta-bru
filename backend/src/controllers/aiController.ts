@@ -6,6 +6,7 @@ import {
     generateOverlayText,
     listGeminiModels,
 } from '../services/aiService.js';
+import { getPageBrandProfile } from '../services/pageBrandService.js';
 import { AppError } from '../utils/errors.js';
 import { parseBody } from '../utils/validation.js';
 
@@ -17,6 +18,8 @@ const captionSchema = z.object({
 });
 
 const overlayTextSchema = z.object({
+    /** The Page whose brand voice the text should match. */
+    connectionId: z.string().optional(),
     topic: z.string().trim().max(500).optional(),
     caption: z.string().trim().max(2200).optional(),
     prompt: z.string().trim().max(1_000).optional(),
@@ -24,6 +27,8 @@ const overlayTextSchema = z.object({
 
 const imageSchema = z.object({
     prompt: z.string().trim().min(3, 'Describe the image you want').max(1_000),
+    /** The Page whose logo frames the image. */
+    connectionId: z.string().optional(),
 });
 
 /** The user's chosen model for a feature, or nothing for the deployment default. */
@@ -38,7 +43,7 @@ export async function draftCaption(req: Request, res: Response): Promise<void> {
     const caption = await generateCaption(req.user.id, {
         ...(parsed.topic ? { topic: parsed.topic } : {}),
         platform: parsed.platform,
-        brandProfile: req.user.brandProfile || {},
+        brandProfile: await getPageBrandProfile(req.user.id, parsed.connectionId),
         ...(parsed.mediaPublicId ? { mediaPublicId: parsed.mediaPublicId } : {}),
         ...(chosenModel(req, 'text') ? { model: chosenModel(req, 'text') } : {}),
     });
@@ -51,7 +56,8 @@ export async function createAiImage(req: Request, res: Response): Promise<void> 
     const { media, source } = await generateImage(
         req.user.id,
         parsed.prompt,
-        chosenModel(req, 'image')
+        chosenModel(req, 'image'),
+        parsed.connectionId || null
     );
 
     res.status(201).json({ success: true, media, source });
@@ -71,7 +77,7 @@ export async function draftOverlayText(req: Request, res: Response): Promise<voi
         ...(parsed.topic ? { topic: parsed.topic } : {}),
         ...(parsed.caption ? { caption: parsed.caption } : {}),
         ...(parsed.prompt ? { prompt: parsed.prompt } : {}),
-        brandProfile: req.user.brandProfile || {},
+        brandProfile: await getPageBrandProfile(req.user.id, parsed.connectionId),
         ...(chosenModel(req, 'text') ? { model: chosenModel(req, 'text') } : {}),
     });
 

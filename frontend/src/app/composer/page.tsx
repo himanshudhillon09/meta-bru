@@ -7,11 +7,13 @@ import { AppShell } from '@/components/AppShell';
 import {
     ImageCropper,
     isUntouchedCrop,
+    renderCropFromSource,
     UNTOUCHED_CROP,
     type CropResult,
     type CropState,
 } from '@/components/ImageCropper';
 import { AiLabelToggle, useAiLabelPreference } from '@/components/AiLabelToggle';
+import { PageAvatar } from '@/components/PageBrandPanel';
 import { ShareToStoryToggle } from '@/components/ShareToStoryToggle';
 import { ToggleChip } from '@/components/ToggleChip';
 import { useAuth } from '@/context/AuthContext';
@@ -386,7 +388,7 @@ export default function ComposerPage() {
         setCropError('');
         try {
             const upload = blob ?? source.file ?? (await (await fetch(source.url)).blob());
-            const data = await mediaApi.upload(upload);
+            const data = await mediaApi.upload(upload, connectionId);
             const replaced = media;
 
             setMedia(data.media);
@@ -411,6 +413,43 @@ export default function ComposerPage() {
         setMedia(null);
     };
 
+    // The Page whose logo should frame images; empty when it has none.
+    const frameFor = (connection: SocialConnection | undefined) =>
+        connection?.hasBrandLogo ? connection._id : '';
+
+    // The image keeps the logo frame of the Page it was made for. Switching
+    // to a Page with a different logo (or none) re-frames the original picture.
+    const frameMismatch =
+        Boolean(media) &&
+        media?.brandConnectionId !== undefined &&
+        media.brandConnectionId !== frameFor(selectedConnection);
+
+    const reframeFor = async (target: SocialConnection) => {
+        if (!imageSource || !media) return;
+        setUploading(true);
+        setError('');
+        try {
+            const blob = isUntouchedCrop(imageSource.crop)
+                ? (imageSource.file ?? (await (await fetch(imageSource.url)).blob()))
+                : await renderCropFromSource(imageSource.url, imageSource.crop, Boolean(target.hasBrandLogo));
+            const data = await mediaApi.upload(blob, target._id);
+            const replaced = media;
+            setMedia(data.media);
+            if (replaced.publicId !== data.media.publicId) {
+                void mediaApi.discard(replaced.publicId).catch(() => undefined);
+            }
+            setNotice(
+                target.hasBrandLogo
+                    ? `Re-framed the image with ${target.pageName}'s logo.`
+                    : `${target.pageName} has no logo, so the image is now unframed.`
+            );
+        } catch (err) {
+            setError(typeof err === 'string' ? err : 'Could not re-frame the image for this Page');
+        } finally {
+            setUploading(false);
+        }
+    };
+
     const draftCaption = async () => {
         setDrafting(true);
         setError('');
@@ -419,6 +458,7 @@ export default function ComposerPage() {
                 ...(topic ? { topic } : {}),
                 platform: facebook && instagram ? 'both' : instagram ? 'instagram' : 'facebook',
                 ...(media?.publicId ? { mediaPublicId: media.publicId } : {}),
+                ...(connectionId ? { connectionId } : {}),
             });
             setCaption(data.caption || '');
         } catch (err: any) {
@@ -444,7 +484,10 @@ export default function ComposerPage() {
         setWritingOverlay(true);
         setOverlayError('');
         try {
-            const data = await aiApi.overlayText(request);
+            const data = await aiApi.overlayText({
+                ...request,
+                ...(connectionId ? { connectionId } : {}),
+            });
             setOverlayText(data.text.slice(0, OVERLAY_MAX_CHARS));
         } catch (err: any) {
             setOverlayError(typeof err === 'string' ? err : 'AI could not write the text');
@@ -462,7 +505,7 @@ export default function ComposerPage() {
         setGeneratingImage(true);
         setError('');
         try {
-            const data = await aiApi.image({ prompt });
+            const data = await aiApi.image({ prompt, ...(connectionId ? { connectionId } : {}) });
             setMedia(data.media);
             releaseSource(imageSource);
             setImageSource(data.source ? { url: data.source, crop: UNTOUCHED_CROP } : null);
@@ -627,7 +670,16 @@ export default function ComposerPage() {
                                     const connection = connections.find(
                                         (item) => item._id === event.target.value
                                     );
-                                    if (connection) selectConnection(connection);
+                                    if (!connection) return;
+                                    selectConnection(connection);
+                                    if (
+                                        media &&
+                                        imageSource &&
+                                        media.brandConnectionId !== undefined &&
+                                        media.brandConnectionId !== frameFor(connection)
+                                    ) {
+                                        void reframeFor(connection);
+                                    }
                                 }}
                                 className="mt-2 w-full bg-surface-2 border border-line-strong rounded-xl px-4 py-3.5 text-fg focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
                             >
@@ -714,10 +766,11 @@ export default function ComposerPage() {
                                 </button>
                             </div>
                             <p className="text-xs text-subtle mt-2">
-                                AI uses the uploaded image when present, plus your
-                                brand profile from{' '}
-                                <Link href="/settings" className="text-indigo-700 dark:text-indigo-400">
-                                    Profile
+                                AI uses the uploaded image when present, plus{' '}
+                                {selectedConnection ? `${selectedConnection.pageName}'s` : 'the chosen Page’s'} brand
+                                voice from{' '}
+                                <Link href="/connections" className="text-indigo-700 dark:text-indigo-400">
+                                    Connections
                                 </Link>
                                 .
                             </p>
@@ -748,8 +801,8 @@ export default function ComposerPage() {
                                     </div>
                                     <div className="text-[11px] text-subtle mt-2">
                                         Crop, zoom, and position it before it uploads
-                                        {user?.hasBrandLogo
-                                            ? '. Framed with your logo'
+                                        {selectedConnection?.hasBrandLogo
+                                            ? `. Framed with ${selectedConnection.pageName}'s logo`
                                             : ''}
                                         .
                                     </div>
@@ -793,13 +846,36 @@ export default function ComposerPage() {
                                             {media.publicId}
                                         </div>
                                         <div className="text-[11px] text-subtle mt-1">
-                                            {user?.hasBrandLogo ? (
-                                                'Feed-sized with your logo frame.'
+                                            {frameMismatch ? (
+                                                <span className="text-amber-700 dark:text-amber-300">
+                                                    {media.brandConnectionId
+                                                        ? 'Framed with another Page’s logo.'
+                                                        : 'Not framed with this Page’s logo yet.'}{' '}
+                                                    {imageSource ? (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() =>
+                                                                selectedConnection && void reframeFor(selectedConnection)
+                                                            }
+                                                            disabled={uploading || !selectedConnection}
+                                                            className="font-bold underline"
+                                                        >
+                                                            Re-frame for {selectedConnection?.pageName}
+                                                        </button>
+                                                    ) : (
+                                                        'Upload it again to use this Page\'s logo.'
+                                                    )}
+                                                </span>
+                                            ) : selectedConnection?.hasBrandLogo ? (
+                                                <span className="inline-flex items-center gap-1.5">
+                                                    <PageAvatar connection={selectedConnection} size="sm" />
+                                                    Framed with {selectedConnection.pageName}&apos;s logo.
+                                                </span>
                                             ) : (
                                                 <>
                                                     Feed-sized for Instagram and Facebook.{' '}
-                                                    <Link href="/settings" className="text-indigo-700 dark:text-indigo-400">
-                                                        Add a logo
+                                                    <Link href="/connections" className="text-indigo-700 dark:text-indigo-400">
+                                                        Add a logo to {selectedConnection?.pageName || 'this Page'}
                                                     </Link>{' '}
                                                     to frame new posts.
                                                 </>
@@ -932,9 +1008,16 @@ export default function ComposerPage() {
                         </div>
                         <div className="rounded-2xl overflow-hidden border border-line-strong bg-canvas">
                             <div className="flex items-center gap-3 px-4 py-3 border-b border-line">
-                                <div className="w-9 h-9 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-sm font-bold text-indigo-700 dark:text-indigo-300">
-                                    {selectedConnection?.pageName[0]?.toUpperCase() || 'P'}
-                                </div>
+                                {selectedConnection?.logoThumb ? (
+                                    <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-line bg-white">
+                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                        <img src={selectedConnection.logoThumb} alt="" className="h-full w-full object-contain p-0.5" />
+                                    </span>
+                                ) : (
+                                    <div className="w-9 h-9 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-sm font-bold text-indigo-700 dark:text-indigo-300">
+                                        {selectedConnection?.pageName[0]?.toUpperCase() || 'P'}
+                                    </div>
+                                )}
                                 <div>
                                     <div className="text-sm font-bold text-fg">
                                         {selectedConnection?.pageName || 'Your Page'}
@@ -991,9 +1074,24 @@ export default function ComposerPage() {
                                 </div>
                             </div>
                         </div>
-                        {user?.brandProfile?.niche ? (
+                        {selectedConnection ? (
                             <div className="mt-4 text-[11px] text-subtle">
-                                Brand niche: {user.brandProfile.niche}
+                                {selectedConnection.brandProfile?.niche ? (
+                                    <>
+                                        Brand voice: {selectedConnection.brandProfile.niche}
+                                        {selectedConnection.brandProfile.tone
+                                            ? ` · ${selectedConnection.brandProfile.tone}`
+                                            : ''}
+                                    </>
+                                ) : (
+                                    <>
+                                        {selectedConnection.pageName} has no brand voice yet.{' '}
+                                        <Link href="/connections" className="text-indigo-700 dark:text-indigo-400">
+                                            Add one
+                                        </Link>{' '}
+                                        so AI captions sound like this Page.
+                                    </>
+                                )}
                             </div>
                         ) : null}
                     </aside>
@@ -1001,7 +1099,7 @@ export default function ComposerPage() {
 
                 <ImageCropper
                     src={cropping?.source.url ?? null}
-                    framed={Boolean(user?.hasBrandLogo)}
+                    framed={Boolean(selectedConnection?.hasBrandLogo)}
                     initial={cropping?.mode === 'adjust' ? cropping.source.crop : null}
                     busy={uploading}
                     error={cropError}

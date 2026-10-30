@@ -27,7 +27,7 @@ const iconProps = {
 const FEATURES: Feature[] = [
     {
         title: 'AI captions and images',
-        body: 'Gemini drafts captions from your topic or photo and creates images that match your brand profile.',
+        body: 'Gemini drafts captions from your topic or photo and creates images that match each Page’s brand voice and logo.',
         tint: 'bg-violet-50 text-violet-600 dark:bg-violet-500/15 dark:text-violet-300',
         icon: (
             <svg {...iconProps}>

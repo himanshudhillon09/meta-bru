@@ -61,10 +61,11 @@ const userSchema = new mongoose.Schema({
         monthlyRequests: { type: Number, default: null, min: 0 }
     },
     /**
-     * Normalised PNG logo embedded in the frame of every new post image.
-     * Stored here rather than in Cloudinary so the storage manager can never
-     * list it as an unused asset. The bytes are only selected when needed.
+     * Legacy account-wide branding. Logos and brand profiles now live on each
+     * Page; moveLegacyBranding copies these to the first Page once, then sets
+     * brandMovedAt and removes the logo here.
      */
+    brandMovedAt: { type: Date, default: null },
     brandLogo: {
         data: { type: Buffer, select: false },
         width: { type: Number, default: 0 },

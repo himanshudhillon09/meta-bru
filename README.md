@@ -18,8 +18,13 @@ Page and linked Instagram Business account.
 - Crop editor in the Composer: pick a shape (original, tall 4:5, square, or
   wide), then zoom and drag uploads and AI images into place before they are
   framed
-- Optional brand logo under Profile: new post images get a frame that matches
-  the photo, with the logo centred in the bottom border
+- Per-Page branding under **Connections → Brand & logo**: each Page has its
+  own optional logo and brand voice (niche, tone, audience, keywords). New post
+  images get a frame that matches the photo, with that Page's logo centred in
+  the bottom border; AI captions, image text, and AI analysis follow that
+  Page's voice. Switching Pages in the Composer re-frames the image with the
+  new Page's logo. Profile keeps only account settings and credentials
+- Page filter on Queue and Activity once posts come from more than one Page
 - Reels: MP4 or MOV videos upload straight from the browser to the user's own
   Cloudinary account, then publish to Facebook Reels (3–90 seconds) and
   Instagram Reels (up to 15 minutes) from the same queue as image posts
@@ -47,7 +52,8 @@ Page and linked Instagram Business account.
 - Per-connection daily time and IANA timezone
 - FIFO queue with one automatic publish per connection per day
 - Immediate **Post now** and **Retry failed** actions
-- Gemini caption drafting and Imagen image generation, guided by a brand profile
+- Gemini caption drafting and Imagen image generation, guided by each Page's
+  brand voice
 - Facebook + Instagram publishing, per-platform status and errors
 - Editable profile email and self-service password changes with other-session
   sign-out
@@ -156,9 +162,14 @@ curl http://localhost:5001/api/health
 3. Save the Cloudinary cloud name, API key, and API secret. Uploads go under
    `meta-bru/<userId>` in that Cloudinary account.
 4. Save a Gemini API key for caption and image generation.
-5. Optionally upload a logo under **Profile → Post branding**. A PNG with a
-   transparent background works best. Without a logo, images are only resized.
-6. Open **Connections** and connect a Facebook Page through Meta OAuth.
+5. Open **Connections** and connect a Facebook Page through Meta OAuth.
+6. Optionally open the Page's **Brand & logo** tab to upload its logo and set
+   its brand voice. A PNG with a transparent background works best. Without a
+   logo, that Page's images are only resized.
+
+A logo and brand profile saved under Profile before branding moved to Pages
+is copied to the first Page that was connected, the next time Connections
+loads. Other Pages start with no logo.
 
 Changing or removing the Meta app credentials marks that user's existing Page
 connections as **Reconnect needed**. Changing Cloudinary or Gemini credentials

@@ -13,6 +13,28 @@ export interface IInstagramAccount {
 
 export type ConnectionTokenStatus = 'active' | 'needs_reauth' | 'disconnected';
 
+/** The Page's brand voice, used by every AI feature for its posts. */
+export interface IPageBrandProfile {
+    niche: string;
+    tone: string;
+    audience: string;
+    keywords: string;
+}
+
+/**
+ * The Page's logo for the post frame, stored on the Page rather than in
+ * Cloudinary so the storage manager never lists it. The bytes are only
+ * selected when needed; `thumb` is a small data URL for avatars.
+ */
+export interface IPageBrandLogo {
+    data?: Buffer;
+    width: number;
+    height: number;
+    bytes: number;
+    updatedAt: Date | null;
+    thumb: string;
+}
+
 export interface ISocialConnection extends mongoose.Document {
     userId: mongoose.Types.ObjectId;
     pageId: string;
@@ -34,6 +56,8 @@ export interface ISocialConnection extends mongoose.Document {
     tokenUpdatedAt: Date | null;
     /** App permissions Meta reported as granted at that login. Empty when unknown. */
     grantedScopes: string[];
+    brandProfile: IPageBrandProfile;
+    brandLogo: IPageBrandLogo | null;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -88,6 +112,20 @@ const socialConnectionSchema = new mongoose.Schema<ISocialConnection>(
         lockedAt: { type: Date, default: null },
         tokenUpdatedAt: { type: Date, default: null },
         grantedScopes: { type: [String], default: [] },
+        brandProfile: {
+            niche: { type: String, default: '' },
+            tone: { type: String, default: '' },
+            audience: { type: String, default: '' },
+            keywords: { type: String, default: '' },
+        },
+        brandLogo: {
+            data: { type: Buffer, select: false },
+            width: { type: Number, default: 0 },
+            height: { type: Number, default: 0 },
+            bytes: { type: Number, default: 0 },
+            updatedAt: { type: Date, default: null },
+            thumb: { type: String, default: '' },
+        },
     },
     { timestamps: true }
 );

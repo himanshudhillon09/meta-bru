@@ -3,6 +3,8 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Modal } from '@/components/Modal';
+import { PageAvatar, PageBrandPanel } from '@/components/PageBrandPanel';
+import { Tabs } from '@/components/Tabs';
 import { ToggleChip } from '@/components/ToggleChip';
 import { connectionsApi } from '@/lib/apiClient';
 import {
@@ -22,14 +24,25 @@ interface ConnectionCardProps {
     onDisconnected: (connection: SocialConnection) => void;
     /** Opens the shared Meta login guide; one login refreshes every Page. */
     onReconnect: () => void;
+    /** A new logo or brand voice; updates the list without a "saved" banner. */
+    onBrandChanged: (connection: SocialConnection) => void;
 }
+
+const VIEWS = [
+    { key: 'schedule', label: 'Schedule' },
+    { key: 'brand', label: 'Brand & logo' },
+] as const;
+
+type ViewKey = (typeof VIEWS)[number]['key'];
 
 export function ConnectionCard({
     connection,
     onUpdated,
     onDisconnected,
     onReconnect,
+    onBrandChanged,
 }: ConnectionCardProps) {
+    const [view, setView] = useState<ViewKey>('schedule');
     const [times, setTimes] = useState<string[]>(connection.dailyTimes);
     const [facebook, setFacebook] = useState(connection.publishToFacebook);
     const [instagram, setInstagram] = useState(connection.publishToInstagram);
@@ -101,9 +114,7 @@ export function ConnectionCard({
 
             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                 <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-2xl bg-indigo-500/15 border border-indigo-500/20 flex items-center justify-center text-lg font-bold text-indigo-700 dark:text-indigo-300">
-                        {connection.pageName[0]?.toUpperCase() || 'P'}
-                    </div>
+                    <PageAvatar connection={connection} />
                     <div>
                         <h3 className="font-bold text-fg">{connection.pageName}</h3>
                         <div className="text-xs text-subtle mt-0.5">
@@ -137,6 +148,17 @@ export function ConnectionCard({
                             <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border border-indigo-500/20">
                                 {queuedLabel}
                             </span>
+                            <button
+                                type="button"
+                                onClick={() => setView('brand')}
+                                className={`text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full border ${
+                                    connection.hasBrandLogo
+                                        ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20'
+                                        : 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20'
+                                }`}
+                            >
+                                {connection.hasBrandLogo ? 'Logo frame on' : 'No logo yet'}
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -194,7 +216,22 @@ export function ConnectionCard({
                 </div>
             ) : null}
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 mt-7">
+            <Tabs
+                label={`${connection.pageName} settings`}
+                variant="segmented"
+                items={VIEWS}
+                value={view}
+                onChange={setView}
+                className="mt-6"
+            />
+
+            {view === 'brand' ? (
+                <div className="mt-5 animate-fade-in">
+                    <PageBrandPanel connection={connection} onChange={onBrandChanged} />
+                </div>
+            ) : (
+            <div className="animate-fade-in">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 mt-5">
                 <div className="sm:col-span-2">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                         <label
@@ -342,6 +379,8 @@ export function ConnectionCard({
                     {saving ? 'Saving...' : 'Save changes'}
                 </button>
             </div>
+            </div>
+            )}
 
             {error ? <div className="mt-4 text-xs text-rose-700 dark:text-rose-400">{error}</div> : null}
         </div>
