@@ -12,6 +12,12 @@ import {
     getGeminiCredentials,
 } from './credentialService.js';
 import { recordGeminiCall } from './geminiUsageService.js';
+import {
+    CAPTION_RULES,
+    HASHTAG_RULE,
+    OVERLAY_RULES,
+    platformNote,
+} from './promptGuides.js';
 import { cleanOverlayText } from './textOverlayService.js';
 
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
@@ -209,13 +215,16 @@ export function extractInlineImage(
     };
 }
 
+/**
+ * A few targeted hashtags reach further than many broad ones, and Instagram
+ * is rolling out a 5-hashtag limit per post.
+ */
 export function hashtagRange(platform: CaptionInput['platform']): {
     min: number;
     max: number;
 } {
-    if (platform === 'instagram') return { min: 8, max: 12 };
-    if (platform === 'facebook') return { min: 3, max: 5 };
-    return { min: 6, max: 8 };
+    if (platform === 'facebook') return { min: 1, max: 3 };
+    return { min: 3, max: 5 };
 }
 
 function normalizeHashtags(values: unknown[], max: number): string[] {
@@ -398,40 +407,39 @@ export function finishCaption(
 
 export function buildCaptionPrompt(input: CaptionInput): string {
     const profile = input.brandProfile || {};
+    const { min, max } = hashtagRange(input.platform);
     const parts = [
-        'You are a senior social media copywriter.',
-        'Write exactly one ready-to-publish caption. Do not include markdown or commentary inside the caption.',
-        `Platform: ${input.platform === 'both' ? 'Facebook and Instagram' : input.platform}.`,
+        "You write ready-to-publish captions that grow a brand's Facebook Page and Instagram account.",
+        ...CAPTION_RULES,
+        platformNote(input.platform),
+        HASHTAG_RULE,
+        '',
     ];
 
-    if (profile.niche) parts.push(`Brand niche: ${profile.niche}.`);
-    if (profile.tone) parts.push(`Brand tone: ${profile.tone}.`);
-    if (profile.audience) parts.push(`Target audience: ${profile.audience}.`);
-    if (profile.keywords) parts.push(`Keywords to naturally include: ${profile.keywords}.`);
-    if (input.topic) parts.push(`Post topic: ${input.topic}.`);
+    if (profile.niche) parts.push(`Brand niche: ${profile.niche}`);
+    if (profile.tone) parts.push(`Brand voice: ${profile.tone}`);
+    if (profile.audience) parts.push(`Audience: ${profile.audience}`);
+    if (profile.keywords) parts.push(`Keywords to work in naturally: ${profile.keywords}`);
+    parts.push(
+        input.topic
+            ? `Post topic: ${input.topic}`
+            : 'No topic was given; write from the image and brand details.'
+    );
 
     if (input.mediaPublicId) {
         parts.push(
-            'The attached image is the exact image that will be published with this caption.',
-            'Use the image as the primary source: reference its subject, setting, and mood naturally.',
-            'Before writing, identify the main subject, setting, mood, and any visible product or brand details in the image.',
-            'Do not say "in this image" or refer to the image itself. Do not invent details that are not visible.'
+            'The attached image is exactly what will be published with this caption. Build the caption on what is really in it: subject, setting, mood, and any visible product. Never say "this image" or describe it like alt text, and never invent details that are not visible.'
         );
     }
 
-    const { min, max } = hashtagRange(input.platform);
-
     parts.push(
-        `Keep it engaging and specific. Use short paragraphs. Add ${min}-${max} currently popular or trending hashtags under HASHTAGS.`,
-        'Choose hashtags from the image subject, setting, mood, post topic, and brand niche. Mix broad and specific tags.',
-        'Do not use unrelated generic hashtags. Every hashtag must genuinely fit the image or topic.',
-        'Stay under 2,000 characters. Never invent prices, dates, or claims that were not provided.',
-        'Return the result in exactly this format:',
+        '',
+        `Write exactly one caption and ${min} to ${max} hashtags, in exactly this format:`,
         'CAPTION:',
-        '<caption text>',
+        '<caption text, no hashtags>',
         'HASHTAGS:',
         '<space-separated hashtags>',
-        'Do not use JSON, markdown, or code fences.'
+        'Do not use JSON, markdown, code fences, or any commentary.'
     );
 
     return parts.join('\n');
@@ -740,17 +748,10 @@ export interface OverlayTextInput {
 
 export function buildOverlayPrompt(input: OverlayTextInput): string {
     const profile = input.brandProfile || {};
-    const parts = [
-        'You write the short line printed in big bold letters on a social media image, like a reel or meme caption.',
-        'Write exactly one line of at most 12 words and 80 characters.',
-        'Use the same language and style as the post caption and topic. For Hindi or Hinglish, write Hinglish in Roman (English) letters, never Devanagari.',
-        'Make it punchy, relatable, and specific to this post.',
-        'Wrap the 1 to 3 most important words in *asterisks*, for example: Real life wali bandi *ko* pata chal gaya',
-        'No hashtags, no emojis, no quotation marks, and no full stop at the end. Return only the line.',
-    ];
+    const parts = [...OVERLAY_RULES, 'Return only the line.', ''];
 
     if (profile.niche) parts.push(`Brand niche: ${profile.niche}.`);
-    if (profile.tone) parts.push(`Brand tone: ${profile.tone}.`);
+    if (profile.tone) parts.push(`Brand voice: ${profile.tone}.`);
     if (profile.audience) parts.push(`Target audience: ${profile.audience}.`);
     if (input.topic) parts.push(`Post topic: ${input.topic}`);
     if (input.caption) parts.push(`Post caption: ${input.caption}`);

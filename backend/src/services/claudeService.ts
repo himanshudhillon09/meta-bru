@@ -15,6 +15,14 @@ import {
     type OverlayTextInput,
 } from './aiService.js';
 import { recordClaudeCall, type ClaudeAttempt } from './claudeUsageService.js';
+import {
+    CAPTION_RULES,
+    FACTS_RULE,
+    HASHTAG_RULE,
+    IMAGE_RULES,
+    OVERLAY_RULES,
+    platformNote,
+} from './promptGuides.js';
 import { getAnthropicCredentials } from './credentialService.js';
 
 /** Which AI writes text for a user: their Profile toggle. */
@@ -272,24 +280,11 @@ function brandLines(profile: BrandProfile | undefined): string[] {
     return lines;
 }
 
-const LANGUAGE_RULE =
-    'Write in the language of the topic and brand details. For Hindi or Hinglish, write Hinglish in Roman (English) letters, never Devanagari.';
-
 const CAPTION_SYSTEM = [
-    "You are the lead social media copywriter for a brand's Facebook Page and Instagram account. You write captions that stop the scroll and earn real engagement: saves, shares, comments, and profile visits.",
-    '',
-    'What makes a caption work:',
-    '- The first line is the hook. Instagram shows only about the first 125 characters before "more", and Facebook folds long posts too, so the first line has to earn the tap on its own: a bold claim, a surprising detail, a relatable moment, or a question the reader wants answered. Never open with the brand name, a greeting, or "Introducing".',
-    '- Then deliver on the hook with specific, concrete, sensory detail. Use short lines and short paragraphs separated by line breaks, never a wall of text.',
-    '- Sound like a person in the brand voice, not like an ad.',
-    `- ${LANGUAGE_RULE}`,
-    '- End with one natural call to action that fits the post: a question people can answer in a few words, "save this for later", or "send this to someone who...". Meta demotes engagement bait, so never ask for likes or reactions, never say "comment YES", "tag 3 friends", or "share if you agree".',
-    '- Use 0 to 3 emojis, only where they add meaning.',
-    '- Instagram rewards saves and shares and uses hashtags for discovery. Facebook rewards conversation, so a genuine question lands well there and hashtags matter less.',
-    '',
-    'Hashtags go only in the hashtags field, never in the caption. Pick tags people actually search and follow for this exact subject: one or two broad tags, several mid-size niche tags, and one or two specific ones (place, product, or community). Every tag must fit the image or topic. No spam tags such as #followforfollow or #like4like.',
-    '',
-    'Never invent prices, dates, offers, statistics, names, places, or claims that are not in the topic, the brand details, or clearly visible in the image. Keep the caption under 1,800 characters.',
+    "You write ready-to-publish captions that grow a brand's Facebook Page and Instagram account.",
+    ...CAPTION_RULES,
+    HASHTAG_RULE,
+    'Put hashtags only in the hashtags field, never in the caption.',
 ].join('\n');
 
 const captionSchema = z.object({
@@ -303,6 +298,7 @@ export async function claudeCaption(userId: string, model: string, input: Captio
         input.platform === 'both' ? 'Facebook and Instagram (the same caption goes to both)' : input.platform;
     const details = [
         `Platform: ${platform}`,
+        platformNote(input.platform),
         ...brandLines(input.brandProfile),
         input.topic ? `Post topic: ${input.topic}` : 'No topic was given; write from the image and brand details.',
         `Hashtags: ${min} to ${max}.`,
@@ -336,16 +332,7 @@ export async function claudeCaption(userId: string, model: string, input: Captio
     return caption;
 }
 
-const OVERLAY_SYSTEM = [
-    'You write the one short line printed in big bold letters across a social media image, the way viral reels and meme pages do. It is the first thing people read while scrolling, so it decides whether they stop.',
-    '',
-    'Rules:',
-    '- One line of at most 12 words and 80 characters.',
-    '- Make it a hook, not a label: a relatable thought, a bold claim, a twist, or a curiosity gap that the caption pays off. Never just describe what is in the picture.',
-    `- Match the language and style of the post. ${LANGUAGE_RULE}`,
-    '- Wrap the 1 to 3 most important words in *asterisks*; they are printed in the highlight colour. Example: Real life wali bandi *ko* pata chal gaya',
-    '- No hashtags, no emojis, no quotation marks, and no full stop at the end.',
-].join('\n');
+const OVERLAY_SYSTEM = OVERLAY_RULES.join('\n');
 
 const overlaySchema = z.object({
     line: z.string().describe('The single line of text for the image.'),
@@ -391,17 +378,14 @@ export async function claudeOverlayText(
 }
 
 const IMAGE_PROMPT_SYSTEM = [
-    'You are an art director. Turn a short brief into one detailed prompt for an image model that will draw a single square image for a Facebook and Instagram feed post. The image has to stop the scroll and look right for the brand.',
+    'You are an art director. Turn a short brief into one detailed prompt for an image model that draws a single square image for a Facebook and Instagram feed post. The image has to stop the scroll and look right for the brand.',
     '',
     'A strong feed image:',
-    '- Has one clear subject that reads instantly on a small phone screen, with strong contrast, a clean background, and vivid but natural colour.',
-    '- Shows a specific moment with real texture and light: setting, time of day, lighting, camera angle and lens, and mood. Never a generic stock scene.',
-    "- Feels authentic for the brand's audience and place: people, food, products, and places look real and culturally right.",
-    '- Keeps the subject in the upper and middle part of the frame and the bottom quarter simple, because a bold line of white text is printed across the bottom.',
-    '- Contains no text, letters, captions, logos, watermarks, or borders. Meta-Bru adds the text and the logo frame itself.',
+    ...IMAGE_RULES.map((rule) => `- ${rule}`),
     '',
     'Keep everything the brief asks for and never change its subject. Keep any style the brief names (cartoon, 3D, flat illustration, minimal); otherwise make it photorealistic.',
-    'Write the prompt as 3 to 6 plain sentences under 900 characters, with no lists, markdown, or quotation marks, and nothing but the prompt.',
+    `${FACTS_RULE} Never add a product, offer, or person the brief does not mention.`,
+    'Write the prompt as 3 to 6 plain sentences under 900 characters: subject first, then setting, light, camera, and mood. No lists, markdown, or quotation marks, and nothing but the prompt.',
 ].join('\n');
 
 const imagePromptSchema = z.object({

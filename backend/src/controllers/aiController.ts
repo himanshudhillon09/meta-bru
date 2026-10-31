@@ -16,6 +16,7 @@ import {
 } from '../services/claudeService.js';
 import { getGeminiCredentials } from '../services/credentialService.js';
 import { getPageBrandProfile } from '../services/pageBrandService.js';
+import { buildImageGenerationPrompt } from '../services/promptGuides.js';
 import { AppError } from '../utils/errors.js';
 import { parseBody } from '../utils/validation.js';
 
@@ -107,7 +108,13 @@ export async function createAiImage(req: Request, res: Response): Promise<void> 
 
     const { media, source } = await generateImage(
         req.user.id,
-        prompt,
+        // Claude's direction already follows the feed rules; a typed description gets them added.
+        directedBy
+            ? prompt
+            : buildImageGenerationPrompt(
+                  prompt,
+                  await getPageBrandProfile(req.user.id, parsed.connectionId)
+              ),
         chosenModel(req, 'image'),
         parsed.connectionId || null
     );
