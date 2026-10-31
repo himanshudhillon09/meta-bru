@@ -39,6 +39,8 @@ export interface StorageAssetBase {
     resourceType: MediaResourceType;
     /** Video length in seconds; 0 for images. */
     duration: number;
+    /** A track in the user's music library. */
+    isMusic: boolean;
     url: string;
     secureUrl: string;
     thumbnailUrl: string;
@@ -138,6 +140,7 @@ interface AssetListPage {
 interface PostUsageRecord {
     _id: unknown;
     mediaPublicId?: string;
+    photo?: { publicId?: string } | null;
     status?: PostStatus;
     caption?: string;
     publishedAt?: Date | string | null;
@@ -161,6 +164,24 @@ export type DeleteBatch = (assetIds: string[]) => Promise<unknown>;
 
 export function userFolder(userId: string): string {
     return `${FOLDER_ROOT}/${userId}`;
+}
+
+/** Where the user's own music tracks live. */
+export function musicFolder(userId: string): string {
+    return `${userFolder(userId)}/music`;
+}
+
+/** True for files in the user's music folder. */
+export function isMusicAsset(
+    asset: { publicId?: string; assetFolder?: string },
+    userId: string
+): boolean {
+    const folder = musicFolder(userId);
+    return (
+        (typeof asset.publicId === 'string' && asset.publicId.startsWith(`${folder}/`)) ||
+        asset.assetFolder === folder ||
+        (typeof asset.assetFolder === 'string' && asset.assetFolder.startsWith(`${folder}/`))
+    );
 }
 
 export function userFolderPrefix(userId: string): string {
@@ -365,6 +386,7 @@ export function normalizeAsset(
             typeof raw.asset_folder === 'string' ? raw.asset_folder : '',
         resourceType,
         duration: numberOrZero(raw.duration),
+        isMusic: false,
         url: typeof raw.url === 'string' ? raw.url : '',
         secureUrl:
             typeof raw.secure_url === 'string' ? raw.secure_url : '',
@@ -604,31 +626,46 @@ async function loadPostUsage(
 
     const posts = await Post.find({
         userId,
-        mediaPublicId: { $in: publicIds },
+        $or: [
+            { mediaPublicId: { $in: publicIds } },
+            // A photo reel still needs the image it was made from.
+            { 'photo.publicId': { $in: publicIds } },
+        ],
     })
-        .select('_id mediaPublicId status caption platforms publishedAt')
+        .select('_id mediaPublicId photo status caption platforms publishedAt')
         .lean<PostUsageRecord[]>();
 
+    const wanted = new Set(publicIds);
     for (const post of posts) {
-        const publicId =
-            typeof post.mediaPublicId === 'string' ? post.mediaPublicId : '';
-        if (!publicId || !post.status) continue;
-
-        const list = usage.get(publicId) ?? [];
-        list.push({
-            id: String(post._id),
-            status: post.status,
-            caption: typeof post.caption === 'string' ? post.caption : '',
-            publishedAt: isoOrNull(post.publishedAt),
-            platforms: {
-                facebook: Boolean(post.platforms?.facebook),
-                instagram: Boolean(post.platforms?.instagram),
-            },
-        });
-        usage.set(publicId, list);
+        for (const publicId of [post.mediaPublicId, post.photo?.publicId]) {
+            if (typeof publicId === 'string' && wanted.has(publicId)) {
+                addUsage(usage, publicId, post);
+            }
+        }
     }
 
     return usage;
+}
+
+function addUsage(
+    usage: Map<string, StoragePostUsage[]>,
+    publicId: string,
+    post: PostUsageRecord
+): void {
+    if (!post.status) return;
+
+    const list = usage.get(publicId) ?? [];
+    list.push({
+        id: String(post._id),
+        status: post.status,
+        caption: typeof post.caption === 'string' ? post.caption : '',
+        publishedAt: isoOrNull(post.publishedAt),
+        platforms: {
+            facebook: Boolean(post.platforms?.facebook),
+            instagram: Boolean(post.platforms?.instagram),
+        },
+    });
+    usage.set(publicId, list);
 }
 
 export function duplicateKeyFor(
@@ -715,10 +752,12 @@ export function applyDuplicateGroups(
             duplicateMatch: duplicate?.match ?? '',
             recommendedKeep: duplicate ? duplicate.keep : true,
             posts,
-            canDelete: !protectedPost,
-            deleteBlockedReason: protectedPost
-                ? `Used by a ${protectedPost.status} post. Publish or remove that post first.`
-                : '',
+            canDelete: !protectedPost && !asset.isMusic,
+            deleteBlockedReason: asset.isMusic
+                ? 'In your music library. Delete it from the Music picker.'
+                : protectedPost
+                  ? `Used by a ${protectedPost.status} post. Publish or remove that post first.`
+                  : '',
         };
     });
 }
@@ -797,13 +836,17 @@ async function loadOwnedAssets(
         throw asCloudinaryError(error);
     }
 
+    // Music has no picture to show; the Storage page draws a music tile.
+    const assets = listed.assets.map((asset) =>
+        isMusicAsset(asset, userId) ? { ...asset, isMusic: true, thumbnailUrl: '' } : asset
+    );
     const postUsage = await loadPostUsage(
         userId,
-        listed.assets.map((asset) => asset.publicId)
+        assets.map((asset) => asset.publicId)
     );
 
     return {
-        assets: applyDuplicateGroups(listed.assets, postUsage),
+        assets: applyDuplicateGroups(assets, postUsage),
         truncated: listed.truncated,
     };
 }
@@ -1036,7 +1079,14 @@ export async function deletePostMediaIfUnused(
     if (!publicId) return kept;
 
     try {
-        if (await Post.exists({ userId, mediaPublicId: publicId })) return kept;
+        if (
+            await Post.exists({
+                userId,
+                $or: [{ mediaPublicId: publicId }, { 'photo.publicId': publicId }],
+            })
+        ) {
+            return kept;
+        }
 
         const store = storeFor(await getCloudinaryCredentials(userId));
         const assetFolder = await store.assetFolder(publicId, resourceType);

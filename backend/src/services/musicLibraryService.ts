@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { MusicTrack, type IMusicTrack } from '../models/musicTrackModel.js';
 import { Post, type IPostMusic, type PostStatus } from '../models/postModel.js';
 import { AppError } from '../utils/errors.js';
-import { isAssetInUserFolder, userFolder } from './cloudinaryStorageService.js';
+import { isAssetInUserFolder, isMusicAsset, musicFolder } from './cloudinaryStorageService.js';
 import { getCloudinaryCredentials, type CloudinaryCredentials } from './credentialService.js';
 import { cloudinaryVideoStore, videoDuration, type VideoStore } from './videoUploadService.js';
 
@@ -19,23 +19,6 @@ export const TRACK_LIMITS = {
 
 /** Statuses whose music can still change, so their track must stay. */
 const TRACK_IN_USE_STATUSES: PostStatus[] = ['draft', 'queued', 'failed', 'publishing'];
-
-export function musicFolder(userId: string): string {
-    return `${userFolder(userId)}/music`;
-}
-
-/** True for files in the user's music folder. */
-export function isMusicAsset(
-    asset: { publicId?: string; assetFolder?: string },
-    userId: string
-): boolean {
-    const folder = musicFolder(userId);
-    return (
-        (typeof asset.publicId === 'string' && asset.publicId.startsWith(`${folder}/`)) ||
-        asset.assetFolder === folder ||
-        (typeof asset.assetFolder === 'string' && asset.assetFolder.startsWith(`${folder}/`))
-    );
-}
 
 export interface TrackUploadSignature {
     cloudName: string;

@@ -148,7 +148,7 @@ const musicSchema = new mongoose.Schema<IPostMusic>(
 
 const photoSchema = new mongoose.Schema<IPostPhoto>(
     {
-        publicId: { type: String, required: true },
+        publicId: { type: String, default: '' },
         url: { type: String, required: true },
         jpegUrl: { type: String, default: '' },
         hasTextOverlay: { type: Boolean, default: false },
