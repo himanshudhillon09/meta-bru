@@ -83,6 +83,11 @@ function pageHasInstagram(post: Post): boolean {
     return typeof post.connectionId !== 'string' && Boolean(post.connectionId?.instagram);
 }
 
+/** Reached Facebook or Instagram, so it is still live there after a delete. */
+function wentOut(post: Post): boolean {
+    return post.targets.some((target) => target.status === 'published');
+}
+
 /** Published on Facebook, its Page now has Instagram, and Instagram does not have it yet. */
 function canAddToInstagram(post: Post): boolean {
     return (
@@ -398,9 +403,12 @@ export default function ActivityPage() {
             const data = await postsApi.remove(post._id);
             setPosts((current) => current.filter((item) => item._id !== post._id));
             setNotice(
-                data.mediaDeleted
-                    ? 'Deleted from Meta-Bru, along with its Cloudinary file. It is still live on Facebook and Instagram.'
-                    : 'Deleted from Meta-Bru. It is still live on Facebook and Instagram.'
+                (data.mediaDeleted
+                    ? 'Deleted from Meta-Bru, along with its Cloudinary file.'
+                    : 'Deleted from Meta-Bru.') +
+                    (wentOut(post)
+                        ? ' It is still live, so Refresh insights on Analytics reads it back from Facebook and Instagram as posted directly.'
+                        : '')
             );
             if (data.mediaError) setError(`Could not remove its Cloudinary file: ${data.mediaError}`);
         } catch (err) {
@@ -434,7 +442,10 @@ export default function ActivityPage() {
                     (data.mediaDeleted > 0
                         ? ` and ${data.mediaDeleted} unused Cloudinary file${data.mediaDeleted === 1 ? '' : 's'}`
                         : '') +
-                    '. They are still live on Facebook and Instagram.'
+                    '.' +
+                    (filter === 'failed'
+                        ? ''
+                        : ' What went out is still live, so Refresh insights on Analytics reads it back from Facebook and Instagram as posted directly.')
             );
             if (data.mediaErrors > 0) {
                 setError(`${data.mediaErrors} Cloudinary file${data.mediaErrors === 1 ? '' : 's'} could not be removed. Clean them up from Storage.`);
@@ -720,7 +731,11 @@ export default function ActivityPage() {
                     if (deleteTarget) void remove(deleteTarget);
                 }}
                 title="Delete this post from Meta-Bru?"
-                message="It is removed from Activity, Queue, Overview, and Analytics, and its Cloudinary file is deleted when no other post uses it. The post stays live on Facebook and Instagram. This cannot be undone."
+                message={`It is removed from Activity, Queue, Overview, and Analytics, and its Cloudinary file is deleted when no other post uses it.${
+                    deleteTarget && wentOut(deleteTarget)
+                        ? ' It stays live on Facebook and Instagram, and the next Refresh insights on Analytics reads it back from there as posted directly.'
+                        : ''
+                } This cannot be undone.`}
                 confirmText="Delete"
                 type="danger"
             />
@@ -731,7 +746,11 @@ export default function ActivityPage() {
                 title={`Delete ${visible.length} post${visible.length === 1 ? '' : 's'} from Meta-Bru?`}
                 message={`Every post in ${filter === 'all' ? 'Activity' : `the ${filterLabel} filter`}${
                     pageId ? ' for this Page' : ''
-                } is removed from Activity, Queue, Overview, and Analytics, with Cloudinary files no other post uses. The posts stay live on Facebook and Instagram. This cannot be undone.`}
+                } is removed from Activity, Queue, Overview, and Analytics, with Cloudinary files no other post uses.${
+                    filter === 'failed'
+                        ? ''
+                        : ' Posts that went out stay live on Facebook and Instagram, and the next Refresh insights on Analytics reads them back from there as posted directly.'
+                } This cannot be undone.`}
                 confirmText={`Delete ${visible.length}`}
                 type="danger"
             />

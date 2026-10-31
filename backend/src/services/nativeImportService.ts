@@ -253,6 +253,36 @@ async function save(userId: string, connectionId: string, items: Found[], now: D
 }
 
 /**
+ * Posts deleted from Meta-Bru stay live on Facebook and Instagram. Moves each
+ * Page's import start back to the oldest of them, so the next insights refresh
+ * reads them again as posted directly. A Page that was never imported keeps
+ * its full first import.
+ */
+export async function rereadRemovedPosts(
+    userId: string,
+    posts: Array<Pick<IPost, 'connectionId' | 'targets' | 'publishedAt'>>
+): Promise<void> {
+    const oldest = new Map<string, Date>();
+    for (const post of posts) {
+        for (const target of post.targets ?? []) {
+            const at = target.status === 'published' ? (target.publishedAt ?? post.publishedAt) : null;
+            if (!at) continue;
+            const key = String(post.connectionId);
+            const current = oldest.get(key);
+            if (!current || at < current) oldest.set(key, at);
+        }
+    }
+    await Promise.all(
+        [...oldest].map(([connectionId, at]) =>
+            SocialConnection.updateOne(
+                { _id: connectionId, userId, nativeImportedAt: { $ne: null } } as QueryFilter<ISocialConnection>,
+                { $min: { nativeImportedAt: at } }
+            )
+        )
+    );
+}
+
+/**
  * Reads posts, reels, and Stories that were published on the user's Pages and
  * Instagram accounts outside Meta-Bru, so Analytics covers everything. Each
  * Page is read at most once an hour unless `force` is set. Failures are
