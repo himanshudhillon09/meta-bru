@@ -25,6 +25,7 @@ import {
 import { syncAnalytics } from '../services/analyticsSyncService.js';
 import { getPageBrandProfile } from '../services/pageBrandService.js';
 import { getStoryAnalytics } from '../services/storyAnalyticsService.js';
+import { importNativeContent } from '../services/nativeImportService.js';
 import { syncStoryInsights } from '../services/storySyncService.js';
 import {
     generateAnalyticsAiInsight,
@@ -41,6 +42,8 @@ const rangeQuerySchema = z
         connectionId: z.string().regex(/^[a-f\d]{24}$/i).optional(),
         platform: z.enum(['facebook', 'instagram']).optional(),
         mediaType: z.enum(['image', 'reel']).optional(),
+        /** Made in Meta-Bru, or posted directly on Facebook or Instagram. */
+        source: z.enum(['metabru', 'native']).optional(),
         userId: z.never().optional(),
     })
     .strict();
@@ -52,6 +55,8 @@ const postsQuerySchema = rangeQuerySchema.extend({
 
 const syncBodySchema = rangeQuerySchema.extend({
     mode: z.enum(['stale', 'live']).default('stale'),
+    /** The Refresh button re-reads other posts even within the hour. */
+    force: z.boolean().optional(),
 });
 
 const tipsBodySchema = rangeQuerySchema.extend({
@@ -66,6 +71,7 @@ function rangeAndFilters(input: z.infer<typeof rangeQuerySchema>) {
             ...(input.connectionId ? { connectionId: input.connectionId } : {}),
             ...(input.platform ? { platform: input.platform } : {}),
             ...(input.mediaType ? { mediaType: input.mediaType } : {}),
+            ...(input.source ? { source: input.source } : {}),
         } satisfies AnalyticsFilters,
     };
 }
@@ -187,12 +193,21 @@ export async function listPosts(req: Request, res: Response): Promise<void> {
 export async function sync(req: Request, res: Response): Promise<void> {
     const input = parseBody(syncBodySchema, req);
     const { range, filters } = rangeAndFilters(input);
+    // Read posts made outside Meta-Bru first, so their insights load in the
+    // same refresh. Live mode skips it: it polls every few minutes.
+    const imported =
+        input.mode === 'stale'
+            ? await importNativeContent(req.user!.id, {
+                  ...(filters.connectionId ? { connectionId: filters.connectionId } : {}),
+                  force: input.force === true,
+              })
+            : null;
     const [data, stories] = await Promise.all([
         syncAnalytics(req.user!.id, range, filters, input.mode),
         // Live Stories are refreshed too, inside Meta's 24-hour window.
         syncStoryInsights({ userId: req.user!.id }),
     ]);
-    res.json({ success: true, ...data, stories });
+    res.json({ success: true, ...data, stories, imported });
 }
 
 export async function stories(req: Request, res: Response): Promise<void> {

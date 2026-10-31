@@ -535,11 +535,14 @@ export interface AnalyticsPageSummary {
     pageName: string;
     instagramUsername: string;
     totals: AnalyticsSummary;
+    facebook?: AnalyticsSummary;
+    instagram?: AnalyticsSummary;
 }
 
 /** A post's results with its Facebook and Instagram copies combined. */
 export interface AnalyticsTopPost {
     postId: string;
+    source?: ContentSource;
     caption: string;
     mediaUrl: string;
     mediaType: MediaType;
@@ -559,6 +562,8 @@ export interface AnalyticsBestTime {
     label: string;
     posts: number;
     avgEngagementRate: number | null;
+    /** The rate from however many posts the slot has; older servers omit it. */
+    engagementRate?: number | null;
 }
 
 export interface AnalyticsPermissionError {
@@ -589,6 +594,8 @@ export interface AnalyticsOverview {
     /** The same number of days just before the range, for deltas. */
     previous?: { range: { from: string; to: string }; totals: AnalyticsSummary } | null;
     byPage?: AnalyticsPageSummary[];
+    /** Made in Meta-Bru vs posted directly on Facebook or Instagram. */
+    bySource?: { metabru: AnalyticsSummary; native: AnalyticsSummary };
     topPosts?: { byReach: AnalyticsTopPost[]; byEngagement: AnalyticsTopPost[] };
     byPlatform: { facebook: AnalyticsSummary; instagram: AnalyticsSummary };
     byContentType?: { image: AnalyticsSummary; reel: AnalyticsSummary };
@@ -641,6 +648,7 @@ export interface StoryRow {
     metricsAt: string | null;
     status: 'ok' | 'partial' | 'unavailable' | 'permission_error' | 'waiting';
     error: string;
+    source?: ContentSource;
 }
 
 export interface StoryAnalyticsResponse {
@@ -703,6 +711,10 @@ export interface AnalyticsPost {
     /** Story shares of this post. */
     storyTargets?: Array<{ platform: Platform; status: TargetStatus; error: string }>;
     status: PostStatus;
+    /** Made in Meta-Bru, or posted directly on Facebook or Instagram. */
+    source?: ContentSource;
+    /** Link to a post made outside Meta-Bru. */
+    permalink?: string;
     connection: {
         id: string;
         pageId: string;
@@ -711,6 +723,8 @@ export interface AnalyticsPost {
     };
     targets: AnalyticsPostTarget[];
 }
+
+export type ContentSource = 'metabru' | 'native';
 
 export interface AnalyticsPostsResponse {
     posts: AnalyticsPost[];

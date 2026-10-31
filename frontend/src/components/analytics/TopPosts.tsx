@@ -57,6 +57,11 @@ export function TopPosts({ topPosts }: { topPosts: { byReach: AnalyticsTopPost[]
                                     {post.caption || 'No caption'}
                                 </p>
                                 <p className="mt-0.5 text-[11px] text-subtle">
+                                    {post.source === 'native' ? (
+                                        <span className="mr-1 rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 dark:text-amber-300">
+                                            Posted directly
+                                        </span>
+                                    ) : null}
                                     {post.mediaType === 'reel' ? 'Reel' : 'Post'} · {post.pageName} ·{' '}
                                     {post.platforms
                                         .map((platform) => (platform === 'facebook' ? 'Facebook' : 'Instagram'))

@@ -958,6 +958,54 @@ export async function retryPost(req: Request, res: Response): Promise<void> {
     }
 }
 
+/**
+ * Publishes a post that went out on Facebook only to Instagram as well, for
+ * Pages that linked Instagram after the post was published. Its Facebook copy
+ * is untouched, and its Instagram Story is shared too when the post shares to
+ * Story.
+ */
+export async function publishToInstagramLater(req: Request, res: Response): Promise<void> {
+    const existing = await ownedPost(String(req.params.id), req.user.id);
+
+    if (existing.status !== 'published' && existing.status !== 'partial') {
+        throw new AppError(400, 'Only published posts can be added to Instagram', 'POST_NOT_PUBLISHED');
+    }
+    if (existing.targets.some((target) => target.platform === 'instagram' && target.status === 'published')) {
+        throw new AppError(400, 'This post is already on Instagram', 'ALREADY_ON_INSTAGRAM');
+    }
+
+    const { connection, lockedAt } = await claimConnectionForPublish(
+        existing.connectionId.toString(),
+        req.user.id,
+        'retry'
+    );
+
+    try {
+        if (!connection.instagram?.id) {
+            throw new AppError(
+                400,
+                `${connection.pageName} has no Instagram account linked. Link one to the Page on Facebook, then reconnect it in Pages & Schedule.`,
+                'INSTAGRAM_NOT_LINKED'
+            );
+        }
+
+        const claimed = await claimPost(existing._id.toString(), req.user.id, ['published', 'partial']);
+        const publishedAt = claimed.publishedAt;
+        claimed.platforms.instagram = true;
+
+        await publishPost(claimed, connection, { platforms: ['instagram'] });
+
+        // Keep the post's original publish time; the Instagram copy has its own.
+        if (publishedAt) {
+            claimed.publishedAt = publishedAt;
+            await claimed.save();
+        }
+        res.json({ success: true, post: claimed });
+    } finally {
+        await releaseConnectionLock(connection._id.toString(), lockedAt);
+    }
+}
+
 export async function shareStory(req: Request, res: Response): Promise<void> {
     const { platforms } = parseBody(shareStorySchema, req);
     const existing = await ownedPost(String(req.params.id), req.user.id);

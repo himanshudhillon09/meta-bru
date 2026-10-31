@@ -368,6 +368,9 @@ export const postsApi = {
         }),
     publishNow: (postId: string) => api.post(`/posts/${postId}/publish-now`),
     retry: (postId: string) => api.post(`/posts/${postId}/retry`),
+    /** Publishes a Facebook-only post to the Page's newly linked Instagram. */
+    publishToInstagram: (postId: string) =>
+        api.post<{ success: boolean; post: Post }>(`/posts/${postId}/instagram`),
 };
 
 export const mediaApi = {
@@ -481,6 +484,10 @@ export const analyticsApi = {
         mode: 'stale' | 'live';
         connectionId?: string;
         platform?: string;
+        mediaType?: string;
+        source?: string;
+        /** Re-read posts made outside Meta-Bru even if they were read this hour. */
+        force?: boolean;
     }) => api.post('/analytics/sync', data),
     tips: (params: Record<string, string>) =>
         api.get<{ success: boolean } & AnalyticsTipsResponse>(
