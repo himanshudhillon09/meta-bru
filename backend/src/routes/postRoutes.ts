@@ -6,6 +6,7 @@ import {
     getPost,
     listPosts,
     publishNow,
+    publishToInstagramLater,
     retryPost,
     shareStory,
     updatePost,
@@ -25,5 +26,6 @@ router.delete('/:id', deletePost);
 router.post('/:id/publish-now', publishNow);
 router.post('/:id/retry', retryPost);
 router.post('/:id/story', shareStory);
+router.post('/:id/instagram', publishToInstagramLater);
 
 export default router;
