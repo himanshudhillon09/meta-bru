@@ -79,9 +79,17 @@ export function StorageAssetCard({
                     target="_blank"
                     rel="noreferrer"
                     className="block w-full h-full"
-                    title={isVideo ? 'Open video' : 'Open full image'}
+                    title={asset.isMusic ? 'Play track' : isVideo ? 'Open video' : 'Open full image'}
                 >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    {asset.isMusic ? (
+                        <span className="grid h-full w-full place-items-center bg-indigo-500/10 text-indigo-700 dark:text-indigo-300">
+                            <span className="text-center">
+                                <span className="block text-5xl">♪</span>
+                                <span className="mt-2 block text-[10px] font-bold uppercase tracking-widest">Music</span>
+                            </span>
+                        </span>
+                    ) : (
+                    // eslint-disable-next-line @next/next/no-img-element
                     <img
                         src={asset.thumbnailUrl || asset.secureUrl}
                         alt={asset.publicId}
@@ -98,6 +106,7 @@ export function StorageAssetCard({
                         }}
                         className="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-105"
                     />
+                    )}
                 </a>
 
                 <div className="absolute top-3 left-3">

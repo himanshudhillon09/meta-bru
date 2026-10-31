@@ -7,6 +7,8 @@ import { AppShell } from '@/components/AppShell';
 import { StatusBadge } from '@/components/Dashboards';
 import { EmptyState, ListSkeleton } from '@/components/Feedback';
 import { Modal } from '@/components/Modal';
+import { MusicChip } from '@/components/MusicChip';
+import { MusicModal } from '@/components/MusicModal';
 import { PageFilter, activePageId, postPageId } from '@/components/PageFilter';
 import { PostTimingLine, ScheduleSummary, queuedPostTiming } from '@/components/QueueSchedule';
 import { StoryChip } from '@/components/ShareToStoryToggle';
@@ -87,6 +89,7 @@ export default function QueuePage() {
     const [sharingId, setSharingId] = useState('');
     const [deleteTarget, setDeleteTarget] = useState<Post | null>(null);
     const [storyPost, setStoryPost] = useState<Post | null>(null);
+    const [musicPost, setMusicPost] = useState<Post | null>(null);
     const [storySelection, setStorySelection] = useState<Platform[]>([]);
     const [error, setError] = useState('');
     const [notice, setNotice] = useState('');
@@ -197,6 +200,18 @@ export default function QueuePage() {
         } finally {
             setBusyId('');
         }
+    };
+
+    const musicSaved = (saved: Post) => {
+        // The response is not populated; keep the Page details we have.
+        setPosts((current) =>
+            current.map((item) =>
+                item._id === saved._id ? { ...saved, connectionId: item.connectionId } : item
+            )
+        );
+        setMusicPost(null);
+        setError('');
+        setNotice(saved.music ? 'Music saved.' : 'Music removed.');
     };
 
     const openStoryShare = (post: Post) => {
@@ -356,7 +371,7 @@ export default function QueuePage() {
                                         ) : null}
                                         {isReel(post) ? (
                                             <span className="absolute bottom-1.5 left-1.5 rounded-md bg-surface-2 px-1.5 py-0.5 text-[10px] font-bold text-fg backdrop-blur">
-                                                ▶ {formatDuration(post.mediaDuration ?? 0)}
+                                                {post.music ? '♪' : '▶'} {formatDuration(post.mediaDuration ?? 0)}
                                             </span>
                                         ) : null}
                                     </div>
@@ -365,10 +380,14 @@ export default function QueuePage() {
                                         <div className="flex flex-wrap items-center gap-2 mb-2">
                                             <StatusBadge status={post.status} />
                                             {isReel(post) ? (
-                                                <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full border bg-fuchsia-500/10 text-fuchsia-700 dark:text-fuchsia-300 border-fuchsia-500/20">
-                                                    Reel
+                                                <span
+                                                    title={post.photo ? 'An image post published as a reel, so it can have music' : undefined}
+                                                    className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full border bg-fuchsia-500/10 text-fuchsia-700 dark:text-fuchsia-300 border-fuchsia-500/20"
+                                                >
+                                                    {post.photo ? 'Photo reel' : 'Reel'}
                                                 </span>
                                             ) : null}
+                                            <MusicChip music={post.music} />
                                             {post.aiGenerated ? <AiLabelChip /> : null}
                                             {post.status !== 'published' && post.status !== 'partial' ? (
                                                 <StoryChip on={Boolean(post.shareToStory)} />
@@ -513,9 +532,16 @@ export default function QueuePage() {
                                             post.status !== 'published' &&
                                             post.status !== 'partial' && (
                                                 <>
-                                                    {/* Opens the Composer (or Reels page) filled with this post. */}
+                                                    <button
+                                                        onClick={() => setMusicPost(post)}
+                                                        disabled={busyId === post._id}
+                                                        className="bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 border border-indigo-500/20 disabled:opacity-40 px-4 py-2.5 rounded-xl text-xs font-bold transition-all"
+                                                    >
+                                                        {post.music ? '♪ Change music' : '♪ Add music'}
+                                                    </button>
+                                                    {/* Opens the Composer (or Reels page) filled with this post. A photo reel is edited as its image. */}
                                                     <Link
-                                                        href={`${isReel(post) ? '/reels' : '/composer'}?edit=${post._id}`}
+                                                        href={`${isReel(post) && !post.photo ? '/reels' : '/composer'}?edit=${post._id}`}
                                                         className="bg-hover hover:bg-hover-strong text-fg border border-line-strong px-4 py-2.5 rounded-xl text-xs font-bold text-center transition-all"
                                                     >
                                                         Edit
@@ -549,6 +575,12 @@ export default function QueuePage() {
                 } is also deleted from your Cloudinary account when no other post uses it. This cannot be undone.`}
                 confirmText="Delete"
                 type="danger"
+            />
+
+            <MusicModal
+                post={musicPost}
+                onClose={() => setMusicPost(null)}
+                onSaved={musicSaved}
             />
 
             <StoryShareModal

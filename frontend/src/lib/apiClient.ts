@@ -8,13 +8,16 @@ import type {
     DeleteMediaResult,
     GeminiLimits,
     GeminiModelList,
+    InstagramSongResult,
     MediaAsset,
     MetaLoginResult,
+    MusicTrack,
     Platform,
     Post,
     StorageOverview,
     StoryAnalyticsResponse,
     TextArea,
+    TrackUploadSignature,
     UsageReport,
     VideoMedia,
     VideoUploadSignature,
@@ -153,15 +156,27 @@ export interface VideoUploadHandle {
     abort: () => void;
 }
 
+/** The signed fields of a direct Cloudinary upload; eager is for videos only. */
+interface SignedUpload {
+    cloudName: string;
+    apiKey: string;
+    timestamp: number;
+    signature: string;
+    folder: string;
+    allowedFormats: string;
+    eager?: string;
+    eagerAsync?: string;
+}
+
 /**
- * Sends a reel straight from the browser to the user's own Cloudinary
- * account, using the signature from /media/video-signature, and reports
- * progress from 0 to 1. Rejects with a readable message string, like the
- * other API helpers.
+ * Sends a file straight from the browser to the user's own Cloudinary
+ * account as a video resource (Cloudinary keeps audio there too), using a
+ * signature from the server, and reports progress from 0 to 1. Rejects with
+ * a readable message string, like the other API helpers.
  */
-export function uploadVideoToCloudinary(
+export function uploadToCloudinary(
     file: File,
-    upload: VideoUploadSignature,
+    upload: SignedUpload,
     onProgress: (fraction: number) => void
 ): VideoUploadHandle {
     const xhr = new XMLHttpRequest();
@@ -173,8 +188,8 @@ export function uploadVideoToCloudinary(
         form.append('timestamp', String(upload.timestamp));
         form.append('signature', upload.signature);
         form.append('folder', upload.folder);
-        form.append('eager', upload.eager);
-        form.append('eager_async', upload.eagerAsync);
+        if (upload.eager) form.append('eager', upload.eager);
+        if (upload.eagerAsync) form.append('eager_async', upload.eagerAsync);
         form.append('allowed_formats', upload.allowedFormats);
 
         xhr.open(
@@ -205,6 +220,15 @@ export function uploadVideoToCloudinary(
     });
 
     return { promise, abort: () => xhr.abort() };
+}
+
+/** Sends a reel to Cloudinary with its eager derivatives queued. */
+export function uploadVideoToCloudinary(
+    file: File,
+    upload: VideoUploadSignature,
+    onProgress: (fraction: number) => void
+): VideoUploadHandle {
+    return uploadToCloudinary(file, upload, onProgress);
 }
 
 /**
@@ -371,6 +395,23 @@ export const mediaApi = {
             text,
             ...(textArea ? { textArea } : {}),
             ...(connectionId ? { connectionId } : {}),
+        }),
+};
+
+export const musicApi = {
+    tracks: () =>
+        api.get<{ success: boolean; configured: boolean; tracks: MusicTrack[] }>('/music/tracks'),
+    trackSignature: () =>
+        api.post<{ success: boolean; upload: TrackUploadSignature }>('/music/tracks/signature'),
+    addTrack: (data: { publicId: string; title: string; artist: string }) =>
+        api.post<{ success: boolean; track: MusicTrack }>('/music/tracks', data),
+    deleteTrack: (trackId: string) =>
+        api.delete<{ success: boolean }>(`/music/tracks/${trackId}`),
+    /** Trending songs when `query` is empty. */
+    searchInstagram: (connectionId: string, query = '') =>
+        api.get<{ success: boolean; songs: InstagramSongResult[] }>('/music/instagram', {
+            connectionId,
+            ...(query.trim() ? { q: query.trim() } : {}),
         }),
 };
 

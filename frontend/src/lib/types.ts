@@ -159,6 +159,64 @@ export interface PostConnection {
     tokenStatus: TokenStatus;
 }
 
+/** A song from Instagram's music library. Plays on Instagram reels only. */
+export interface InstagramSong {
+    audioId: string;
+    title: string;
+    artist: string;
+    coverUrl: string;
+    durationMs: number;
+}
+
+/** A search result from Instagram's music library. */
+export interface InstagramSongResult extends InstagramSong {
+    /** Short-lived link for previews. */
+    previewUrl: string;
+}
+
+/** One of the user's own tracks. */
+export interface MusicTrack {
+    _id: string;
+    publicId: string;
+    title: string;
+    artist: string;
+    /** Seconds. */
+    duration: number;
+    bytes: number;
+    previewUrl: string;
+    createdAt: string;
+}
+
+export interface PostMusic {
+    instagram: InstagramSong | null;
+    track: { trackId: string; publicId: string; title: string; artist: string; duration: number } | null;
+    /** Where the track starts, in seconds. */
+    trackStart: number;
+    /** 1-100. */
+    musicVolume: number;
+    /** The video's own sound, 0-100; 0 mutes it. */
+    videoVolume: number;
+    mixUrl: string;
+    storyMixUrl: string;
+}
+
+/** The image a photo reel was made from. */
+export interface PostPhoto {
+    publicId: string;
+    url: string;
+    jpegUrl: string;
+    hasTextOverlay: boolean;
+}
+
+export interface TrackUploadSignature {
+    cloudName: string;
+    apiKey: string;
+    timestamp: number;
+    signature: string;
+    folder: string;
+    allowedFormats: string;
+}
+
 export interface Post {
     _id: string;
     connectionId: string | PostConnection;
@@ -176,6 +234,9 @@ export interface Post {
     shareToStory?: boolean;
     /** Published with Meta's "AI info" label (Instagram). */
     aiGenerated?: boolean;
+    music?: PostMusic | null;
+    /** Set on a photo reel: an image post published as a video with music. */
+    photo?: PostPhoto | null;
     storyTargets?: PostTarget[];
     platforms: { facebook: boolean; instagram: boolean };
     status: PostStatus;
@@ -251,6 +312,8 @@ export interface StorageAsset {
     resourceType: 'image' | 'video';
     /** Video length in seconds; 0 for images. */
     duration: number;
+    /** A track in the user's music library. */
+    isMusic?: boolean;
     url: string;
     secureUrl: string;
     thumbnailUrl: string;

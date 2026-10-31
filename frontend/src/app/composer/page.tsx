@@ -13,12 +13,22 @@ import {
     type CropState,
 } from '@/components/ImageCropper';
 import { AiLabelToggle, useAiLabelPreference } from '@/components/AiLabelToggle';
+import { MusicPicker } from '@/components/MusicPicker';
 import { PageAvatar } from '@/components/PageBrandPanel';
 import { postPageId } from '@/components/PageFilter';
 import { ShareToStoryToggle } from '@/components/ShareToStoryToggle';
 import { ToggleChip } from '@/components/ToggleChip';
 import { useAuth } from '@/context/AuthContext';
 import { aiApi, connectionsApi, mediaApi, postsApi } from '@/lib/apiClient';
+import {
+    NO_MUSIC,
+    PHOTO_REEL_SECONDS,
+    hasMusic,
+    musicFromPost,
+    musicInput,
+    musicProblem,
+    type MusicChoice,
+} from '@/lib/music';
 import { useIdeaFromUrl } from '@/lib/useIdeaFromUrl';
 import { isEditLink, useEditId, useEditedPost } from '@/lib/usePostEditing';
 import type { MediaAsset, Post, SocialConnection } from '@/lib/types';
@@ -52,6 +62,8 @@ interface ComposerDraft {
     shareToStory: boolean;
     overlayEnabled: boolean;
     overlayText: string;
+    music?: MusicChoice;
+    photoSeconds?: number;
 }
 
 const OVERLAY_MAX_CHARS = 90;
@@ -99,6 +111,8 @@ export default function ComposerPage() {
     const [facebook, setFacebook] = useState(true);
     const [instagram, setInstagram] = useState(false);
     const [shareToStory, setShareToStory] = useState(true);
+    const [music, setMusic] = useState<MusicChoice>(NO_MUSIC);
+    const [photoSeconds, setPhotoSeconds] = useState<number>(PHOTO_REEL_SECONDS.default);
     const [aiLabel, setAiLabel] = useAiLabelPreference(!editId);
     const [overlayEnabled, setOverlayEnabled] = useState(false);
     const [overlayText, setOverlayText] = useState('');
@@ -120,9 +134,10 @@ export default function ComposerPage() {
     const draftClearedRef = useRef(false);
     const submitDisabled =
         Boolean(submitting) || uploading || generatingImage || (Boolean(editId) && !editPost);
-    // The image a saved post already has. Its text and frame are baked in, so
-    // new text needs a new image.
-    const isPostImage = Boolean(editPost) && media?.publicId === editPost?.mediaPublicId;
+    // The image a saved post already has (a photo reel's source image). Its
+    // text and frame are baked in, so new text needs a new image.
+    const postImageId = editPost?.photo?.publicId ?? editPost?.mediaPublicId;
+    const isPostImage = Boolean(editPost) && media?.publicId === postImageId;
     const overlayActive =
         overlayEnabled && Boolean(media) && !isPostImage && overlayText.trim().length > 0;
 
@@ -142,6 +157,8 @@ export default function ComposerPage() {
             setShareToStory(true);
             setOverlayEnabled(false);
             setOverlayText('');
+            setMusic(NO_MUSIC);
+            setPhotoSeconds(PHOTO_REEL_SECONDS.default);
         }
 
         try {
@@ -184,6 +201,12 @@ export default function ComposerPage() {
                 }
                 if (typeof draft.overlayText === 'string') {
                     setOverlayText(draft.overlayText.slice(0, OVERLAY_MAX_CHARS));
+                }
+                if (draft.music && typeof draft.music === 'object') {
+                    setMusic({ ...NO_MUSIC, ...draft.music });
+                }
+                if (typeof draft.photoSeconds === 'number') {
+                    setPhotoSeconds(draft.photoSeconds);
                 }
             }
         } catch {
@@ -260,6 +283,8 @@ export default function ComposerPage() {
             shareToStory,
             overlayEnabled,
             overlayText,
+            music,
+            photoSeconds,
         };
 
         try {
@@ -281,6 +306,8 @@ export default function ComposerPage() {
         shareToStory,
         overlayEnabled,
         overlayText,
+        music,
+        photoSeconds,
     ]);
 
     // Fill the form from the post the Queue's Edit opened.
@@ -294,13 +321,15 @@ export default function ComposerPage() {
             setCaption(post.caption);
             setTopic('');
             setImagePrompt('');
+            // A photo reel is edited as the image it was made from.
+            const image = post.photo
+                ? { url: post.photo.url, jpegUrl: post.photo.jpegUrl, publicId: post.photo.publicId }
+                : { url: post.mediaUrl, jpegUrl: post.mediaJpegUrl || '', publicId: post.mediaPublicId };
             setMedia({
-                url: post.mediaUrl,
-                jpegUrl: post.mediaJpegUrl || '',
-                publicId: post.mediaPublicId,
+                ...image,
                 width: 0,
                 height: 0,
-                format: /\.([a-z\d]{3,4})(?:\?|$)/i.exec(post.mediaUrl)?.[1] ?? 'jpg',
+                format: /\.([a-z\d]{3,4})(?:\?|$)/i.exec(image.url)?.[1] ?? 'jpg',
                 bytes: 0,
             });
             setImageSource(null);
@@ -310,16 +339,18 @@ export default function ComposerPage() {
             setAiLabel(Boolean(post.aiGenerated));
             setOverlayEnabled(false);
             setOverlayText('');
+            setMusic(musicFromPost(post));
+            setPhotoSeconds(post.photo ? Math.round(post.mediaDuration ?? 0) : PHOTO_REEL_SECONDS.default);
 
             // The post does not store its size; read it from the image.
-            const image = new Image();
-            image.onload = () =>
+            const size = new Image();
+            size.onload = () =>
                 setMedia((current) =>
-                    current?.publicId === post.mediaPublicId
-                        ? { ...current, width: image.naturalWidth, height: image.naturalHeight }
+                    current?.publicId === image.publicId
+                        ? { ...current, width: size.naturalWidth, height: size.naturalHeight }
                         : current
                 );
-            image.src = post.mediaUrl;
+            size.src = image.url;
         },
         setError
     );
@@ -603,6 +634,19 @@ export default function ComposerPage() {
             setError('This Page has no linked Instagram Business account.');
             return;
         }
+        const musicIssue = musicProblem(music, { facebook, instagram, isImage: true });
+        if (musicIssue) {
+            setError(musicIssue);
+            return;
+        }
+        // Only send music that changed, so an edit does not rebuild the reel for nothing.
+        const musicBody = musicInput(music);
+        const lengthEdited =
+            hasMusic(music) && Boolean(editPost?.photo) && photoSeconds !== Math.round(editPost?.mediaDuration ?? 0);
+        const musicEdited =
+            !editPost ||
+            lengthEdited ||
+            JSON.stringify(musicBody) !== JSON.stringify(musicInput(musicFromPost(editPost)));
 
         const mediaFields = {
             mediaUrl: media.url,
@@ -621,7 +665,7 @@ export default function ComposerPage() {
             let data: any;
             if (editPost) {
                 // Only a new image (or new text on one) replaces the post's image.
-                const mediaChanged = media.publicId !== editPost.mediaPublicId || overlayActive;
+                const mediaChanged = media.publicId !== postImageId || overlayActive;
                 data = await postsApi.update(editPost._id, {
                     connectionId,
                     caption: caption.trim(),
@@ -630,6 +674,8 @@ export default function ComposerPage() {
                     aiGenerated: aiLabel,
                     action: action === 'draft' ? 'draft' : 'queue',
                     ...(mediaChanged ? { media: { mediaType: 'image', ...mediaFields } } : {}),
+                    ...(musicEdited ? { music: musicBody } : {}),
+                    ...(hasMusic(music) && (musicEdited || mediaChanged) ? { photoSeconds } : {}),
                 });
                 if (action === 'now') data = await postsApi.publishNow(editPost._id);
             } else {
@@ -640,6 +686,7 @@ export default function ComposerPage() {
                     platforms: { facebook, instagram },
                     shareToStory,
                     aiGenerated: aiLabel,
+                    ...(hasMusic(music) ? { music: musicBody, photoSeconds } : {}),
                     action,
                 });
             }
@@ -1095,6 +1142,25 @@ export default function ComposerPage() {
                                     ) : null}
                                 </div>
                             ) : null}
+                        </section>
+
+                        <section className="rounded-2xl border border-line bg-surface p-6 sm:p-8 shadow-card">
+                            <label className="text-xs font-bold uppercase tracking-widest text-subtle">
+                                Music
+                            </label>
+                            <p className="mt-1 mb-4 text-xs text-subtle">
+                                Optional. Facebook and Instagram have no music on photos, so a post with music
+                                publishes as a short reel of this image.
+                            </p>
+                            <MusicPicker
+                                value={music}
+                                onChange={setMusic}
+                                connectionId={connectionId}
+                                instagramLinked={Boolean(selectedConnection?.instagram)}
+                                targets={{ facebook, instagram, isImage: true }}
+                                photoSeconds={photoSeconds}
+                                onPhotoSecondsChange={setPhotoSeconds}
+                            />
                         </section>
 
                         <div className="flex flex-col sm:flex-row sm:flex-wrap gap-3">
