@@ -199,15 +199,33 @@ export async function publishFacebookVideoJob(
     }
 
     if (job.statusWaitMs > 0) {
+        let readError: unknown = null;
         const status = await pollUntil<FacebookVideoStatus>(
             async () => {
-                const current = await api.status(videoId, accessToken);
+                let current: FacebookVideoStatus;
+                try {
+                    current = await api.status(videoId, accessToken);
+                } catch (error) {
+                    // Meta already accepted the video, and right after finish
+                    // it can briefly read as "does not exist". A failed read
+                    // is not a failed publish, so ask again.
+                    readError = error;
+                    return { done: false };
+                }
+                readError = null;
                 return current.error || current.publishing === 'complete'
                     ? { done: true, value: current }
                     : { done: false };
             },
             { intervalMs: META_POLL_MS, timeoutMs: job.statusWaitMs, deadline }
         );
+
+        if (!status && readError) {
+            console.error(
+                `[meta] Could not read status of published video ${videoId}:`,
+                readError
+            );
+        }
 
         if (status?.error) {
             target.creationId = '';
