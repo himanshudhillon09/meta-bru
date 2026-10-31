@@ -222,6 +222,19 @@ export async function runSchedulerTick(now: Date = new Date()): Promise<void> {
             }
         );
 
+        // Same for Story shares: show them as failed so they can be shared again.
+        await Post.updateMany(
+            { 'storyTargets.status': 'publishing', updatedAt: { $lt: staleBefore } },
+            {
+                $set: {
+                    'storyTargets.$[story].status': 'failed',
+                    'storyTargets.$[story].error':
+                        'Sharing to Story was interrupted. Check the Page, then share it again.',
+                },
+            },
+            { arrayFilters: [{ 'story.status': { $in: ['pending', 'publishing'] } }] }
+        );
+
         const due = await SocialConnection.find({
             isActive: true,
             tokenStatus: 'active',

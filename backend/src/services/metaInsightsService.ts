@@ -122,7 +122,7 @@ function breakdownMatching(breakdown: Record<string, number>, pattern: RegExp): 
 function isInvalidMetricError(error: unknown): boolean {
     return (
         error instanceof MetaApiError &&
-        /valid insights metric|invalid(?:\s+insights)?\s+metric|metric(?:s)?\s+(?:is|are)?\s*(?:invalid|not valid|unknown|unsupported)|unknown metric|nonexisting field|unsupported metric/i.test(
+        /valid insights metric|invalid(?:\s+insights)?\s+metric|metric(?:s)?\s+(?:is|are)?\s*(?:invalid|not valid|unknown|unsupported)|unknown metric|nonexisting field|unsupported metric|param metric\[\d+\] must be one of/i.test(
             error.message
         )
     );
@@ -807,10 +807,12 @@ export async function fetchFacebookStoryMetrics(
     let status: SnapshotStatus = 'partial';
     let lastError = '';
 
+    // The names Meta accepts for Page Stories, newest first. It rejects the
+    // whole request when any one name is unknown, so each set is all-or-nothing.
     const ladders = [
-        'page_story_total_media_view_unique,post_media_view,post_total_media_view_unique',
-        'post_media_view,post_total_media_view_unique',
-        'page_story_impressions_by_story_id_unique,page_story_impressions_by_story_id',
+        'story_media_view,story_total_media_view_unique,pages_fb_story_replies,pages_fb_story_shares,story_interaction',
+        'story_media_view,story_total_media_view_unique',
+        'page_story_impressions_by_story_id,page_story_impressions_by_story_id_unique',
     ];
 
     for (const metric of ladders) {
@@ -820,12 +822,14 @@ export async function fetchFacebookStoryMetrics(
                 params: { metric },
             });
             metrics.reach =
-                metricValue(data, 'page_story_total_media_view_unique') ??
-                metricValue(data, 'post_total_media_view_unique') ??
+                metricValue(data, 'story_total_media_view_unique') ??
                 metricValue(data, 'page_story_impressions_by_story_id_unique');
             metrics.views =
-                metricValue(data, 'post_media_view') ??
+                metricValue(data, 'story_media_view') ??
                 metricValue(data, 'page_story_impressions_by_story_id');
+            metrics.replies = metricValue(data, 'pages_fb_story_replies');
+            metrics.shares = metricValue(data, 'pages_fb_story_shares');
+            metrics.interactions = metricValue(data, 'story_interaction');
             break;
         } catch (error) {
             if (!(error instanceof MetaApiError)) throw error;
