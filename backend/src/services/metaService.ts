@@ -305,6 +305,59 @@ export async function getInstagramPublishingUsage(
     };
 }
 
+export interface InstagramAudio {
+    audioId: string;
+    title: string;
+    artist: string;
+    durationMs: number;
+    coverUrl: string;
+    /** Short-lived download link Meta provides for previews. */
+    previewUrl: string;
+}
+
+interface RawInstagramAudio {
+    audio_id?: string | number;
+    title?: string;
+    display_artist?: string;
+    duration_in_ms?: number;
+    cover_artwork_thumbnail_uri?: string;
+    cover_artwork_thumbnail_url?: string;
+    download_url?: string;
+}
+
+/**
+ * Searches Instagram's music library (the Audio API). Without a query Meta
+ * returns trending songs. Only music cleared for third-party use comes back.
+ */
+export async function searchInstagramAudio(
+    igUserId: string,
+    accessToken: string,
+    query = ''
+): Promise<InstagramAudio[]> {
+    const data = await graphRequest<{ audio?: RawInstagramAudio[]; data?: RawInstagramAudio[] }>(
+        'ig_audio',
+        {
+            accessToken,
+            params: {
+                audio_type: 'music',
+                user_id: igUserId,
+                search_query: query.trim() || undefined,
+            },
+        }
+    );
+
+    return (data.audio ?? data.data ?? [])
+        .filter((item) => item.audio_id !== undefined && item.audio_id !== '')
+        .map((item) => ({
+            audioId: String(item.audio_id),
+            title: item.title || 'Untitled',
+            artist: item.display_artist || '',
+            durationMs: Number(item.duration_in_ms || 0),
+            coverUrl: item.cover_artwork_thumbnail_uri || item.cover_artwork_thumbnail_url || '',
+            previewUrl: item.download_url || '',
+        }));
+}
+
 /** Instagram's "AI info" label, set when the media container is created. */
 export const AI_LABEL_PARAMS = { is_ai_generated: 'true' } as const;
 

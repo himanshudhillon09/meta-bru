@@ -77,6 +77,19 @@ export const storageLimiter = rateLimit({
     },
 });
 
+// Music search runs as the user types, so it has its own allowance.
+export const musicLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 150,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    keyGenerator: userKey,
+    message: {
+        success: false,
+        message: 'Music request limit reached. Try again in a few minutes.',
+    },
+});
+
 // Composer previews refresh as the user types, so this is looser than uploads.
 export const textPreviewLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,

@@ -27,8 +27,8 @@ export const REEL_LIMITS: ReelLimits = {
 };
 
 // 1080×1920 meets Facebook's 9:16 and 540×960 minimum for any input shape.
-const VIDEO_PAD = 'c_pad,w_1080,h_1920,b_blurred:400:15';
-const META_VIDEO_CODECS = 'vc_h264,ac_aac,q_auto';
+export const VIDEO_PAD = 'c_pad,w_1080,h_1920,b_blurred:400:15';
+export const META_VIDEO_CODECS = 'vc_h264,ac_aac,q_auto';
 
 export const REEL_VIDEO_TRANSFORM = `${VIDEO_PAD}/${META_VIDEO_CODECS}`;
 export const REEL_COVER_TRANSFORM = 'so_1,c_fill,w_540,h_960,q_auto';
