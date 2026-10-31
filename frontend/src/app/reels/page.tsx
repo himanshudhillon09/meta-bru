@@ -385,7 +385,7 @@ export default function ReelsPage() {
             setError('This Page has no linked Instagram Business account.');
             return;
         }
-        const musicIssue = musicProblem(music, { facebook: publishFacebook, instagram, isImage: false });
+        const musicIssue = musicProblem(music);
         if (musicIssue) {
             setError(musicIssue);
             return;
@@ -759,16 +759,10 @@ export default function ReelsPage() {
                                 Music
                             </label>
                             <p className="mt-1 mb-4 text-xs text-subtle">
-                                Optional. Pick a song from Instagram&apos;s library for Instagram, or one of your own
-                                tracks to mix into the video for every platform.
+                                Optional. Add your own music; it is mixed into the video for Facebook, Instagram and
+                                Stories.
                             </p>
-                            <MusicPicker
-                                value={music}
-                                onChange={setMusic}
-                                connectionId={connectionId}
-                                instagramLinked={Boolean(selectedConnection?.instagram)}
-                                targets={{ facebook: publishFacebook, instagram, isImage: false }}
-                            />
+                            <MusicPicker value={music} onChange={setMusic} isImage={false} />
                         </section>
 
                         <div className="flex flex-col sm:flex-row sm:flex-wrap gap-3">

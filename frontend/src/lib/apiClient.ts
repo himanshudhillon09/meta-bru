@@ -8,7 +8,6 @@ import type {
     DeleteMediaResult,
     GeminiLimits,
     GeminiModelList,
-    InstagramSongResult,
     MediaAsset,
     MetaLoginResult,
     MusicTrack,
@@ -407,12 +406,6 @@ export const musicApi = {
         api.post<{ success: boolean; track: MusicTrack }>('/music/tracks', data),
     deleteTrack: (trackId: string) =>
         api.delete<{ success: boolean }>(`/music/tracks/${trackId}`),
-    /** Trending songs when `query` is empty. */
-    searchInstagram: (connectionId: string, query = '') =>
-        api.get<{ success: boolean; songs: InstagramSongResult[] }>('/music/instagram', {
-            connectionId,
-            ...(query.trim() ? { q: query.trim() } : {}),
-        }),
 };
 
 export const aiApi = {

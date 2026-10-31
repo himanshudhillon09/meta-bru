@@ -20,15 +20,6 @@ export interface IPostTarget {
     publishedAt: Date | null;
 }
 
-/** A song from Instagram's music library, attached by id. */
-export interface IInstagramSong {
-    audioId: string;
-    title: string;
-    artist: string;
-    coverUrl: string;
-    durationMs: number;
-}
-
 /** One of the user's own tracks, copied from their music library. */
 export interface IMusicTrackRef {
     trackId: mongoose.Types.ObjectId;
@@ -39,19 +30,17 @@ export interface IMusicTrackRef {
 }
 
 export interface IPostMusic {
-    /** Plays on Instagram reels only. */
-    instagram: IInstagramSong | null;
-    /** Mixed into the video, so it plays everywhere. */
-    track: IMusicTrackRef | null;
+    /** Mixed into the video, so it plays on every platform. */
+    track: IMusicTrackRef;
     /** Where the track starts, in seconds. */
     trackStart: number;
     /** 1-100. */
     musicVolume: number;
     /** The video's own sound, 0-100; 0 mutes it. */
     videoVolume: number;
-    /** The reel with the track mixed in; '' without a track. */
+    /** The reel with the track mixed in. */
     mixUrl: string;
-    /** The Story video with the track mixed in; '' without a track. */
+    /** The Story video with the track mixed in. */
     storyMixUrl: string;
 }
 
@@ -111,17 +100,6 @@ const targetSchema = new mongoose.Schema<IPostTarget>(
     { _id: false }
 );
 
-const instagramSongSchema = new mongoose.Schema<IInstagramSong>(
-    {
-        audioId: { type: String, required: true },
-        title: { type: String, default: '' },
-        artist: { type: String, default: '' },
-        coverUrl: { type: String, default: '' },
-        durationMs: { type: Number, default: 0 },
-    },
-    { _id: false }
-);
-
 const musicTrackRefSchema = new mongoose.Schema<IMusicTrackRef>(
     {
         trackId: { type: mongoose.Schema.Types.ObjectId, ref: 'MusicTrack', required: true },
@@ -135,8 +113,7 @@ const musicTrackRefSchema = new mongoose.Schema<IMusicTrackRef>(
 
 const musicSchema = new mongoose.Schema<IPostMusic>(
     {
-        instagram: { type: instagramSongSchema, default: null },
-        track: { type: musicTrackRefSchema, default: null },
+        track: { type: musicTrackRefSchema, required: true },
         trackStart: { type: Number, default: 0, min: 0 },
         musicVolume: { type: Number, default: 80, min: 1, max: 100 },
         videoVolume: { type: Number, default: 30, min: 0, max: 100 },

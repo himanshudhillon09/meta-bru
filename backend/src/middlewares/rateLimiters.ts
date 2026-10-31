@@ -77,7 +77,7 @@ export const storageLimiter = rateLimit({
     },
 });
 
-// Music search runs as the user types, so it has its own allowance.
+// The music library loads with every picker, so it has its own allowance.
 export const musicLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     limit: 150,

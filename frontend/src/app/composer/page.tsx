@@ -634,7 +634,7 @@ export default function ComposerPage() {
             setError('This Page has no linked Instagram Business account.');
             return;
         }
-        const musicIssue = musicProblem(music, { facebook, instagram, isImage: true });
+        const musicIssue = musicProblem(music);
         if (musicIssue) {
             setError(musicIssue);
             return;
@@ -1155,9 +1155,7 @@ export default function ComposerPage() {
                             <MusicPicker
                                 value={music}
                                 onChange={setMusic}
-                                connectionId={connectionId}
-                                instagramLinked={Boolean(selectedConnection?.instagram)}
-                                targets={{ facebook, instagram, isImage: true }}
+                                isImage
                                 photoSeconds={photoSeconds}
                                 onPhotoSecondsChange={setPhotoSeconds}
                             />

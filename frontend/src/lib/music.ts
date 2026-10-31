@@ -1,4 +1,4 @@
-import type { InstagramSong, MusicTrack, Post } from './types';
+import type { MusicTrack, Post } from './types';
 
 /** Mirrors PHOTO_REEL_SECONDS in the backend's photoReelService. */
 export const PHOTO_REEL_SECONDS = { min: 5, max: 60, default: 15 } as const;
@@ -10,8 +10,7 @@ export const TRACK_ACCEPT = 'audio/mpeg,audio/mp4,audio/x-m4a,audio/aac,audio/wa
 
 /** The music an editor is choosing for a post. */
 export interface MusicChoice {
-    instagram: InstagramSong | null;
-    track: Pick<MusicTrack, 'title' | 'artist' | 'duration'> & { trackId: string } | null;
+    track: (Pick<MusicTrack, 'title' | 'artist' | 'duration'> & { trackId: string }) | null;
     /** Seconds into the track. */
     trackStart: number;
     /** 1-100. */
@@ -21,7 +20,6 @@ export interface MusicChoice {
 }
 
 export const NO_MUSIC: MusicChoice = {
-    instagram: null,
     track: null,
     trackStart: 0,
     musicVolume: 80,
@@ -29,22 +27,19 @@ export const NO_MUSIC: MusicChoice = {
 };
 
 export function hasMusic(choice: MusicChoice | null | undefined): choice is MusicChoice {
-    return Boolean(choice && (choice.instagram || choice.track));
+    return Boolean(choice?.track);
 }
 
 export function musicFromPost(post: Pick<Post, 'music'>): MusicChoice {
     const music = post.music;
-    if (!music) return NO_MUSIC;
+    if (!music?.track) return NO_MUSIC;
     return {
-        instagram: music.instagram,
-        track: music.track
-            ? {
-                  trackId: music.track.trackId,
-                  title: music.track.title,
-                  artist: music.track.artist,
-                  duration: music.track.duration,
-              }
-            : null,
+        track: {
+            trackId: music.track.trackId,
+            title: music.track.title,
+            artist: music.track.artist,
+            duration: music.track.duration,
+        },
         trackStart: music.trackStart,
         musicVolume: music.musicVolume,
         videoVolume: music.videoVolume,
@@ -53,11 +48,10 @@ export function musicFromPost(post: Pick<Post, 'music'>): MusicChoice {
 
 /** The request body for a post's music, or null for none. */
 export function musicInput(choice: MusicChoice) {
-    if (!hasMusic(choice)) return null;
+    if (!choice.track) return null;
     return {
-        instagram: choice.instagram,
-        trackId: choice.track?.trackId ?? null,
-        trackStart: choice.track ? choice.trackStart : 0,
+        trackId: choice.track.trackId,
+        trackStart: choice.trackStart,
         musicVolume: choice.musicVolume,
         videoVolume: choice.videoVolume,
     };
@@ -67,46 +61,8 @@ export function songLabel(song: { title: string; artist: string }): string {
     return song.artist ? `${song.title} — ${song.artist}` : song.title;
 }
 
-export interface MusicTargets {
-    facebook: boolean;
-    instagram: boolean;
-    /** An image post, which publishes as a photo reel once it has music. */
-    isImage: boolean;
-}
-
-/** What each selected platform will play, one line per platform. */
-export function musicSummary(choice: MusicChoice, targets: MusicTargets): string[] {
-    if (!hasMusic(choice)) return [];
-    const ownSound = targets.isImage ? 'no sound' : "the video's own sound";
-    const lines: string[] = [];
-
-    if (targets.instagram) {
-        lines.push(
-            choice.instagram
-                ? `Instagram: ${songLabel(choice.instagram)} from Instagram's library`
-                : `Instagram: your track ${songLabel(choice.track!)}`
-        );
-    }
-    if (targets.facebook) {
-        lines.push(
-            choice.track
-                ? `Facebook: your track ${songLabel(choice.track)}`
-                : `Facebook: ${ownSound} (Facebook can't play Instagram songs)`
-        );
-    }
-    if (targets.isImage) lines.push('Publishes as a reel: Facebook and Instagram have no music on photos.');
-    return lines;
-}
-
 /** Why this music cannot be saved, or '' when it can. Mirrors the server. */
-export function musicProblem(choice: MusicChoice, targets: MusicTargets): string {
-    if (!hasMusic(choice)) return '';
-    if (choice.instagram && !choice.track && !targets.instagram) {
-        return 'An Instagram song only plays on Instagram. Turn on Instagram or choose one of your tracks.';
-    }
-    if (targets.isImage && targets.facebook && !choice.track) {
-        return "Facebook can't play Instagram songs. Choose one of your tracks for Facebook, or turn Facebook off.";
-    }
+export function musicProblem(choice: MusicChoice): string {
     if (choice.track && choice.trackStart >= choice.track.duration) {
         return 'The start time is past the end of the track.';
     }

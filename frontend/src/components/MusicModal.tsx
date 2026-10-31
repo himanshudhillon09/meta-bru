@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState } from 'react';
 import { MusicPicker } from '@/components/MusicPicker';
-import { postPageId } from '@/components/PageFilter';
 import { postsApi } from '@/lib/apiClient';
 import {
     NO_MUSIC,
@@ -46,9 +45,7 @@ function MusicDialog({ post, onClose, onSaved }: MusicModalProps & { post: Post 
 
     // A photo reel is still an image post to the user.
     const isImage = !isReel(post) || Boolean(post.photo);
-    const targets = { ...post.platforms, isImage };
-    const connection = typeof post.connectionId === 'object' ? post.connectionId : null;
-    const problem = musicProblem(choice, targets);
+    const problem = musicProblem(choice);
     const unchanged = !hasMusic(choice) && !hasMusic(musicFromPost(post));
     const makesReel = isImage && hasMusic(choice);
 
@@ -85,9 +82,7 @@ function MusicDialog({ post, onClose, onSaved }: MusicModalProps & { post: Post 
                     <MusicPicker
                         value={choice}
                         onChange={setChoice}
-                        connectionId={postPageId(post)}
-                        instagramLinked={Boolean(connection?.instagram) && post.platforms.instagram}
-                        targets={targets}
+                        isImage={isImage}
                         photoSeconds={photoSeconds}
                         onPhotoSecondsChange={setPhotoSeconds}
                     />

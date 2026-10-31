@@ -24,12 +24,7 @@ import { getCloudinaryCredentials } from '../services/credentialService.js';
 import { applyImageText } from '../services/imageTextService.js';
 import { REEL_LIMITS } from '../services/mediaDerivativeService.js';
 import { musicInputSchema, resolvePostMusic } from '../services/musicLibraryService.js';
-import {
-    assertMusicFits,
-    toPhotoReel,
-    withMixUrls,
-    type PostMediaWithMusic,
-} from '../services/postMusicService.js';
+import { toPhotoReel, withMixUrls, type PostMediaWithMusic } from '../services/postMusicService.js';
 import { publishPost, sharePostToStory } from '../services/publishService.js';
 import { deletePostAnalytics } from '../services/removedPostService.js';
 import { storyPlatforms } from '../services/storyService.js';
@@ -436,7 +431,6 @@ export async function createPost(req: Request, res: Response): Promise<void> {
     }
 
     const music = parsed.music ? await resolvePostMusic(req.user.id, parsed.music) : null;
-    assertMusicFits(music, { ...parsed.platforms, photoReel: parsed.mediaType === 'image' });
 
     const { replacedPublicId, ...resolved } = await resolvePostMedia(req.user.id, parsed, {
         connectionId: parsed.connectionId,
@@ -570,7 +564,6 @@ export async function updatePost(req: Request, res: Response): Promise<void> {
             : stored.music
         : await resolvePostMusic(req.user.id, parsed.music);
     const photoReel = editedAs === 'image' && music !== null;
-    assertMusicFits(music, { ...platforms, photoReel });
 
     // An image post gets a new photo reel when it gains music, its image
     // changes, or its length changes; losing its music makes it an image again.

@@ -186,28 +186,13 @@ export async function deleteTrack(userId: string, trackId: string): Promise<void
     await track.deleteOne();
 }
 
-export const musicInputSchema = z
-    .object({
-        /** A song from Instagram's library. */
-        instagram: z
-            .object({
-                audioId: z.string().trim().regex(/^\d{1,40}$/, 'Invalid Instagram audio ID'),
-                title: z.string().trim().max(200).default(''),
-                artist: z.string().trim().max(200).default(''),
-                coverUrl: z.union([z.string().url(), z.literal('')]).default(''),
-                durationMs: z.number().int().min(0).default(0),
-            })
-            .nullable()
-            .optional(),
-        /** One of the user's own tracks. */
-        trackId: z.string().regex(/^[a-f\d]{24}$/i, 'Invalid track ID').nullable().optional(),
-        trackStart: z.number().finite().min(0).max(TRACK_LIMITS.maxSeconds).default(0),
-        musicVolume: z.number().int().min(1).max(100).default(80),
-        videoVolume: z.number().int().min(0).max(100).default(30),
-    })
-    .refine((music) => Boolean(music.instagram || music.trackId), {
-        message: 'Choose an Instagram song or one of your tracks',
-    });
+export const musicInputSchema = z.object({
+    /** One of the user's own tracks. */
+    trackId: z.string().regex(/^[a-f\d]{24}$/i, 'Invalid track ID'),
+    trackStart: z.number().finite().min(0).max(TRACK_LIMITS.maxSeconds).default(0),
+    musicVolume: z.number().int().min(1).max(100).default(80),
+    videoVolume: z.number().int().min(0).max(100).default(30),
+});
 
 export type MusicInput = z.infer<typeof musicInputSchema>;
 
@@ -217,31 +202,23 @@ export type MusicInput = z.infer<typeof musicInputSchema>;
  * the post's video is known.
  */
 export async function resolvePostMusic(userId: string, input: MusicInput): Promise<IPostMusic> {
-    let track: IPostMusic['track'] = null;
-    let trackStart = 0;
+    const found = await MusicTrack.findOne({ _id: input.trackId, userId });
+    if (!found) {
+        throw new AppError(400, 'That track is no longer in your music library.', 'TRACK_NOT_FOUND');
+    }
+    if (input.trackStart >= found.duration) {
+        throw new AppError(400, 'The start time is past the end of the track.', 'TRACK_START_INVALID');
+    }
 
-    if (input.trackId) {
-        const found = await MusicTrack.findOne({ _id: input.trackId, userId });
-        if (!found) {
-            throw new AppError(400, 'That track is no longer in your music library.', 'TRACK_NOT_FOUND');
-        }
-        track = {
+    return {
+        track: {
             trackId: found._id as mongoose.Types.ObjectId,
             publicId: found.publicId,
             title: found.title,
             artist: found.artist,
             duration: found.duration,
-        };
-        if (input.trackStart >= found.duration) {
-            throw new AppError(400, 'The start time is past the end of the track.', 'TRACK_START_INVALID');
-        }
-        trackStart = Math.round(input.trackStart * 10) / 10;
-    }
-
-    return {
-        instagram: input.instagram ?? null,
-        track,
-        trackStart,
+        },
+        trackStart: Math.round(input.trackStart * 10) / 10,
         musicVolume: input.musicVolume,
         videoVolume: input.videoVolume,
         mixUrl: '',

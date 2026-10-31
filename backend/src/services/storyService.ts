@@ -74,12 +74,6 @@ async function storyMedia(
     if (post.mediaType !== 'reel') {
         return { kind: 'image', url: storyImageUrl(cloudName, post.mediaPublicId) };
     }
-    // Stories cannot carry an Instagram song, so a photo reel without one of
-    // the user's tracks is shared as its image rather than a silent video.
-    if (post.photo?.publicId && !post.music?.track) {
-        return { kind: 'image', url: storyImageUrl(cloudName, post.photo.publicId) };
-    }
-
     const url = post.music?.storyMixUrl || storyVideoUrl(cloudName, post.mediaPublicId);
     if (!(await deps.waitForDerivative(url, deadline))) {
         throw new MetaApiError(

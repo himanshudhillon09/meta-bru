@@ -159,21 +159,6 @@ export interface PostConnection {
     tokenStatus: TokenStatus;
 }
 
-/** A song from Instagram's music library. Plays on Instagram reels only. */
-export interface InstagramSong {
-    audioId: string;
-    title: string;
-    artist: string;
-    coverUrl: string;
-    durationMs: number;
-}
-
-/** A search result from Instagram's music library. */
-export interface InstagramSongResult extends InstagramSong {
-    /** Short-lived link for previews. */
-    previewUrl: string;
-}
-
 /** One of the user's own tracks. */
 export interface MusicTrack {
     _id: string;
@@ -188,8 +173,8 @@ export interface MusicTrack {
 }
 
 export interface PostMusic {
-    instagram: InstagramSong | null;
-    track: { trackId: string; publicId: string; title: string; artist: string; duration: number } | null;
+    /** One of the user's tracks, mixed into the video. */
+    track: { trackId: string; publicId: string; title: string; artist: string; duration: number };
     /** Where the track starts, in seconds. */
     trackStart: number;
     /** 1-100. */

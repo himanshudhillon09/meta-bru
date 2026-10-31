@@ -240,11 +240,8 @@ async function publishReel(
     ) {
         throw new MetaApiError('Facebook Reels can be at most 90 seconds long.', 400);
     }
-    // Instagram attaches its own songs by id, so it gets the video without
-    // the user's track; everywhere else the track is mixed into the file.
-    const instagramSong =
-        target.platform === 'instagram' ? post.music?.instagram ?? null : null;
-    const videoUrl = (!instagramSong && post.music?.mixUrl) || post.mediaUrl;
+    // The user's track is mixed into the file, so every platform plays it.
+    const videoUrl = post.music?.mixUrl || post.mediaUrl;
 
     // 425 (Too Early): nothing reached Meta, so a retry cannot duplicate it.
     if (!(await deps.waitForDerivative(videoUrl, deadline))) {
@@ -291,16 +288,6 @@ async function publishReel(
                 share_to_feed: 'true',
                 thumb_offset: REEL_THUMB_OFFSET_MS,
                 ...(post.aiGenerated ? AI_LABEL_PARAMS : {}),
-                ...(instagramSong && post.music
-                    ? {
-                          audio_configuration: JSON.stringify({
-                              audio_id: instagramSong.audioId,
-                              audio_volume: post.music.musicVolume,
-                              // Instagram's lowest level is 1; 0 means muted here.
-                              video_volume: Math.max(1, post.music.videoVolume),
-                          }),
-                      }
-                    : {}),
             },
             waitMs: INSTAGRAM_VIDEO_WAIT_MS,
             stillProcessingMessage:
