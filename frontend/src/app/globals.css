@@ -33,6 +33,8 @@
   --viz-facebook: #2a78d6;
   --viz-instagram: #e87ba4;
   --viz-reel: #1baf7a;
+  /* Stories beside Facebook and Instagram; validated all-pairs with both. */
+  --viz-story: #eda100;
   --viz-up: #006300;
   --viz-down: #d03b3b;
   --viz-heat-1: #cde2fb;
@@ -74,6 +76,7 @@
   --viz-facebook: #3987e5;
   --viz-instagram: #d55181;
   --viz-reel: #199e70;
+  --viz-story: #c98500;
   --viz-up: #0ca30c;
   --viz-down: #e66767;
   /* Low values recede into the dark surface; high ones brighten. */

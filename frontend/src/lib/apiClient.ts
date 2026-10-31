@@ -14,6 +14,7 @@ import type {
     MediaAsset,
     MetaLoginResult,
     MusicTrack,
+    OverviewReport,
     Platform,
     Post,
     StorageOverview,
@@ -452,6 +453,11 @@ export const usageApi = {
         api.put<{ success: boolean; limits: GeminiLimits }>('/usage/gemini-limits', limits),
     saveClaudeLimits: (limits: ClaudeLimits) =>
         api.put<{ success: boolean; limits: ClaudeLimits }>('/usage/claude-limits', limits),
+};
+
+export const overviewApi = {
+    /** Schedule health, each Page's queue, and what needs attention. */
+    get: () => api.get<{ success: boolean; overview: OverviewReport }>('/overview'),
 };
 
 export const adminApi = {

@@ -981,3 +981,111 @@ export interface UsageReport {
     claude: ClaudeUsageReport;
     cloudinary: CloudinaryPlanUsage;
 }
+
+export type OverviewPageState = 'active' | 'paused' | 'reconnect' | 'disconnected';
+export type AttentionLevel = 'critical' | 'warning' | 'info';
+
+/** Something on the account that needs the user, worst first. */
+export interface AttentionItem {
+    id: string;
+    level: AttentionLevel;
+    title: string;
+    detail: string;
+    href: string;
+    action: string;
+    connectionId?: string;
+}
+
+export interface OverviewPostBrief {
+    postId: string;
+    caption: string;
+    thumb: string;
+    mediaType: MediaType;
+    platforms: Platform[];
+    story: boolean;
+}
+
+export interface OverviewDelivery {
+    platform: Platform;
+    status: PostTarget['status'];
+}
+
+export interface OverviewPage {
+    connectionId: string;
+    pageName: string;
+    logoThumb: string;
+    instagram: { username: string; profilePictureUrl: string } | null;
+    state: OverviewPageState;
+    dailyTimes: string[];
+    timezone: string;
+    queued: number;
+    /** Queued posts that skip Instagram although it is linked. */
+    queuedWithoutInstagram: number;
+    /** How many days the queue lasts at the Page's posting times. */
+    runwayDays: number;
+    /** The slot that publishes the last queued post. */
+    queueEndsAt: string | null;
+    nextSlotAt: string | null;
+    nextPost: OverviewPostBrief | null;
+    lastPublished:
+        | (OverviewPostBrief & { at: string; targets: OverviewDelivery[]; storyTargets: OverviewDelivery[] })
+        | null;
+    week: { published: number; failed: number; stories: number };
+    lastError: string;
+    lastRunAt: string | null;
+}
+
+export interface OverviewSlot {
+    at: string;
+    connectionId: string;
+    pageName: string;
+    timezone: string;
+    logoThumb: string;
+    /** Null when nothing is queued, so the slot passes without a post. */
+    post: OverviewPostBrief | null;
+}
+
+export interface OverviewDay {
+    date: string;
+    facebook: number;
+    instagram: number;
+    stories: number;
+    failed: number;
+}
+
+export interface OverviewWeek {
+    published: number;
+    facebook: number;
+    instagram: number;
+    stories: number;
+    failed: number;
+}
+
+export interface OverviewReport {
+    generatedAt: string;
+    timezone: string;
+    scheduler: {
+        enabled: boolean;
+        startedAt: string | null;
+        lastTickAt: string | null;
+        intervalSeconds: number;
+        state: 'running' | 'off' | 'stalled';
+        justStarted: boolean;
+    };
+    setup: {
+        metaApp: boolean;
+        cloudinary: boolean;
+        aiProvider: AiProvider;
+        aiKey: boolean;
+        geminiKey: boolean;
+        pages: number;
+        instagramPages: number;
+    };
+    counts: { queued: number; drafts: number; publishing: number; published: number; partial: number; failed: number };
+    week: OverviewWeek & { native: { facebook: number; instagram: number } };
+    previousWeek: OverviewWeek;
+    days: OverviewDay[];
+    pages: OverviewPage[];
+    upcoming: OverviewSlot[];
+    attention: AttentionItem[];
+}
