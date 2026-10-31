@@ -98,6 +98,10 @@ export const env = {
         textModel: process.env.GEMINI_TEXT_MODEL || 'gemini-2.5-flash',
         imageModel: process.env.GEMINI_IMAGE_MODEL || 'gemini-2.5-flash-image',
     },
+    claude: {
+        // Used when a user picks Claude without choosing a model; the API key is per-user.
+        model: process.env.CLAUDE_MODEL || 'claude-opus-5-5',
+    },
     scheduler: {
         enabled: process.env.SCHEDULER_ENABLED !== 'false',
         graceMinutes: Math.max(0, numberFromEnv('SCHEDULER_GRACE_MINUTES', 180)),

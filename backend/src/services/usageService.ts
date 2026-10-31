@@ -9,13 +9,28 @@ import {
     type IGeminiQuota,
     type IGeminiUsage,
 } from '../models/geminiUsageModel.js';
+import {
+    CLAUDE_FEATURES,
+    ClaudeRateLimit,
+    ClaudeUsage,
+    type ClaudeFeature,
+    type ClaudeLimitMeter,
+    type IClaudeRateLimit,
+    type IClaudeUsage,
+} from '../models/claudeUsageModel.js';
 import { AppError } from '../utils/errors.js';
 import { resolveImageModel } from './aiService.js';
+import { aiProviderOf, claudeModelOf } from './claudeService.js';
+import { claudeDay, claudePrice } from './claudeUsageService.js';
 import {
     cloudinaryErrorMessage,
     credentialsOptions,
 } from './cloudinaryStorageService.js';
-import { getCloudinaryCredentials, getGeminiCredentials } from './credentialService.js';
+import {
+    getAnthropicCredentials,
+    getCloudinaryCredentials,
+    getGeminiCredentials,
+} from './credentialService.js';
 import { QUOTA_TIMEZONE, quotaDay } from './geminiUsageService.js';
 
 const HISTORY_DAYS = 30;
@@ -199,6 +214,206 @@ export async function getGeminiUsage(
             text: user.aiModels?.text || env.gemini.textModel,
             image: resolveImageModel(user.aiModels?.image || env.gemini.imageModel),
         },
+    };
+}
+
+export interface ClaudeTotals {
+    requests: number;
+    failures: number;
+    rateLimited: number;
+    refusals: number;
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    cacheWriteTokens: number;
+    /** Estimated from list prices; the Claude Console has the billed amount. */
+    costUsd: number;
+}
+
+interface ClaudeMeterReport {
+    limit: number | null;
+    remaining: number | null;
+    resetsAt: string | null;
+}
+
+export interface ClaudeUsageReport {
+    configured: boolean;
+    /** True when the Profile toggle sends AI features to Claude. */
+    active: boolean;
+    /** The model AI features use. */
+    model: string;
+    today: ClaudeTotals;
+    month: ClaudeTotals;
+    byModel: Array<{ model: string; priced: boolean; today: ClaudeTotals; month: ClaudeTotals }>;
+    byFeature: Array<{ feature: ClaudeFeature; today: ClaudeTotals; month: ClaudeTotals }>;
+    /** The last 30 UTC days, oldest first, split by feature. */
+    daily: Array<{
+        day: string;
+        requests: number;
+        tokens: number;
+        costUsd: number;
+        features: Array<{ feature: ClaudeFeature; requests: number; tokens: number; costUsd: number }>;
+    }>;
+    /** The newest limits Anthropic reported for each model. */
+    rateLimits: Array<{
+        model: string;
+        requests: ClaudeMeterReport;
+        inputTokens: ClaudeMeterReport;
+        outputTokens: ClaudeMeterReport;
+        observedAt: string;
+        lastLimitedAt: string | null;
+        retryAfterSeconds: number | null;
+        message: string;
+    }>;
+    limits: { monthlyBudgetUsd: number | null };
+}
+
+function emptyClaudeTotals(): ClaudeTotals {
+    return {
+        requests: 0,
+        failures: 0,
+        rateLimited: 0,
+        refusals: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        costUsd: 0,
+    };
+}
+
+function addClaude(totals: ClaudeTotals, row: IClaudeUsage): void {
+    totals.requests += row.requests;
+    totals.failures += row.failures;
+    totals.rateLimited += row.rateLimited;
+    totals.refusals += row.refusals;
+    totals.inputTokens += row.inputTokens;
+    totals.outputTokens += row.outputTokens;
+    totals.cacheReadTokens += row.cacheReadTokens;
+    totals.cacheWriteTokens += row.cacheWriteTokens;
+    totals.costUsd += row.costMicroUsd / 1_000_000;
+}
+
+function claudeTokens(row: IClaudeUsage): number {
+    return row.inputTokens + row.outputTokens + row.cacheReadTokens + row.cacheWriteTokens;
+}
+
+function meterReport(meter: ClaudeLimitMeter | undefined): ClaudeMeterReport {
+    return {
+        limit: meter?.limit ?? null,
+        remaining: meter?.remaining ?? null,
+        resetsAt: meter?.resetsAt ? new Date(meter.resetsAt).toISOString() : null,
+    };
+}
+
+/**
+ * Claude calls Meta-Bru made with the user's key, by UTC day like the Claude
+ * Console. Anthropic has no usage endpoint for ordinary API keys, so tokens
+ * and cost are counted from each response, and rate limits come from the
+ * headers on the latest response for each model.
+ */
+export async function getClaudeUsage(
+    userId: string,
+    user: {
+        aiProvider?: unknown;
+        aiModels?: { claude?: unknown };
+        claudeLimits?: { monthlyBudgetUsd?: number | null };
+    },
+    now = new Date()
+): Promise<ClaudeUsageReport> {
+    let configured = true;
+    try {
+        await getAnthropicCredentials(userId);
+    } catch (error) {
+        if (!(error instanceof AppError && error.code === 'CLAUDE_NOT_CONFIGURED')) throw error;
+        configured = false;
+    }
+
+    const today = claudeDay(now);
+    const monthPrefix = today.slice(0, 7);
+    const days = Array.from({ length: HISTORY_DAYS }, (_, index) =>
+        claudeDay(new Date(now.getTime() - (HISTORY_DAYS - 1 - index) * 86_400_000))
+    );
+    const historyStart = days[0] ?? today;
+    const since = historyStart < `${monthPrefix}-01` ? historyStart : `${monthPrefix}-01`;
+
+    const [rows, limits] = await Promise.all([
+        ClaudeUsage.find({ userId, day: { $gte: since } } as QueryFilter<IClaudeUsage>).lean<IClaudeUsage[]>(),
+        ClaudeRateLimit.find({ userId } as QueryFilter<IClaudeRateLimit>)
+            .sort({ observedAt: -1 })
+            .lean<IClaudeRateLimit[]>(),
+    ]);
+
+    const todayTotals = emptyClaudeTotals();
+    const monthTotals = emptyClaudeTotals();
+    const models = new Map<string, { today: ClaudeTotals; month: ClaudeTotals }>();
+    const features = new Map<ClaudeFeature, { today: ClaudeTotals; month: ClaudeTotals }>(
+        CLAUDE_FEATURES.map((feature) => [feature, { today: emptyClaudeTotals(), month: emptyClaudeTotals() }])
+    );
+    const byDay = new Map<string, Map<ClaudeFeature, { requests: number; tokens: number; costUsd: number }>>();
+
+    for (const row of rows) {
+        const model = models.get(row.model) ?? { today: emptyClaudeTotals(), month: emptyClaudeTotals() };
+        const feature = features.get(row.feature) ?? { today: emptyClaudeTotals(), month: emptyClaudeTotals() };
+        if (row.day === today) {
+            addClaude(todayTotals, row);
+            addClaude(model.today, row);
+            addClaude(feature.today, row);
+        }
+        if (row.day.startsWith(monthPrefix)) {
+            addClaude(monthTotals, row);
+            addClaude(model.month, row);
+            addClaude(feature.month, row);
+        }
+        models.set(row.model, model);
+        features.set(row.feature, feature);
+
+        const day = byDay.get(row.day) ?? new Map();
+        const cell = day.get(row.feature) ?? { requests: 0, tokens: 0, costUsd: 0 };
+        cell.requests += row.requests;
+        cell.tokens += claudeTokens(row);
+        cell.costUsd += row.costMicroUsd / 1_000_000;
+        day.set(row.feature, cell);
+        byDay.set(row.day, day);
+    }
+
+    const daily = days.map((day) => {
+        const cells = byDay.get(day) ?? new Map();
+        const split = CLAUDE_FEATURES.map((feature) => ({
+            feature,
+            ...(cells.get(feature) ?? { requests: 0, tokens: 0, costUsd: 0 }),
+        }));
+        return {
+            day,
+            requests: split.reduce((total, cell) => total + cell.requests, 0),
+            tokens: split.reduce((total, cell) => total + cell.tokens, 0),
+            costUsd: split.reduce((total, cell) => total + cell.costUsd, 0),
+            features: split,
+        };
+    });
+
+    return {
+        configured,
+        active: aiProviderOf(user) === 'claude',
+        model: claudeModelOf(user),
+        today: todayTotals,
+        month: monthTotals,
+        byModel: [...models.entries()]
+            .map(([model, totals]) => ({ model, priced: claudePrice(model) !== null, ...totals }))
+            .sort((a, b) => b.month.costUsd - a.month.costUsd),
+        byFeature: [...features.entries()].map(([feature, totals]) => ({ feature, ...totals })),
+        daily,
+        rateLimits: limits.map((limit) => ({
+            model: limit.model,
+            requests: meterReport(limit.requests),
+            inputTokens: meterReport(limit.inputTokens),
+            outputTokens: meterReport(limit.outputTokens),
+            observedAt: new Date(limit.observedAt).toISOString(),
+            lastLimitedAt: limit.lastLimitedAt ? new Date(limit.lastLimitedAt).toISOString() : null,
+            retryAfterSeconds: limit.retryAfterSeconds ?? null,
+            message: limit.message ?? '',
+        })),
+        limits: { monthlyBudgetUsd: user.claudeLimits?.monthlyBudgetUsd ?? null },
     };
 }
 

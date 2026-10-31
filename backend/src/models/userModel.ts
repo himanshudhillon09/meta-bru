@@ -50,15 +50,30 @@ const userSchema = new mongoose.Schema({
         audience: { type: String, default: '' },
         keywords: { type: String, default: '' }
     },
-    /** Gemini model per AI feature; empty means the deployment default. */
+    /**
+     * Which AI writes captions, image text, image art direction, and Analytics
+     * tips. Images are always drawn by Gemini; Claude cannot make images.
+     */
+    aiProvider: {
+        type: String,
+        enum: ['gemini', 'claude'],
+        default: 'gemini'
+    },
+    /** Model per AI feature; empty means the deployment default. */
     aiModels: {
         text: { type: String, default: '' },
-        image: { type: String, default: '' }
+        image: { type: String, default: '' },
+        /** The Claude model used when aiProvider is claude. */
+        claude: { type: String, default: '' }
     },
     /** The user's own Gemini request limits, for "left today/this month" on Usage. */
     geminiLimits: {
         dailyRequests: { type: Number, default: null, min: 0 },
         monthlyRequests: { type: Number, default: null, min: 0 }
+    },
+    /** The monthly spend limit the user set in the Claude Console, for Usage. */
+    claudeLimits: {
+        monthlyBudgetUsd: { type: Number, default: null, min: 0 }
     },
     /**
      * Legacy account-wide branding. Logos and brand profiles now live on each
@@ -75,7 +90,7 @@ const userSchema = new mongoose.Schema({
     },
     /**
      * AES-256-GCM encrypted JSON blob containing the user's own Meta app
-     * credentials, Cloudinary credentials, and Gemini API key. Never select
+     * credentials, Cloudinary credentials, and Gemini and Anthropic API keys. Never select
      * this field unless the credential service explicitly needs it.
      */
     credentialsEnc: {

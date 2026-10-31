@@ -19,10 +19,15 @@ export interface GeminiCredentials {
     apiKey: string;
 }
 
+export interface AnthropicCredentials {
+    apiKey: string;
+}
+
 export interface CredentialStore {
     meta?: MetaCredentials;
     cloudinary?: CloudinaryCredentials;
     gemini?: GeminiCredentials;
+    anthropic?: AnthropicCredentials;
 }
 
 export interface CredentialStatus {
@@ -43,6 +48,9 @@ export interface CredentialStatus {
         apiSecretConfigured: boolean;
     };
     gemini: {
+        configured: boolean;
+    };
+    anthropic: {
         configured: boolean;
     };
 }
@@ -107,6 +115,13 @@ export function parseCredentialStore(payload: string): CredentialStore {
         };
     }
 
+    const anthropic = optionalObject(record.anthropic, 'anthropic');
+    if (anthropic) {
+        store.anthropic = {
+            apiKey: requiredString(anthropic.apiKey, 'anthropic.apiKey'),
+        };
+    }
+
     return store;
 }
 
@@ -140,7 +155,7 @@ async function readStore(
 
 async function saveStore(userId: string, store: CredentialStore): Promise<void> {
     const hasCredentials = Boolean(
-        store.meta || store.cloudinary || store.gemini
+        store.meta || store.cloudinary || store.gemini || store.anthropic
     );
     const credentialsEnc = hasCredentials
         ? encryptSecret(JSON.stringify(store))
@@ -203,10 +218,25 @@ export async function getGeminiCredentials(userId: string): Promise<GeminiCreden
     return store.gemini;
 }
 
+export async function getAnthropicCredentials(
+    userId: string
+): Promise<AnthropicCredentials> {
+    const store = await readStore(userId);
+    if (!store.anthropic) {
+        throw new AppError(
+            503,
+            'Claude API key is not configured. Add your Anthropic API key under Profile.',
+            'CLAUDE_NOT_CONFIGURED'
+        );
+    }
+    return store.anthropic;
+}
+
 export interface RevealedCredentials {
     meta: { appSecret: string } | null;
     cloudinary: { apiKey: string; apiSecret: string } | null;
     gemini: { apiKey: string } | null;
+    anthropic: { apiKey: string } | null;
 }
 
 export async function getRevealedCredentials(
@@ -223,6 +253,7 @@ export async function getRevealedCredentials(
               }
             : null,
         gemini: store.gemini ? { apiKey: store.gemini.apiKey } : null,
+        anthropic: store.anthropic ? { apiKey: store.anthropic.apiKey } : null,
     };
 }
 
@@ -267,6 +298,9 @@ export async function getCredentialStatus(
         },
         gemini: {
             configured: Boolean(store.gemini),
+        },
+        anthropic: {
+            configured: Boolean(store.anthropic),
         },
     };
 }
@@ -370,6 +404,17 @@ export async function updateGeminiCredentials(
     });
 }
 
+export async function updateAnthropicCredentials(
+    userId: string,
+    input: { apiKey: string }
+): Promise<void> {
+    const current = await readStore(userId, true);
+    await saveStore(userId, {
+        ...current,
+        anthropic: { apiKey: input.apiKey },
+    });
+}
+
 export async function clearMetaCredentials(userId: string): Promise<void> {
     const current = await readStore(userId, true);
     delete current.meta;
@@ -386,5 +431,11 @@ export async function clearCloudinaryCredentials(userId: string): Promise<void> 
 export async function clearGeminiCredentials(userId: string): Promise<void> {
     const current = await readStore(userId, true);
     delete current.gemini;
+    await saveStore(userId, current);
+}
+
+export async function clearAnthropicCredentials(userId: string): Promise<void> {
+    const current = await readStore(userId, true);
+    delete current.anthropic;
     await saveStore(userId, current);
 }

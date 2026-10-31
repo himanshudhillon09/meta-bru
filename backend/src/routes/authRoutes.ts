@@ -12,10 +12,12 @@ import {
 } from '../controllers/authController.js';
 import {
     getCredentials,
+    removeAnthropicCredentials,
     removeCloudinaryCredentials,
     removeGeminiCredentials,
     removeMetaCredentials,
     revealCredentials,
+    saveAnthropicCredentials,
     saveCloudinaryCredentials,
     saveGeminiCredentials,
     saveMetaCredentials,
@@ -46,6 +48,8 @@ router.put('/credentials/cloudinary', protect, saveCloudinaryCredentials);
 router.delete('/credentials/cloudinary', protect, removeCloudinaryCredentials);
 router.put('/credentials/gemini', protect, saveGeminiCredentials);
 router.delete('/credentials/gemini', protect, removeGeminiCredentials);
+router.put('/credentials/anthropic', protect, saveAnthropicCredentials);
+router.delete('/credentials/anthropic', protect, removeAnthropicCredentials);
 
 
 // Admin routes
