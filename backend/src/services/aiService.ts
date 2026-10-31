@@ -18,7 +18,7 @@ const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 const FALLBACK_IMAGE_MODEL = 'gemini-2.5-flash-image';
 const MAX_CAPTION_IMAGE_BYTES = 10 * 1024 * 1024;
 
-interface BrandProfile {
+export interface BrandProfile {
     niche?: string;
     tone?: string;
     audience?: string;
@@ -34,7 +34,7 @@ export interface CaptionInput {
     model?: string;
 }
 
-interface InlineImage {
+export interface InlineImage {
     mimeType: string;
     data: string;
 }
@@ -209,7 +209,7 @@ export function extractInlineImage(
     };
 }
 
-function hashtagRange(platform: CaptionInput['platform']): {
+export function hashtagRange(platform: CaptionInput['platform']): {
     min: number;
     max: number;
 } {
@@ -302,7 +302,6 @@ export function parseCaptionResponse(
     rawText: string,
     input: CaptionInput
 ): string {
-    const { max } = hashtagRange(input.platform);
     let caption = rawText
         .replace(/^```(?:json)?\s*/i, '')
         .replace(/\s*```$/i, '')
@@ -360,10 +359,26 @@ export function parseCaptionResponse(
 
     if (!caption) return '';
 
-    const rawHashtags = [
-        ...(hashtagsText.match(/#[\p{L}\p{N}_]+/gu) || []),
-        ...(caption.match(/#[\p{L}\p{N}_]+/gu) || []),
-    ];
+    return finishCaption(
+        caption,
+        [
+            ...(hashtagsText.match(/#[\p{L}\p{N}_]+/gu) || []),
+            ...(caption.match(/#[\p{L}\p{N}_]+/gu) || []),
+        ],
+        input
+    );
+}
+
+/**
+ * Joins a caption and its hashtags into the text that is published, with the
+ * Page's niche and keywords as hashtags when the AI gave none.
+ */
+export function finishCaption(
+    caption: string,
+    rawHashtags: unknown[],
+    input: CaptionInput
+): string {
+    const { max } = hashtagRange(input.platform);
     let hashtags = normalizeHashtags(rawHashtags, max);
 
     if (hashtags.length === 0) {
@@ -422,7 +437,7 @@ export function buildCaptionPrompt(input: CaptionInput): string {
     return parts.join('\n');
 }
 
-async function loadCaptionImage(
+export async function loadCaptionImage(
     userId: string,
     publicId: string
 ): Promise<InlineImage> {

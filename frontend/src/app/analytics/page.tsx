@@ -569,7 +569,7 @@ export default function AnalyticsPage() {
         })();
     }, [loading, overview, overviewKey, params, tips, refresh, generateAi]);
 
-    const aiNotConfigured = /gemini api key is not configured/i.test(aiError);
+    const aiNotConfigured = /(gemini|claude) api key is not configured/i.test(aiError);
     const selectedConnection = connectionId
         ? connections.find((item) => item._id === connectionId) ?? null
         : null;

@@ -18,9 +18,11 @@ function publicUser(user: any) {
         role: user.role,
         isActive: user.isActive,
         timezone: user.timezone,
+        aiProvider: user.aiProvider === 'claude' ? 'claude' : 'gemini',
         aiModels: {
             text: user.aiModels?.text || '',
             image: user.aiModels?.image || '',
+            claude: user.aiModels?.claude || '',
         },
         mustChangePassword: Boolean(user.mustChangePassword),
     };
@@ -279,6 +281,12 @@ const aiModelId = z.preprocess(
         )
 );
 
+const claudeModelId = z
+    .string()
+    .trim()
+    .max(80)
+    .regex(/^(?:claude-[a-z0-9.-]+)?$/, 'Use a Claude model id such as claude-opus-5-5');
+
 const profileSchema = z.object({
     name: z.string().trim().min(1).max(80).optional(),
     email: z
@@ -296,8 +304,10 @@ const profileSchema = z.object({
         .object({
             text: aiModelId.optional(),
             image: aiModelId.optional(),
+            claude: claudeModelId.optional(),
         })
         .optional(),
+    aiProvider: z.enum(['gemini', 'claude']).optional(),
 });
 
 export const updateProfile = async (req: Request, res: Response) => {
@@ -356,12 +366,18 @@ export const updateProfile = async (req: Request, res: Response) => {
     if (parsed.timezone !== undefined) user.timezone = parsed.timezone;
 
     if (parsed.aiModels) {
-        const current = (user.aiModels || {}) as { text?: string; image?: string };
+        const current = (user.aiModels || {}) as {
+            text?: string;
+            image?: string;
+            claude?: string;
+        };
         user.aiModels = {
             text: parsed.aiModels.text ?? current.text ?? '',
             image: parsed.aiModels.image ?? current.image ?? '',
+            claude: parsed.aiModels.claude ?? current.claude ?? '',
         };
     }
+    if (parsed.aiProvider !== undefined) user.aiProvider = parsed.aiProvider;
 
     try {
         await user.save();

@@ -1,10 +1,13 @@
 import type {
     AiModels,
+    AiProvider,
     AnalyticsMonitor,
     AnalyticsOverview,
     AnalyticsPostsResponse,
     AnalyticsTipsResponse,
     BrandLogoDetails,
+    ClaudeLimits,
+    ClaudeModelList,
     DeleteMediaResult,
     GeminiLimits,
     GeminiModelList,
@@ -273,6 +276,7 @@ export const authApi = {
             keywords?: string;
         };
         aiModels?: Partial<AiModels>;
+        aiProvider?: AiProvider;
     }) => api.patch('/auth/profile', data),
     changePassword: (data: {
         currentPassword: string;
@@ -295,6 +299,9 @@ export const authApi = {
     saveGeminiCredentials: (data: { apiKey: string }) =>
         api.put('/auth/credentials/gemini', data),
     removeGeminiCredentials: () => api.delete('/auth/credentials/gemini'),
+    saveAnthropicCredentials: (data: { apiKey: string }) =>
+        api.put('/auth/credentials/anthropic', data),
+    removeAnthropicCredentials: () => api.delete('/auth/credentials/anthropic'),
 };
 
 export interface SchedulerStatus {
@@ -411,19 +418,37 @@ export const musicApi = {
 export const aiApi = {
     caption: (data: { topic?: string; platform?: string; mediaPublicId?: string; connectionId?: string }) =>
         api.post('/ai/caption', data),
-    /** `source` is the unframed image as a data URL, for re-cropping. */
-    image: (data: { prompt: string; connectionId?: string }) =>
-        api.post<{ success: boolean; media: MediaAsset; source: string }>('/ai/image', data),
+    /**
+     * `source` is the unframed image as a data URL, for re-cropping. With
+     * Claude selected, `prompt` is the art direction Claude wrote for Gemini.
+     */
+    image: (data: { prompt: string; connectionId?: string; topic?: string; caption?: string }) =>
+        api.post<{
+            success: boolean;
+            media: MediaAsset;
+            source: string;
+            prompt: string;
+            directedBy: 'claude' | null;
+        }>('/ai/image', data),
     models: () =>
         api.get<{ success: boolean } & GeminiModelList>('/ai/models'),
-    overlayText: (data: { topic?: string; caption?: string; prompt?: string; connectionId?: string }) =>
-        api.post<{ success: boolean; text: string }>('/ai/overlay-text', data),
+    claudeModels: () =>
+        api.get<{ success: boolean } & ClaudeModelList>('/ai/claude-models'),
+    overlayText: (data: {
+        topic?: string;
+        caption?: string;
+        prompt?: string;
+        connectionId?: string;
+        mediaPublicId?: string;
+    }) => api.post<{ success: boolean; text: string }>('/ai/overlay-text', data),
 };
 
 export const usageApi = {
     get: () => api.get<{ success: boolean } & UsageReport>('/usage'),
     saveGeminiLimits: (limits: GeminiLimits) =>
         api.put<{ success: boolean; limits: GeminiLimits }>('/usage/gemini-limits', limits),
+    saveClaudeLimits: (limits: ClaudeLimits) =>
+        api.put<{ success: boolean; limits: ClaudeLimits }>('/usage/claude-limits', limits),
 };
 
 export const adminApi = {

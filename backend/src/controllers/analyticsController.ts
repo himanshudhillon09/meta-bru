@@ -31,6 +31,7 @@ import {
     generatedToday,
     getLatestAnalyticsAiInsight,
 } from '../services/analyticsAiService.js';
+import { aiProviderOf, claudeModelOf } from '../services/claudeService.js';
 import { parseBody, parseQuery } from '../utils/validation.js';
 
 const rangeQuerySchema = z
@@ -252,7 +253,12 @@ export async function generateTips(
         context.rangeKey,
         context.payload,
         filters.connectionId || null,
-        typeof req.user!.aiModels?.text === 'string' ? req.user!.aiModels.text : '',
+        aiProviderOf(req.user) === 'claude'
+            ? { provider: 'claude', model: claudeModelOf(req.user) }
+            : {
+                  provider: 'gemini',
+                  model: typeof req.user!.aiModels?.text === 'string' ? req.user!.aiModels.text : '',
+              },
         input.force
     );
 

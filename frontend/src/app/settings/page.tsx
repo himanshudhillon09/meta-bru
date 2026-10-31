@@ -17,12 +17,13 @@ import {
 } from '@/lib/timezones';
 import type { CredentialStatus, RevealedCredentials } from '@/lib/types';
 
-type CredentialKey = 'meta' | 'cloudinary' | 'gemini';
+type CredentialKey = 'meta' | 'cloudinary' | 'gemini' | 'anthropic';
 type RevealTarget =
     | 'meta'
     | 'cloudinaryKey'
     | 'cloudinarySecret'
-    | 'gemini';
+    | 'gemini'
+    | 'anthropic';
 
 const REMOVE_MESSAGES: Record<CredentialKey, string> = {
     meta: 'Remove your Meta app credentials? Your Page connections will be marked for reconnect because their tokens were issued by the previous app.',
@@ -30,6 +31,8 @@ const REMOVE_MESSAGES: Record<CredentialKey, string> = {
         'Remove your Cloudinary credentials? New image uploads and AI image generation will stop working until you add them again. Existing media URLs keep working.',
     gemini:
         'Remove your Gemini API key? Caption drafting and AI image generation will stop working until you add a key again.',
+    anthropic:
+        'Remove your Anthropic API key? While Claude is your AI provider, captions, image text, and Analytics tips will stop working until you add a key again or switch to Gemini.',
 };
 
 function StatusPill({ configured }: { configured: boolean }) {
@@ -175,6 +178,7 @@ export default function SettingsPage() {
     const [cloudApiKey, setCloudApiKey] = useState('');
     const [cloudApiSecret, setCloudApiSecret] = useState('');
     const [geminiKey, setGeminiKey] = useState('');
+    const [anthropicKey, setAnthropicKey] = useState('');
 
     const [revealed, setRevealed] = useState<RevealedCredentials | null>(null);
     const [revealOpen, setRevealOpen] = useState(false);
@@ -185,6 +189,7 @@ export default function SettingsPage() {
     const [showCloudApiKey, setShowCloudApiKey] = useState(false);
     const [showCloudApiSecret, setShowCloudApiSecret] = useState(false);
     const [showGeminiKey, setShowGeminiKey] = useState(false);
+    const [showAnthropicKey, setShowAnthropicKey] = useState(false);
 
     useEffect(() => {
         if (!user) return;
@@ -234,6 +239,7 @@ export default function SettingsPage() {
             setShowCloudApiSecret((value) => !value);
         }
         if (target === 'gemini') setShowGeminiKey((value) => !value);
+        if (target === 'anthropic') setShowAnthropicKey((value) => !value);
     };
 
     const openSecretEye = (target: RevealTarget, typedValue: string) => {
@@ -244,7 +250,9 @@ export default function SettingsPage() {
                   ? Boolean(credentialStatus?.cloudinary.apiKeyConfigured)
                   : target === 'cloudinarySecret'
                     ? Boolean(credentialStatus?.cloudinary.apiSecretConfigured)
-                    : Boolean(credentialStatus?.gemini.configured);
+                    : target === 'anthropic'
+                      ? Boolean(credentialStatus?.anthropic?.configured)
+                      : Boolean(credentialStatus?.gemini.configured);
 
         if (revealed || !configured || typedValue.trim()) {
             toggleSecret(target);
@@ -266,6 +274,7 @@ export default function SettingsPage() {
         if (revealTarget === 'cloudinaryKey') setShowCloudApiKey(true);
         if (revealTarget === 'cloudinarySecret') setShowCloudApiSecret(true);
         if (revealTarget === 'gemini') setShowGeminiKey(true);
+        if (revealTarget === 'anthropic') setShowAnthropicKey(true);
     };
 
     const lockSecrets = () => {
@@ -276,6 +285,7 @@ export default function SettingsPage() {
         setShowCloudApiKey(false);
         setShowCloudApiSecret(false);
         setShowGeminiKey(false);
+        setShowAnthropicKey(false);
     };
 
     const save = async (event: React.FormEvent) => {
@@ -457,6 +467,42 @@ export default function SettingsPage() {
         }
     };
 
+    const saveAnthropic = async (event: React.FormEvent) => {
+        event.preventDefault();
+        setError('');
+        setNotice('');
+
+        if (!anthropicKey.trim()) {
+            setError('Enter your Anthropic API key.');
+            return;
+        }
+
+        setSavingCredential('anthropic');
+        try {
+            const data: any = await authApi.saveAnthropicCredentials({
+                apiKey: anthropicKey.trim(),
+            });
+            if (data.success) {
+                setCredentialStatus(data.credentials);
+                setAnthropicKey('');
+                setNotice(
+                    user?.aiProvider === 'claude'
+                        ? 'Anthropic API key saved.'
+                        : 'Anthropic API key saved. Pick Claude under AI provider to use it.'
+                );
+                lockSecrets();
+            }
+        } catch (err: any) {
+            setError(
+                typeof err === 'string'
+                    ? err
+                    : 'Could not save Anthropic API key'
+            );
+        } finally {
+            setSavingCredential('');
+        }
+    };
+
     const removeCredential = async () => {
         const target = removeTarget;
         if (!target) return;
@@ -471,7 +517,9 @@ export default function SettingsPage() {
                     ? await authApi.removeMetaCredentials()
                     : target === 'cloudinary'
                       ? await authApi.removeCloudinaryCredentials()
-                      : await authApi.removeGeminiCredentials();
+                      : target === 'anthropic'
+                        ? await authApi.removeAnthropicCredentials()
+                        : await authApi.removeGeminiCredentials();
 
             if (data.success) {
                 setCredentialStatus(data.credentials);
@@ -482,6 +530,8 @@ export default function SettingsPage() {
                     setCloudName('');
                     setCloudApiKey('');
                     setCloudApiSecret('');
+                } else if (target === 'anthropic') {
+                    setAnthropicKey('');
                 } else {
                     setGeminiKey('');
                 }
@@ -490,7 +540,9 @@ export default function SettingsPage() {
                         ? 'Meta app credentials removed. Reconnect your Pages after adding a new app.'
                         : target === 'cloudinary'
                           ? 'Cloudinary credentials removed.'
-                          : 'Gemini API key removed.'
+                          : target === 'anthropic'
+                            ? 'Anthropic API key removed.'
+                            : 'Gemini API key removed.'
                 );
                 lockSecrets();
             }
@@ -634,7 +686,18 @@ export default function SettingsPage() {
                 <PagesBrandSummary />
             </form>
 
-            <AiModelsSection onNotice={setNotice} onError={setError} />
+            <AiModelsSection
+                onNotice={setNotice}
+                onError={setError}
+                keys={
+                    credentialStatus
+                        ? {
+                              gemini: credentialStatus.gemini.configured,
+                              anthropic: Boolean(credentialStatus.anthropic?.configured),
+                          }
+                        : null
+                }
+            />
 
             <section className="mt-6 rounded-2xl border border-line bg-surface p-6 sm:p-8 shadow-card">
                 <h2 className="text-lg font-bold text-fg">Password</h2>
@@ -664,7 +727,7 @@ export default function SettingsPage() {
                         </h2>
                         <p className="text-sm text-muted mt-1 max-w-2xl">
                             Each user brings their own Meta app, Cloudinary
-                            account, and Gemini API key. Secrets are encrypted
+                            account, and Gemini and Anthropic API keys. Secrets are encrypted
                             at rest. Use the eye icons to reveal saved secrets
                             after confirming your password.
                         </p>
@@ -1045,6 +1108,87 @@ export default function SettingsPage() {
                                 ) : null}
                             </div>
                         </form>
+
+                        <form
+                            onSubmit={saveAnthropic}
+                            className="rounded-2xl border border-line bg-surface p-6 sm:p-8 shadow-card"
+                        >
+                            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                                <div>
+                                    <h3 className="text-lg font-bold text-fg">
+                                        Claude (Anthropic)
+                                    </h3>
+                                    <p className="text-sm text-muted mt-1">
+                                        Writes captions, image text, image
+                                        prompts, and Analytics tips when Claude
+                                        is your AI provider.
+                                    </p>
+                                </div>
+                                <StatusPill
+                                    configured={Boolean(
+                                        credentialStatus?.anthropic?.configured
+                                    )}
+                                />
+                            </div>
+
+                            <div className="mt-6">
+                                <FieldLabel>API key</FieldLabel>
+                                <SecretInput
+                                    value={
+                                        showAnthropicKey
+                                            ? anthropicKey ||
+                                              revealed?.anthropic?.apiKey ||
+                                              ''
+                                            : anthropicKey
+                                    }
+                                    onChange={setAnthropicKey}
+                                    show={showAnthropicKey}
+                                    onToggle={() =>
+                                        openSecretEye('anthropic', anthropicKey)
+                                    }
+                                    placeholder={
+                                        credentialStatus?.anthropic?.configured
+                                            ? 'Saved — enter a new key to replace it'
+                                            : 'Paste your Anthropic API key (sk-ant-…)'
+                                    }
+                                />
+                                <p className="text-xs text-subtle mt-2">
+                                    Create a key in the{' '}
+                                    <a
+                                        href="https://platform.claude.com/settings/keys"
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="text-indigo-700 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
+                                    >
+                                        Claude Console
+                                    </a>
+                                    . It is used only for your account, and
+                                    its usage shows on the Usage page.
+                                </p>
+                            </div>
+
+                            <div className="mt-6 flex flex-wrap gap-3">
+                                <button
+                                    type="submit"
+                                    disabled={savingCredential === 'anthropic'}
+                                    className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white px-5 py-3 rounded-xl text-sm font-bold transition-all"
+                                >
+                                    {savingCredential === 'anthropic'
+                                        ? 'Saving...'
+                                        : 'Save Claude key'}
+                                </button>
+                                {credentialStatus?.anthropic?.configured ? (
+                                    <button
+                                        type="button"
+                                        onClick={() => setRemoveTarget('anthropic')}
+                                        disabled={savingCredential === 'anthropic'}
+                                        className="bg-rose-500/10 hover:bg-rose-500/20 disabled:opacity-60 text-rose-700 dark:text-rose-300 border border-rose-500/20 px-5 py-3 rounded-xl text-sm font-bold transition-all"
+                                    >
+                                        Remove
+                                    </button>
+                                ) : null}
+                            </div>
+                        </form>
                     </div>
                 )}
             </section>
@@ -1052,7 +1196,7 @@ export default function SettingsPage() {
             <PasswordPromptModal
                 isOpen={revealOpen}
                 title="Reveal saved credentials"
-                description="Enter your current password to unlock your saved Meta, Cloudinary, and Gemini secrets for this page."
+                description="Enter your current password to unlock your saved Meta, Cloudinary, Gemini, and Anthropic secrets for this page."
                 submitLabel="Reveal credentials"
                 onClose={() => {
                     setRevealOpen(false);

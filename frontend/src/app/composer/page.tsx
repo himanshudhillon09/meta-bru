@@ -104,6 +104,8 @@ export default function ComposerPage() {
     const [caption, setCaption] = useState('');
     const [topic, setTopic] = useState('');
     const [imagePrompt, setImagePrompt] = useState('');
+    /** The art direction Claude wrote for the last AI image, when Claude is the provider. */
+    const [directedPrompt, setDirectedPrompt] = useState('');
     const [media, setMedia] = useState<MediaAsset | null>(null);
     const [imageSource, setImageSource] = useState<ImageSource | null>(null);
     const [cropping, setCropping] = useState<{ source: ImageSource; mode: 'new' | 'adjust' } | null>(null);
@@ -475,6 +477,7 @@ export default function ComposerPage() {
             const replaced = media;
 
             setMedia(data.media);
+            if (mode === 'new') setDirectedPrompt('');
             if (imageSource && imageSource.url !== source.url) releaseSource(imageSource);
             setImageSource({ ...source, crop });
             setCropping(null);
@@ -494,6 +497,7 @@ export default function ComposerPage() {
         releaseSource(imageSource);
         setImageSource(null);
         setMedia(null);
+        setDirectedPrompt('');
     };
 
     // The Page whose logo should frame images; empty when it has none.
@@ -551,7 +555,10 @@ export default function ComposerPage() {
         }
     };
 
-    const writeOverlay = async (imageDescription = imagePrompt) => {
+    const writeOverlay = async (
+        imageDescription = imagePrompt,
+        imagePublicId = media?.publicId
+    ) => {
         const request = {
             ...(topic.trim() ? { topic: topic.trim().slice(0, 500) } : {}),
             ...(caption.trim() ? { caption: caption.trim().slice(0, 2200) } : {}),
@@ -559,7 +566,9 @@ export default function ComposerPage() {
                 ? { prompt: imageDescription.trim().slice(0, 1000) }
                 : {}),
         };
-        if (Object.keys(request).length === 0) {
+        // Claude can also write from the picture itself; Gemini needs words.
+        const readsImage = user?.aiProvider === 'claude' && Boolean(imagePublicId);
+        if (Object.keys(request).length === 0 && !readsImage) {
             setOverlayError('Write a topic or caption first, then let AI write the text.');
             return;
         }
@@ -570,6 +579,7 @@ export default function ComposerPage() {
             const data = await aiApi.overlayText({
                 ...request,
                 ...(connectionId ? { connectionId } : {}),
+                ...(imagePublicId ? { mediaPublicId: imagePublicId } : {}),
             });
             setOverlayText(data.text.slice(0, OVERLAY_MAX_CHARS));
         } catch (err: any) {
@@ -588,13 +598,19 @@ export default function ComposerPage() {
         setGeneratingImage(true);
         setError('');
         try {
-            const data = await aiApi.image({ prompt, ...(connectionId ? { connectionId } : {}) });
+            const data = await aiApi.image({
+                prompt,
+                ...(connectionId ? { connectionId } : {}),
+                ...(topic.trim() ? { topic: topic.trim().slice(0, 500) } : {}),
+                ...(caption.trim() ? { caption: caption.trim().slice(0, 2200) } : {}),
+            });
             setMedia(data.media);
+            setDirectedPrompt(data.directedBy === 'claude' ? data.prompt : '');
             releaseSource(imageSource);
             setImageSource(data.source ? { url: data.source, crop: UNTOUCHED_CROP } : null);
             // AI images get a bold text line by default.
             setOverlayEnabled(true);
-            void writeOverlay(prompt);
+            void writeOverlay(data.prompt || prompt, data.media.publicId);
         } catch (err: any) {
             setError(typeof err === 'string' ? err : 'AI image failed');
         } finally {
@@ -972,10 +988,38 @@ export default function ComposerPage() {
                                         disabled={generatingImage}
                                         className="mt-3 w-full bg-purple-600 hover:bg-purple-500 disabled:opacity-60 text-white px-4 py-2.5 rounded-xl text-xs font-bold"
                                     >
-                                        {generatingImage ? 'Generating...' : 'Generate with AI'}
+                                        {generatingImage
+                                            ? user?.aiProvider === 'claude'
+                                                ? 'Directing and drawing...'
+                                                : 'Generating...'
+                                            : 'Generate with AI'}
                                     </button>
+                                    {user?.aiProvider === 'claude' ? (
+                                        <div className="text-[11px] text-subtle mt-2">
+                                            Claude writes the art direction; Gemini draws it.
+                                        </div>
+                                    ) : null}
                                 </div>
                             </div>
+
+                            {directedPrompt ? (
+                                <div className="mt-3 rounded-2xl border border-indigo-500/20 bg-indigo-500/5 px-4 py-3">
+                                    <div className="flex items-center justify-between gap-3">
+                                        <span className="text-[10px] font-bold uppercase tracking-widest text-indigo-700 dark:text-indigo-300">
+                                            Claude&apos;s art direction
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() => setImagePrompt(directedPrompt)}
+                                            disabled={imagePrompt === directedPrompt}
+                                            className="text-xs font-bold text-indigo-700 hover:underline disabled:opacity-50 disabled:no-underline dark:text-indigo-300"
+                                        >
+                                            {imagePrompt === directedPrompt ? 'In the box' : 'Use this prompt'}
+                                        </button>
+                                    </div>
+                                    <p className="mt-1.5 text-xs leading-relaxed text-fg-2">{directedPrompt}</p>
+                                </div>
+                            ) : null}
 
                             {media ? (
                                 <div className="mt-4 flex items-center gap-4 rounded-2xl border border-line bg-surface-2 p-3">

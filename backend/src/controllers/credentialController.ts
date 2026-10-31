@@ -2,11 +2,13 @@ import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { User } from '../models/userModel.js';
 import {
+    clearAnthropicCredentials,
     clearCloudinaryCredentials,
     clearGeminiCredentials,
     clearMetaCredentials,
     getCredentialStatus,
     getRevealedCredentials,
+    updateAnthropicCredentials,
     updateCloudinaryCredentials,
     updateGeminiCredentials,
     updateMetaCredentials,
@@ -45,6 +47,18 @@ const cloudinarySchema = z.object({
 
 const geminiSchema = z.object({
     apiKey: z.string().trim().min(1).max(256),
+});
+
+const anthropicSchema = z.object({
+    apiKey: z
+        .string()
+        .trim()
+        .min(1)
+        .max(256)
+        .refine(
+            (value) => value.startsWith('sk-ant-') && !value.startsWith('sk-ant-admin'),
+            'That is not an Anthropic API key. Create one in the Claude Console under API keys; it starts with sk-ant-api.'
+        ),
 });
 
 async function statusResponse(req: Request, res: Response): Promise<void> {
@@ -138,5 +152,19 @@ export async function removeGeminiCredentials(
     res: Response
 ): Promise<void> {
     await clearGeminiCredentials(req.user.id);
+    await statusResponse(req, res);
+}
+
+export async function saveAnthropicCredentials(req: Request, res: Response): Promise<void> {
+    const parsed = parseBody(anthropicSchema, req);
+    await updateAnthropicCredentials(req.user.id, { apiKey: parsed.apiKey });
+    await statusResponse(req, res);
+}
+
+export async function removeAnthropicCredentials(
+    req: Request,
+    res: Response
+): Promise<void> {
+    await clearAnthropicCredentials(req.user.id);
     await statusResponse(req, res);
 }

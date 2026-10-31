@@ -10,6 +10,7 @@ import {
 } from '../models/analyticsAiInsightModel.js';
 import { AppError } from '../utils/errors.js';
 import { describeGeminiError } from './aiService.js';
+import { claudeAnalyticsTips, type AiProvider } from './claudeService.js';
 import { recordGeminiCall } from './geminiUsageService.js';
 import { getGeminiCredentials } from './credentialService.js';
 
@@ -38,24 +39,25 @@ interface GeminiResponse {
     error?: { message?: string };
 }
 
+/** What the analysis is asked to do; the data follows it. */
+export const ANALYTICS_AI_INSTRUCTIONS = [
+    'You are the social media strategist for a Facebook Page and Instagram account that posts images and reels through Meta-Bru.',
+    'Study the data below and tell the owner exactly what to do next to grow reach and engagement.',
+    'Use only the data below. Do not invent metrics, posts, or results that are not present. If there is not enough data for a point, skip it.',
+    'The data has totals, a split by format (image posts vs reels), reel watch time (avgWatchTimeMs, watchedPercent = share of each reel people watched), Story totals (stories shared, reach, views, replies, taps forward/back, exits, exitRate), posting times in IST, and a sample of best and weakest posts with their format, length, caption length, hashtag count, text on image, Story sharing, day and hour.',
+    'Compare what the best posts have in common against the weakest ones, and compare reels with image posts.',
+    'Return strict JSON with this exact shape: {"tips":[{"title":"","body":"","severity":"info|success|warning","category":"timing|format|content|consistency|growth","actionLabel":"","actionHref":"","idea":{"format":"post|reel","topic":""}}]}.',
+    'Return 4 to 6 tips, most impactful first. Each title is a short instruction (for example "Post reels on Fridays at 7 PM IST"). Each body explains why with specific numbers from the data, under 280 characters.',
+    'Use severity "success" for something working to keep doing, "warning" for something hurting results, and "info" otherwise.',
+    'When a tip suggests making content, set idea to one concrete post or reel the owner can make next: format is "post" or "reel", topic is one sentence they can paste into the caption generator, in the same language as their best captions, under 200 characters. Otherwise set idea to null.',
+    'For reels with low watchedPercent, suggest a stronger hook in the first 2 seconds or a shorter length, citing the numbers.',
+    'Action links must be one of /composer, /reels, /queue, /connections, or /analytics. Never link to an external site.',
+    'Do not include access tokens, Page IDs, post IDs, or any other identifiers in your response.',
+    'Do not use markdown or code fences. Return only the JSON object.',
+].join('\n');
+
 export function buildAnalyticsAiPrompt(payload: Record<string, unknown>): string {
-    return [
-        'You are the social media strategist for a Facebook Page and Instagram account that posts images and reels through Meta-Bru.',
-        'Study the data below and tell the owner exactly what to do next to grow reach and engagement.',
-        'Use only the data below. Do not invent metrics, posts, or results that are not present. If there is not enough data for a point, skip it.',
-        'The data has totals, a split by format (image posts vs reels), reel watch time (avgWatchTimeMs, watchedPercent = share of each reel people watched), Story totals (stories shared, reach, views, replies, taps forward/back, exits, exitRate), posting times in IST, and a sample of best and weakest posts with their format, length, caption length, hashtag count, text on image, Story sharing, day and hour.',
-        'Compare what the best posts have in common against the weakest ones, and compare reels with image posts.',
-        'Return strict JSON with this exact shape: {"tips":[{"title":"","body":"","severity":"info|success|warning","category":"timing|format|content|consistency|growth","actionLabel":"","actionHref":"","idea":{"format":"post|reel","topic":""}}]}.',
-        'Return 4 to 6 tips, most impactful first. Each title is a short instruction (for example "Post reels on Fridays at 7 PM IST"). Each body explains why with specific numbers from the data, under 280 characters.',
-        'Use severity "success" for something working to keep doing, "warning" for something hurting results, and "info" otherwise.',
-        'When a tip suggests making content, set idea to one concrete post or reel the owner can make next: format is "post" or "reel", topic is one sentence they can paste into the caption generator, in the same language as their best captions, under 200 characters. Otherwise set idea to null.',
-        'For reels with low watchedPercent, suggest a stronger hook in the first 2 seconds or a shorter length, citing the numbers.',
-        'Action links must be one of /composer, /reels, /queue, /connections, or /analytics. Never link to an external site.',
-        'Do not include access tokens, Page IDs, post IDs, or any other identifiers in your response.',
-        'Do not use markdown or code fences. Return only the JSON object.',
-        '',
-        JSON.stringify(payload),
-    ].join('\n');
+    return [ANALYTICS_AI_INSTRUCTIONS, '', JSON.stringify(payload)].join('\n');
 }
 
 function normalizeCategory(value: unknown): AnalyticsTipCategory {
@@ -193,16 +195,20 @@ export async function generateAnalyticsAiInsight(
     rangeKey: string,
     payload: Record<string, unknown>,
     connectionId: string | null,
-    /** The user's Gemini text model from Profile; empty uses the default. */
-    textModel = '',
     /**
-     * True for the Run/Refresh button: always ask Gemini. False for the daily
+     * The user's AI provider and model from Profile; an empty model uses the
+     * provider's default.
+     */
+    ai: { provider: AiProvider; model: string } = { provider: 'gemini', model: '' },
+    /**
+     * True for the Run/Refresh button: always ask the AI. False for the daily
      * automatic run, which reuses an analysis already made today.
      */
     force = true,
     deps: AnalyticsAiDependencies = {}
 ) {
-    const model = textModel || env.gemini.textModel;
+    const model =
+        ai.model || (ai.provider === 'claude' ? env.claude.model : env.gemini.textModel);
     const now = deps.now?.() ?? new Date();
     const dataHash = hashAnalyticsAiPayload(payload);
 
@@ -213,6 +219,43 @@ export async function generateAnalyticsAiInsight(
         }
     }
 
+    const rawText =
+        ai.provider === 'claude'
+            ? await claudeAnalyticsTips(userId, model, ANALYTICS_AI_INSTRUCTIONS, payload).catch(
+                  (error: unknown) => {
+                      if (error instanceof AppError && error.code === 'CLAUDE_NOT_CONFIGURED') {
+                          throw new AppError(400, error.message, 'CLAUDE_NOT_CONFIGURED');
+                      }
+                      throw error;
+                  }
+              )
+            : await requestGeminiTips(userId, model, payload, deps);
+
+    const tips = parseAnalyticsAiTips(rawText);
+    const generatedAt = now;
+    const insight = await AnalyticsAiInsight.create({
+        userId,
+        scopeKey,
+        connectionId,
+        rangeKey,
+        dataHash,
+        tips,
+        model,
+        generatedAt,
+        expiresAt: new Date(
+            generatedAt.getTime() + KEEP_DAYS * 24 * 60 * 60_000
+        ),
+    });
+
+    return { insight, cached: false as const };
+}
+
+async function requestGeminiTips(
+    userId: string,
+    model: string,
+    payload: Record<string, unknown>,
+    deps: AnalyticsAiDependencies
+): Promise<string> {
     const getCredentials = deps.getCredentials ?? getGeminiCredentials;
     let credentials: Awaited<ReturnType<typeof getGeminiCredentials>>;
     try {
@@ -287,21 +330,5 @@ export async function generateAnalyticsAiInsight(
         );
     }
 
-    const tips = parseAnalyticsAiTips(rawText);
-    const generatedAt = now;
-    const insight = await AnalyticsAiInsight.create({
-        userId,
-        scopeKey,
-        connectionId,
-        rangeKey,
-        dataHash,
-        tips,
-        model,
-        generatedAt,
-        expiresAt: new Date(
-            generatedAt.getTime() + KEEP_DAYS * 24 * 60 * 60_000
-        ),
-    });
-
-    return { insight, cached: false as const };
+    return rawText;
 }

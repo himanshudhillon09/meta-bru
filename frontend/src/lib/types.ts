@@ -12,16 +12,33 @@ export interface User {
     role: string;
     isActive?: boolean;
     timezone?: string;
-    /** Gemini model per AI feature; empty means the deployment default. */
+    /** Which AI writes captions, image text, image prompts, and Analytics tips. */
+    aiProvider?: AiProvider;
+    /** Model per AI feature; empty means the deployment default. */
     aiModels?: AiModels;
     mustChangePassword?: boolean;
 }
 
+export type AiProvider = 'gemini' | 'claude';
+
 export interface AiModels {
-    /** Captions and the text on images. */
+    /** Gemini model for captions and the text on images. */
     text: string;
-    /** AI image generation. */
+    /** Gemini model for AI image generation (Claude can't draw). */
     image: string;
+    /** Claude model for every text feature when Claude is the provider. */
+    claude?: string;
+}
+
+export interface ClaudeModelOption {
+    id: string;
+    name: string;
+}
+
+export interface ClaudeModelList {
+    /** What an empty choice falls back to on this deployment. */
+    default: string;
+    models: ClaudeModelOption[];
 }
 
 export interface GeminiModelOption {
@@ -59,6 +76,7 @@ export interface RevealedCredentials {
     meta: { appSecret: string } | null;
     cloudinary: { apiKey: string; apiSecret: string } | null;
     gemini: { apiKey: string } | null;
+    anthropic: { apiKey: string } | null;
 }
 
 export interface CredentialStatus {
@@ -79,6 +97,9 @@ export interface CredentialStatus {
         apiSecretConfigured: boolean;
     };
     gemini: {
+        configured: boolean;
+    };
+    anthropic: {
         configured: boolean;
     };
 }
@@ -856,7 +877,65 @@ export interface CloudinaryPlanUsage {
     error: string;
 }
 
+export type ClaudeFeature = 'caption' | 'image text' | 'image prompt' | 'analytics';
+
+export interface ClaudeTotals {
+    requests: number;
+    failures: number;
+    rateLimited: number;
+    refusals: number;
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    cacheWriteTokens: number;
+    /** Estimated from list prices. */
+    costUsd: number;
+}
+
+export interface ClaudeLimitMeter {
+    limit: number | null;
+    remaining: number | null;
+    resetsAt: string | null;
+}
+
+export interface ClaudeRateLimitReport {
+    model: string;
+    requests: ClaudeLimitMeter;
+    inputTokens: ClaudeLimitMeter;
+    outputTokens: ClaudeLimitMeter;
+    observedAt: string;
+    lastLimitedAt: string | null;
+    retryAfterSeconds: number | null;
+    message: string;
+}
+
+export interface ClaudeLimits {
+    monthlyBudgetUsd: number | null;
+}
+
+export interface ClaudeUsageReport {
+    configured: boolean;
+    /** True when the Profile toggle sends AI features to Claude. */
+    active: boolean;
+    model: string;
+    today: ClaudeTotals;
+    month: ClaudeTotals;
+    byModel: Array<{ model: string; priced: boolean; today: ClaudeTotals; month: ClaudeTotals }>;
+    byFeature: Array<{ feature: ClaudeFeature; today: ClaudeTotals; month: ClaudeTotals }>;
+    /** The last 30 UTC days, oldest first. */
+    daily: Array<{
+        day: string;
+        requests: number;
+        tokens: number;
+        costUsd: number;
+        features: Array<{ feature: ClaudeFeature; requests: number; tokens: number; costUsd: number }>;
+    }>;
+    rateLimits: ClaudeRateLimitReport[];
+    limits: ClaudeLimits;
+}
+
 export interface UsageReport {
     gemini: GeminiUsageReport;
+    claude: ClaudeUsageReport;
     cloudinary: CloudinaryPlanUsage;
 }

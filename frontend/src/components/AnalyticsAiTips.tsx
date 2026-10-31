@@ -3,6 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { AnalyticsTipCard } from '@/components/AnalyticsTipCard';
+import { useAuth } from '@/context/AuthContext';
 import { formatIstDateTime, type AnalyticsAiInsight } from '@/lib/types';
 
 export function AnalyticsAiTips({
@@ -18,12 +19,21 @@ export function AnalyticsAiTips({
     error: string;
     notConfigured?: boolean;
 }) {
+    const { user } = useAuth();
+    // A saved analysis names the model that wrote it; otherwise show the current choice.
+    const provider = ai?.model
+        ? ai.model.startsWith('claude')
+            ? 'Claude'
+            : 'Gemini'
+        : user?.aiProvider === 'claude'
+          ? 'Claude'
+          : 'Gemini';
     return (
         <section className="rounded-2xl border border-line bg-surface p-5">
             <div className="mb-4 flex flex-wrap items-center gap-2">
                 <h2 className="text-sm font-bold text-fg">AI analysis</h2>
                 <span className="rounded-full bg-indigo-500/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest text-indigo-700 dark:text-indigo-300">
-                    Gemini{ai?.model ? ` · ${ai.model}` : ''}
+                    {provider}{ai?.model ? ` · ${ai.model}` : ''}
                 </span>
                 <div className="ml-auto flex items-center gap-2">
                     {ai ? (
@@ -57,7 +67,7 @@ export function AnalyticsAiTips({
                             href="/settings"
                             className="mt-1 inline-block font-bold underline"
                         >
-                            Add your Gemini key in Profile
+                            Add your {/claude/i.test(error) ? 'Claude' : 'Gemini'} key in Profile
                         </Link>
                     ) : null}
                 </div>
@@ -85,7 +95,7 @@ export function AnalyticsAiTips({
                         Runs by itself on your first visit each day; Refresh
                         AI analysis runs it again now. AI compares your best and
                         weakest posts by format, timing, caption, and reel watch
-                        time. Pick the model under Profile.
+                        time. Pick the AI and model under Profile.
                     </p>
                 </>
             ) : (
