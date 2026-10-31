@@ -8,7 +8,7 @@ import type { SocialConnection } from '@/lib/types';
 
 /**
  * Profile holds account settings only. Logos and brand voice belong to each
- * Page; this lists them with a link to edit them in Connections.
+ * Page; this lists them with a link to edit them in Pages & Schedule.
  */
 export function PagesBrandSummary() {
     const [pages, setPages] = useState<SocialConnection[] | null>(null);
@@ -34,7 +34,7 @@ export function PagesBrandSummary() {
                     href="/connections"
                     className="rounded-xl border border-line-strong bg-surface px-4 py-2 text-xs font-bold text-fg hover:bg-hover"
                 >
-                    Manage in Connections →
+                    Manage in Pages & Schedule →
                 </Link>
             </div>
 

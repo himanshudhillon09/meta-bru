@@ -3,10 +3,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { AppShell } from '@/components/AppShell';
-import { ConnectionCard } from '@/components/ConnectionCard';
+import { ConnectionCard, pageStatus } from '@/components/ConnectionCard';
 import { Modal } from '@/components/Modal';
 import { connectionsApi } from '@/lib/apiClient';
-import type { MetaLoginResult, SocialConnection } from '@/lib/types';
+import { friendlySlot } from '@/lib/schedule';
+import { formatTimeUntil, type MetaLoginResult, type SocialConnection } from '@/lib/types';
+import { useNow } from '@/lib/useNow';
 
 // The Meta login leaves the app, so remember where the user came from in
 // session storage. Only known in-app pages are accepted.
@@ -104,6 +106,79 @@ function CreatePageSteps() {
     );
 }
 
+function SummaryStat({
+    label,
+    value,
+    detail,
+}: {
+    label: string;
+    value: React.ReactNode;
+    detail?: React.ReactNode;
+}) {
+    return (
+        <div className="rounded-2xl border border-line bg-surface p-4 shadow-card">
+            <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-subtle">{label}</div>
+            <div className="mt-1.5 text-lg font-bold text-fg">{value}</div>
+            {detail ? <div className="mt-0.5 text-xs text-muted">{detail}</div> : null}
+        </div>
+    );
+}
+
+/** Every Page at a glance: what is live, waiting, and coming next. */
+function PagesSummary({ connections, now }: { connections: SocialConnection[]; now: number }) {
+    const statuses = connections.map((connection) => pageStatus(connection));
+    const live = statuses.filter((status) => status === 'live').length;
+    const paused = statuses.filter((status) => status === 'paused').length;
+    const attention = statuses.filter(
+        (status) => status === 'reconnect' || status === 'disconnected'
+    ).length;
+    const waiting = connections.reduce((total, connection) => total + (connection.queuedCount ?? 0), 0);
+    const perDay = connections
+        .filter((connection) => pageStatus(connection) === 'live')
+        .reduce((total, connection) => total + connection.dailyTimes.length, 0);
+    const next = connections
+        .filter((connection) => (connection.queuedCount ?? 0) > 0 && connection.upcomingSlots?.[0])
+        .map((connection) => ({ connection, at: connection.upcomingSlots![0]! }))
+        .sort((a, b) => a.at.localeCompare(b.at))[0];
+
+    return (
+        <div className="mb-6 grid grid-cols-2 gap-3 xl:grid-cols-4">
+            <SummaryStat
+                label="Pages live"
+                value={`${live} of ${connections.length}`}
+                detail={
+                    [paused ? `${paused} paused` : '', attention ? `${attention} need reconnecting` : '']
+                        .filter(Boolean)
+                        .join(' · ') || 'All posting on schedule'
+                }
+            />
+            <SummaryStat
+                label="Waiting in queue"
+                value={`${waiting} ${waiting === 1 ? 'post' : 'posts'}`}
+                detail={
+                    <Link href="/queue" className="font-semibold text-indigo-700 hover:underline dark:text-indigo-300">
+                        Open the Queue →
+                    </Link>
+                }
+            />
+            <SummaryStat
+                label="Next post"
+                value={next ? friendlySlot(next.at, next.connection.timezone, now) : 'Nothing queued'}
+                detail={
+                    next
+                        ? `${next.connection.pageName}${now > 0 ? ` · ${formatTimeUntil(next.at, now)}` : ''}`
+                        : 'Queue a post to fill the next slot'
+                }
+            />
+            <SummaryStat
+                label="Posting capacity"
+                value={`${perDay} ${perDay === 1 ? 'post' : 'posts'} a day`}
+                detail={`Across ${live} live ${live === 1 ? 'Page' : 'Pages'}`}
+            />
+        </div>
+    );
+}
+
 function loginSummary(result: MetaLoginResult): {
     notice: string;
     warnings: string[];
@@ -122,7 +197,7 @@ function loginSummary(result: MetaLoginResult): {
     parts.push(
         reconnected.length > 0
             ? 'Schedules, queued posts, and analytics history were kept.'
-            : 'Set the daily time and targets below.'
+            : 'Choose where each Page posts and when, below.'
     );
 
     const warnings: string[] = [];
@@ -162,6 +237,7 @@ export default function ConnectionsPage() {
     const [warnings, setWarnings] = useState<string[]>([]);
     const [returnTo, setReturnTo] = useState<string | null>(null);
     const completionStarted = useRef(false);
+    const now = useNow();
 
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
@@ -179,7 +255,7 @@ export default function ConnectionsPage() {
 
         if (connected) {
             setNotice(
-                `${connected} Page${connected === '1' ? '' : 's'} connected. Set the daily time and targets below.`
+                `${connected} Page${connected === '1' ? '' : 's'} connected. Choose where each Page posts and when, below.`
             );
         }
         if (oauthError) {
@@ -274,9 +350,9 @@ export default function ConnectionsPage() {
         );
     };
 
+    // Each card confirms its own save, next to the settings that changed.
     const updateConnection = (updated: SocialConnection) => {
         mergeConnection(updated);
-        setNotice('Connection settings saved.');
     };
 
     const disconnectConnection = (updated: SocialConnection) => {
@@ -293,11 +369,15 @@ export default function ConnectionsPage() {
     const connectedPageNames = connections
         .filter((connection) => connection.tokenStatus !== 'disconnected')
         .map((connection) => connection.pageName);
+    const needAttention = connections.filter((connection) => {
+        const status = pageStatus(connection);
+        return status === 'reconnect' || status === 'disconnected';
+    });
 
     return (
         <AppShell
-            title="Connections"
-            subtitle="Connect the Facebook Pages and Instagram accounts this workspace can publish to."
+            title="Pages & Schedule"
+            subtitle="Your Facebook Pages and Instagram accounts: where each one posts, and when."
             actions={
                 <>
                     <button
@@ -398,6 +478,26 @@ export default function ConnectionsPage() {
                 </div>
             ) : null}
 
+            {!loading && needAttention.length > 0 ? (
+                <div className="animate-fade-up mb-6 flex flex-col gap-3 rounded-2xl border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-200 sm:flex-row sm:items-center sm:justify-between">
+                    <span>
+                        <strong>
+                            {needAttention.length === 1
+                                ? '1 Page has stopped posting'
+                                : `${needAttention.length} Pages have stopped posting`}
+                        </strong>{' '}
+                        until you reconnect: {needAttention.map((connection) => connection.pageName).join(', ')}.
+                    </span>
+                    <button
+                        onClick={() => setGuideOpen(true)}
+                        disabled={connecting}
+                        className="shrink-0 rounded-xl bg-amber-500 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-amber-400 disabled:opacity-60"
+                    >
+                        Reconnect now
+                    </button>
+                </div>
+            ) : null}
+
             {loading ? (
                 <div className="flex justify-center py-24">
                     <div className="animate-spin rounded-full h-10 w-10 border-[3px] border-indigo-500/20 border-t-indigo-500" />
@@ -430,11 +530,14 @@ export default function ConnectionsPage() {
                     </div>
                 </div>
             ) : (
+                <>
+                <PagesSummary connections={connections} now={now} />
                 <div className="stagger grid grid-cols-1 gap-6">
                     {connections.map((connection) => (
                         <ConnectionCard
                             key={connection._id}
                             connection={connection}
+                            now={now}
                             onUpdated={updateConnection}
                             onDisconnected={disconnectConnection}
                             onReconnect={() => setGuideOpen(true)}
@@ -442,6 +545,7 @@ export default function ConnectionsPage() {
                         />
                     ))}
                 </div>
+                </>
             )}
         </AppShell>
     );

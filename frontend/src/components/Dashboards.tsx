@@ -215,7 +215,7 @@ export function UserDashboard() {
                         href="/connections"
                         className="bg-hover hover:bg-hover-strong text-fg border border-line-strong px-5 py-2.5 rounded-xl text-sm font-bold transition-all"
                     >
-                        Connections
+                        Pages &amp; Schedule
                     </Link>
                 </>
             }
@@ -229,7 +229,7 @@ export function UserDashboard() {
 
             <div className="stagger grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
                 <StatCard
-                    label="Connections"
+                    label="Connected Pages"
                     value={connections.length}
                     accent="border-indigo-500/20 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300"
                 />
@@ -470,7 +470,7 @@ export function AdminDashboard() {
                     accent="border-indigo-500/20 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300"
                 />
                 <StatCard
-                    label="Connections"
+                    label="Connected Pages"
                     value={stats?.connections ?? 0}
                     accent="border-purple-500/20 bg-purple-500/10 text-purple-700 dark:text-purple-300"
                 />

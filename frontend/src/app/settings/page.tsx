@@ -363,7 +363,7 @@ export default function SettingsPage() {
                 setMetaAppId(data.credentials.meta?.appId || metaAppId.trim());
                 setMetaAppSecret('');
                 setNotice(
-                    'Meta app credentials saved. If you changed the app, reconnect your Pages under Connections.'
+                    'Meta app credentials saved. If you changed the app, reconnect your Pages under Pages & Schedule.'
                 );
                 lockSecrets();
             }
