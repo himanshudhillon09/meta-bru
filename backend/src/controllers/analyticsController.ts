@@ -158,7 +158,7 @@ export async function overview(req: Request, res: Response): Promise<void> {
     const input = parseQuery(rangeQuerySchema, req);
     const { range, filters } = rangeAndFilters(input);
     const [data, stories] = await Promise.all([
-        getAnalyticsOverview(req.user!.id, range, filters),
+        getAnalyticsOverview(req.user!.id, range, filters, { compare: true }),
         getStoryAnalytics(req.user!.id, range, filters),
     ]);
     res.json({ success: true, ...data, stories: stories.summary });

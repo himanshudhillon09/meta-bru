@@ -92,17 +92,17 @@ export function AnalyticsAiTips({
                         </div>
                     )}
                     <p className="mt-3 text-[10px] text-subtle">
-                        Runs by itself on your first visit each day; Refresh
-                        AI analysis runs it again now. AI compares your best and
-                        weakest posts by format, timing, caption, and reel watch
-                        time. Pick the AI and model under Profile.
+                        Runs only when you press the button. AI compares your
+                        best and weakest posts by format, timing, caption, and
+                        reel watch time. Pick the AI and model under Profile.
                     </p>
                 </>
             ) : (
                 <div className="rounded-2xl border border-dashed border-line-strong p-8 text-center text-sm text-subtle">
                     Run an AI analysis to get a ranked plan: when to post,
                     reels or images, what to say, and ready-made ideas you can
-                    open straight in the Composer or Reels page.
+                    open straight in the Composer or Reels page. It runs only
+                    when you press the button.
                 </div>
             )}
         </section>

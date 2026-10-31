@@ -1,7 +1,19 @@
 'use client';
 
 import React from 'react';
-import type { AnalyticsBestTime } from '@/lib/types';
+import {
+    Area,
+    AreaChart,
+    Bar,
+    BarChart,
+    CartesianGrid,
+    ResponsiveContainer,
+    Tooltip,
+    XAxis,
+    YAxis,
+} from 'recharts';
+import { ChartTooltip } from '@/components/analytics/ChartTooltip';
+import { formatCompact, formatCount } from '@/components/analytics/format';
 
 export function MetricCard({
     label,
@@ -35,6 +47,9 @@ export function MetricCard({
     );
 }
 
+const AXIS_TICK = { fill: 'var(--subtle)', fontSize: 11 };
+
+/** Columns over time; an optional second series of the same unit sits beside each. */
 export function AnalyticsBarChart({
     data,
     height = 180,
@@ -48,58 +63,65 @@ export function AnalyticsBarChart({
     primaryLabel?: string;
     secondaryLabel?: string;
 }) {
-    const max = Math.max(
-        1,
-        ...data.map((item) => Math.max(item.value, item.secondary || 0))
-    );
     const hasSecondary = data.some((item) => item.secondary !== undefined);
-    const labelEvery =
-        data.length > 45 ? 7 : data.length > 20 ? 3 : 1;
+    const primaryName = primaryLabel || valueLabel;
+    const secondaryName = secondaryLabel || 'secondary';
 
     return (
         <div className="w-full">
-            <div
-                className="flex items-stretch gap-1 overflow-x-auto pb-2"
-                style={{ height }}
-            >
-                {data.map((item, index) => (
-                    <div
-                        key={`${item.label}-${index}`}
-                        className="flex h-full min-w-2 flex-1 flex-col items-center justify-end gap-1"
-                    >
-                        <div className="relative flex w-full flex-1 items-end justify-center gap-0.5">
-                            <div
-                                className="max-w-2 flex-1 rounded-t bg-indigo-500/80"
-                                style={{
-                                    height: `${(item.value / max) * 100}%`,
-                                }}
-                                title={`${item.label}: ${item.value} ${valueLabel}`}
-                            />
-                            {item.secondary !== undefined ? (
-                                <div
-                                    className="max-w-2 flex-1 rounded-t bg-emerald-500/70"
-                                    style={{
-                                        height: `${(item.secondary / max) * 100}%`,
-                                    }}
-                                    title={`${item.label}: ${item.secondary} ${secondaryLabel || ''}`}
-                                />
-                            ) : null}
-                        </div>
-                        <span className="h-3 text-[9px] text-faint">
-                            {index % labelEvery === 0 ? item.label : ''}
-                        </span>
-                    </div>
-                ))}
+            <div style={{ height }}>
+                <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: 0 }} barGap={2}>
+                        <CartesianGrid vertical={false} stroke="var(--line)" />
+                        <XAxis
+                            dataKey="label"
+                            tickLine={false}
+                            axisLine={{ stroke: 'var(--line-strong)' }}
+                            tick={AXIS_TICK}
+                            minTickGap={12}
+                        />
+                        <YAxis
+                            allowDecimals={false}
+                            tickFormatter={(value: number) => formatCompact(value)}
+                            tickLine={false}
+                            axisLine={false}
+                            tick={AXIS_TICK}
+                            width={36}
+                        />
+                        <Tooltip
+                            cursor={{ fill: 'var(--hover)' }}
+                            content={({ active, payload }) => {
+                                const row = payload?.[0]?.payload as (typeof data)[number] | undefined;
+                                if (!active || !row) return null;
+                                return (
+                                    <ChartTooltip
+                                        title={row.label}
+                                        rows={[
+                                            { label: primaryName, value: formatCount(row.value), color: 'var(--viz-1)', strong: true },
+                                            ...(row.secondary !== undefined
+                                                ? [{ label: secondaryName, value: formatCount(row.secondary), color: 'var(--viz-reel)' }]
+                                                : []),
+                                        ]}
+                                    />
+                                );
+                            }}
+                        />
+                        <Bar dataKey="value" fill="var(--viz-1)" radius={[4, 4, 0, 0]} maxBarSize={20} />
+                        {hasSecondary ? (
+                            <Bar dataKey="secondary" fill="var(--viz-reel)" radius={[4, 4, 0, 0]} maxBarSize={20} />
+                        ) : null}
+                    </BarChart>
+                </ResponsiveContainer>
             </div>
             {hasSecondary ? (
-                <div className="mt-1 flex flex-wrap gap-4 text-[10px] text-subtle">
+                <div className="mt-2 flex flex-wrap gap-4 text-[11px] text-subtle">
                     <span className="flex items-center gap-1.5">
-                        <span className="h-2 w-2 rounded-sm bg-indigo-500/80" />
-                        {primaryLabel || valueLabel}
+                        <span className="h-2.5 w-2.5 rounded-sm" style={{ background: 'var(--viz-1)' }} />
+                        {primaryName}
                     </span>
                     <span className="flex items-center gap-1.5">
-                        <span className="h-2 w-2 rounded-sm bg-emerald-500/70" />
-                        {secondaryLabel || 'secondary'}
+                        <span className="h-2.5 w-2.5 rounded-sm" style={{ background: 'var(--viz-reel)' }} />
+                        {secondaryName}
                     </span>
                 </div>
             ) : null}
@@ -107,10 +129,11 @@ export function AnalyticsBarChart({
     );
 }
 
+/** One series over time, with a crosshair tooltip. */
 export function AnalyticsLineChart({
     points,
     height = 180,
-    color = '#818cf8',
+    color = 'var(--viz-1)',
     valueSuffix = '',
 }: {
     points: Array<{ label: string; value: number }>;
@@ -118,6 +141,7 @@ export function AnalyticsLineChart({
     color?: string;
     valueSuffix?: string;
 }) {
+    const id = React.useId().replace(/:/g, '');
     if (points.length === 0) {
         return (
             <div className="py-16 text-center text-sm text-subtle">
@@ -133,137 +157,61 @@ export function AnalyticsLineChart({
             </div>
         );
     }
-    const width = 600;
-    const max = Math.max(1, ...points.map((point) => point.value)) * 1.1;
-    const step = width / (points.length - 1);
-    const path = points
-        .map((point, index) => {
-            const x = index * step;
-            const y = height - (point.value / max) * (height - 20) - 10;
-            return `${index === 0 ? 'M' : 'L'} ${x} ${y}`;
-        })
-        .join(' ');
-    const lastPoint = points[points.length - 1];
+    const latest = points[points.length - 1]!;
 
     return (
         <div className="w-full">
-            <svg
-                viewBox={`0 0 ${width} ${height}`}
-                preserveAspectRatio="none"
-                className="w-full overflow-visible"
-                style={{ height }}
-                role="img"
-                aria-label="Analytics series over time"
-            >
-                {[0.25, 0.5, 0.75].map((fraction) => (
-                    <line
-                        key={fraction}
-                        x1="0"
-                        x2={width}
-                        y1={height * fraction}
-                        y2={height * fraction}
-                        stroke="rgba(148, 163, 184, 0.12)"
-                        strokeWidth="1"
-                    />
-                ))}
-                <path
-                    d={path}
-                    fill="none"
-                    stroke={color}
-                    strokeWidth="3"
-                    strokeLinejoin="round"
-                    strokeLinecap="round"
-                    vectorEffect="non-scaling-stroke"
-                />
-                <path
-                    d={`${path} L ${width} ${height} L 0 ${height} Z`}
-                    fill={color}
-                    opacity="0.08"
-                />
-                <circle
-                    cx={width}
-                    cy={
-                        height -
-                        (lastPoint.value / max) * (height - 20) -
-                        10
-                    }
-                    r="4"
-                    fill={color}
-                />
-            </svg>
-            <div className="mt-1 flex flex-wrap justify-between gap-1 text-[10px] text-faint">
-                <span>{points[0]?.label}</span>
-                <span>
-                    Latest: {lastPoint.value.toLocaleString('en-IN')}
-                    {valueSuffix}
-                </span>
-                <span>{lastPoint.label}</span>
+            <div style={{ height }}>
+                <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={points} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+                        <defs>
+                            <linearGradient id={`line-${id}`} x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor={color} stopOpacity={0.16} />
+                                <stop offset="100%" stopColor={color} stopOpacity={0} />
+                            </linearGradient>
+                        </defs>
+                        <CartesianGrid vertical={false} stroke="var(--line)" />
+                        <XAxis
+                            dataKey="label"
+                            tickLine={false}
+                            axisLine={{ stroke: 'var(--line-strong)' }}
+                            tick={AXIS_TICK}
+                            minTickGap={24}
+                        />
+                        <YAxis
+                            tickFormatter={(value: number) => `${formatCompact(value)}${valueSuffix}`}
+                            tickLine={false}
+                            axisLine={false}
+                            tick={AXIS_TICK}
+                            width={44}
+                        />
+                        <Tooltip
+                            cursor={{ stroke: 'var(--line-strong)', strokeWidth: 1 }}
+                            content={({ active, payload }) => {
+                                const row = payload?.[0]?.payload as { label: string; value: number } | undefined;
+                                if (!active || !row) return null;
+                                return (
+                                    <ChartTooltip
+                                        title={row.label}
+                                        rows={[{ label: valueSuffix === '%' ? 'rate' : 'total', value: `${formatCount(row.value)}${valueSuffix}`, color, strong: true }]}
+                                    />
+                                );
+                            }}
+                        />
+                        <Area
+                            type="monotone"
+                            dataKey="value"
+                            stroke={color}
+                            strokeWidth={2}
+                            fill={`url(#line-${id})`}
+                            dot={false}
+                            activeDot={{ r: 4, stroke: 'var(--surface)', strokeWidth: 2, fill: color }}
+                        />
+                    </AreaChart>
+                </ResponsiveContainer>
             </div>
-        </div>
-    );
-}
-
-export function AnalyticsHeatmap({
-    buckets,
-}: {
-    buckets: AnalyticsBestTime[];
-}) {
-    const max = Math.max(
-        1,
-        ...buckets.map((bucket) => bucket.avgEngagementRate || 0)
-    );
-    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    return (
-        <div className="overflow-x-auto">
-            <div className="min-w-[560px]">
-                <div className="mb-1 grid grid-cols-[44px_repeat(8,1fr)] gap-1">
-                    <div />
-                    {['00', '03', '06', '09', '12', '15', '18', '21'].map(
-                        (hour) => (
-                            <div
-                                key={hour}
-                                className="text-center text-[9px] text-faint"
-                            >
-                                {hour}
-                            </div>
-                        )
-                    )}
-                </div>
-                {days.map((day, dayIndex) => (
-                    <div
-                        key={day}
-                        className="mb-1 grid grid-cols-[44px_repeat(8,1fr)] gap-1"
-                    >
-                        <div className="text-[10px] font-bold text-subtle">
-                            {day}
-                        </div>
-                        {Array.from({ length: 8 }, (_, block) => {
-                            const bucket = buckets.find(
-                                (item) =>
-                                    item.day === dayIndex + 1 &&
-                                    item.block === block
-                            );
-                            const rate = bucket?.avgEngagementRate;
-                            const opacity = rate
-                                ? 0.15 + (rate / max) * 0.75
-                                : 0.04;
-                            return (
-                                <div
-                                    key={block}
-                                    title={
-                                        bucket
-                                            ? `${day} ${bucket.label}: ${bucket.posts} posts${rate ? `, ${rate}% avg` : ''}`
-                                            : ''
-                                    }
-                                    className="h-7 rounded-md border border-line"
-                                    style={{
-                                        backgroundColor: `rgba(129, 140, 248, ${opacity})`,
-                                    }}
-                                />
-                            );
-                        })}
-                    </div>
-                ))}
+            <div className="mt-1 text-right text-[11px] text-subtle">
+                Latest: <span className="font-semibold text-fg-2">{formatCount(latest.value)}{valueSuffix}</span>
             </div>
         </div>
     );
