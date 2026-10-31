@@ -9,6 +9,7 @@ import { Modal } from '@/components/Modal';
 import { PasswordChangeForm } from '@/components/PasswordChangeForm';
 import { PasswordInput } from '@/components/PasswordInput';
 import { PasswordPromptModal } from '@/components/PasswordPromptModal';
+import { Tabs } from '@/components/Tabs';
 import { useAuth } from '@/context/AuthContext';
 import { authApi } from '@/lib/apiClient';
 import {
@@ -151,6 +152,102 @@ function SecretInput({
 const secondaryButtonClass =
     'bg-hover hover:bg-hover-strong disabled:opacity-60 text-fg border border-line-strong px-4 py-2.5 rounded-xl text-xs font-bold transition-all';
 
+const primaryButtonClass =
+    'bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all';
+
+const removeButtonClass =
+    'bg-rose-500/10 hover:bg-rose-500/20 disabled:opacity-60 text-rose-700 dark:text-rose-300 border border-rose-500/20 px-5 py-2.5 rounded-xl text-sm font-bold transition-all';
+
+const TABS = [
+    { key: 'account', label: 'Account' },
+    { key: 'ai', label: 'AI' },
+    { key: 'integrations', label: 'Integrations' },
+    { key: 'security', label: 'Security' },
+] as const;
+
+type TabKey = (typeof TABS)[number]['key'];
+
+const ICONS: Record<'meta' | 'cloud' | 'spark' | 'chat' | 'lock' | 'user', React.ReactNode> = {
+    meta: <path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1" />,
+    cloud: <path d="M7 18a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 18 8.5a4.75 4.75 0 0 1-.75 9.5H7Z" />,
+    spark: <path d="M12 3v4m0 10v4M3 12h4m10 0h4M6.3 6.3l2.5 2.5m6.4 6.4 2.5 2.5m0-11.4-2.5 2.5m-6.4 6.4-2.5 2.5" />,
+    chat: <path d="M5 18.5V6.5A2.5 2.5 0 0 1 7.5 4h9A2.5 2.5 0 0 1 19 6.5v7a2.5 2.5 0 0 1-2.5 2.5H9l-4 2.5Z" />,
+    lock: (
+        <>
+            <rect x="5" y="10.5" width="14" height="9.5" rx="2" />
+            <path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5" />
+        </>
+    ),
+    user: (
+        <>
+            <circle cx="12" cy="8.5" r="3.5" />
+            <path d="M5 20a7 7 0 0 1 14 0" />
+        </>
+    ),
+};
+
+function CardIcon({ name }: { name: keyof typeof ICONS }) {
+    return (
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-700 dark:text-indigo-300">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5" aria-hidden="true">
+                {ICONS[name]}
+            </svg>
+        </span>
+    );
+}
+
+/** One integration: what it is for, whether it is saved, its fields, and its buttons. */
+function CredentialCard({
+    icon,
+    title,
+    description,
+    configured,
+    onSubmit,
+    children,
+    actions,
+    className = '',
+}: {
+    icon: keyof typeof ICONS;
+    title: string;
+    description: React.ReactNode;
+    configured: boolean;
+    onSubmit: (event: React.FormEvent) => void;
+    children: React.ReactNode;
+    actions: React.ReactNode;
+    className?: string;
+}) {
+    return (
+        <form onSubmit={onSubmit} className={`flex flex-col rounded-2xl border border-line bg-surface p-6 shadow-card ${className}`}>
+            <div className="flex items-start gap-3">
+                <CardIcon name={icon} />
+                <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                        <h3 className="text-base font-bold text-fg">{title}</h3>
+                        <StatusPill configured={configured} />
+                    </div>
+                    <p className="mt-1 text-sm text-muted">{description}</p>
+                </div>
+            </div>
+            <div className="mt-5 flex-1">{children}</div>
+            <div className="mt-6 flex flex-wrap gap-3 border-t border-line pt-4">{actions}</div>
+        </form>
+    );
+}
+
+interface SetupStep {
+    key: string;
+    label: string;
+    done: boolean;
+    detail: string;
+    tab?: TabKey;
+    href?: string;
+}
+
+function initials(name: string): string {
+    const parts = name.trim().split(/\s+/).filter(Boolean);
+    return ((parts[0]?.[0] ?? '') + (parts.length > 1 ? (parts[parts.length - 1]?.[0] ?? '') : '')).toUpperCase() || 'U';
+}
+
 export default function SettingsPage() {
     const { user, updateUser, updateSession } = useAuth();
     const [name, setName] = useState('');
@@ -190,6 +287,23 @@ export default function SettingsPage() {
     const [showCloudApiSecret, setShowCloudApiSecret] = useState(false);
     const [showGeminiKey, setShowGeminiKey] = useState(false);
     const [showAnthropicKey, setShowAnthropicKey] = useState(false);
+    const [tab, setTab] = useState<TabKey>('account');
+
+    // Other pages link straight to a tab, e.g. /settings#integrations.
+    useEffect(() => {
+        const fromHash = () => {
+            const match = TABS.find((item) => item.key === window.location.hash.slice(1));
+            if (match) setTab(match.key);
+        };
+        fromHash();
+        window.addEventListener('hashchange', fromHash);
+        return () => window.removeEventListener('hashchange', fromHash);
+    }, []);
+
+    const changeTab = (key: TabKey) => {
+        setTab(key);
+        window.history.replaceState(null, '', `#${key}`);
+    };
 
     useEffect(() => {
         if (!user) return;
@@ -573,202 +687,422 @@ export default function SettingsPage() {
 
     if (!user) return null;
 
-    return (
-        <AppShell
-            title="Profile & credentials"
-            subtitle="Your account and the integrations that belong only to you. Logos and brand voice live on each Page."
+    const provider = user.aiProvider === 'claude' ? 'claude' : 'gemini';
+    const aiKeySaved =
+        provider === 'claude'
+            ? Boolean(credentialStatus?.anthropic?.configured)
+            : Boolean(credentialStatus?.gemini.configured);
+    const pagesCount = credentialStatus?.meta.connectionsCount ?? 0;
+    const steps: SetupStep[] = [
+        {
+            key: 'meta',
+            label: 'Meta app',
+            done: Boolean(credentialStatus?.meta.configured),
+            detail: credentialStatus?.meta.configured ? 'Saved' : 'Needed to connect Pages',
+            tab: 'integrations',
+        },
+        {
+            key: 'pages',
+            label: 'Facebook Pages',
+            done: pagesCount > 0,
+            detail:
+                pagesCount > 0
+                    ? `${pagesCount} Page${pagesCount === 1 ? '' : 's'}${
+                          credentialStatus?.meta.needsReauthCount
+                              ? `, ${credentialStatus.meta.needsReauthCount} to reconnect`
+                              : ''
+                      }`
+                    : 'Connect in Pages & Schedule',
+            href: '/connections',
+        },
+        {
+            key: 'cloudinary',
+            label: 'Media storage',
+            done: Boolean(credentialStatus?.cloudinary.configured),
+            detail: credentialStatus?.cloudinary.configured ? 'Cloudinary saved' : 'Needed for uploads',
+            tab: 'integrations',
+        },
+        {
+            key: 'ai',
+            label: `${provider === 'claude' ? 'Claude' : 'Gemini'} key`,
+            done: aiKeySaved,
+            detail: aiKeySaved ? 'AI writer ready' : 'Needed for AI captions',
+            tab: 'ai',
+        },
+    ];
+    const doneCount = steps.filter((step) => step.done).length;
+    const tabNeeds = (key: TabKey) =>
+        !credentialsLoading && steps.some((step) => step.tab === key && !step.done);
+
+    const geminiCard = (
+        <CredentialCard
+            key="gemini"
+            icon="spark"
+            title="Gemini"
+            description={
+                provider === 'claude'
+                    ? 'Draws AI images from Claude’s art direction.'
+                    : 'Writes captions, image text, and Analytics tips, and draws AI images.'
+            }
+            configured={Boolean(credentialStatus?.gemini.configured)}
+            onSubmit={saveGemini}
+            actions={
+                <>
+                    <button type="submit" disabled={savingCredential === 'gemini'} className={primaryButtonClass}>
+                        {savingCredential === 'gemini' ? 'Saving...' : 'Save Gemini key'}
+                    </button>
+                    {credentialStatus?.gemini.configured ? (
+                        <button
+                            type="button"
+                            onClick={() => setRemoveTarget('gemini')}
+                            disabled={savingCredential === 'gemini'}
+                            className={removeButtonClass}
+                        >
+                            Remove
+                        </button>
+                    ) : null}
+                </>
+            }
         >
-            {notice ? (
-                <div className="animate-fade-up mb-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-300">
-                    {notice}
-                </div>
-            ) : null}
-            {error ? (
-                <div className="animate-fade-up mb-6 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300">
-                    {error}
-                </div>
-            ) : null}
+            <FieldLabel>API key</FieldLabel>
+            <SecretInput
+                value={showGeminiKey ? geminiKey || revealed?.gemini?.apiKey || '' : geminiKey}
+                onChange={setGeminiKey}
+                show={showGeminiKey}
+                onToggle={() => openSecretEye('gemini', geminiKey)}
+                placeholder={
+                    credentialStatus?.gemini.configured
+                        ? 'Saved — enter a new key to replace it'
+                        : 'Paste your Gemini API key'
+                }
+            />
+            <p className="text-xs text-subtle mt-2">
+                Create a key in{' '}
+                <a
+                    href="https://aistudio.google.com/apikey"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-indigo-700 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
+                >
+                    Google AI Studio
+                </a>
+                . It is used only for your account.
+            </p>
+        </CredentialCard>
+    );
 
-            <form
-                onSubmit={save}
-                className="stagger grid grid-cols-1 lg:grid-cols-[0.8fr_1.2fr] gap-6 items-start"
-            >
-                <section className="rounded-2xl border border-line bg-surface p-6 sm:p-8 shadow-card">
-                    <h2 className="text-lg font-bold text-fg mb-6">Account</h2>
+    const claudeCard = (
+        <CredentialCard
+            key="claude"
+            icon="chat"
+            title="Claude (Anthropic)"
+            description="Writes captions, image text, image prompts, and Analytics tips when Claude is your AI provider."
+            configured={Boolean(credentialStatus?.anthropic?.configured)}
+            onSubmit={saveAnthropic}
+            actions={
+                <>
+                    <button type="submit" disabled={savingCredential === 'anthropic'} className={primaryButtonClass}>
+                        {savingCredential === 'anthropic' ? 'Saving...' : 'Save Claude key'}
+                    </button>
+                    {credentialStatus?.anthropic?.configured ? (
+                        <button
+                            type="button"
+                            onClick={() => setRemoveTarget('anthropic')}
+                            disabled={savingCredential === 'anthropic'}
+                            className={removeButtonClass}
+                        >
+                            Remove
+                        </button>
+                    ) : null}
+                </>
+            }
+        >
+            <FieldLabel>API key</FieldLabel>
+            <SecretInput
+                value={showAnthropicKey ? anthropicKey || revealed?.anthropic?.apiKey || '' : anthropicKey}
+                onChange={setAnthropicKey}
+                show={showAnthropicKey}
+                onToggle={() => openSecretEye('anthropic', anthropicKey)}
+                placeholder={
+                    credentialStatus?.anthropic?.configured
+                        ? 'Saved — enter a new key to replace it'
+                        : 'Paste your Anthropic API key (sk-ant-…)'
+                }
+            />
+            <p className="text-xs text-subtle mt-2">
+                Create a key in the{' '}
+                <a
+                    href="https://platform.claude.com/settings/keys"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-indigo-700 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
+                >
+                    Claude Console
+                </a>
+                . It is used only for your account, and its usage shows on the Usage page.
+            </p>
+        </CredentialCard>
+    );
 
-                    <div className="space-y-5">
-                        <div>
-                            <FieldLabel>Full name</FieldLabel>
-                            <input
-                                value={name}
-                                onChange={(event) => setName(event.target.value)}
-                                className={inputClass}
-                            />
-                        </div>
-
-                        <div>
-                            <FieldLabel>Email</FieldLabel>
-                            <input
-                                type="email"
-                                value={email}
-                                onChange={(event) => setEmail(event.target.value)}
-                                autoComplete="email"
-                                required
-                                className={inputClass}
-                            />
-                            {emailChanged ? (
-                                <div className="mt-3">
-                                    <FieldLabel>
-                                        Current password to change email
-                                    </FieldLabel>
-                                    <PasswordInput
-                                        value={currentPassword}
-                                        onChange={setCurrentPassword}
-                                        autoComplete="current-password"
-                                        placeholder="Confirm your password"
-                                        className={fieldInputClass}
-                                        wrapperClassName="mt-2"
-                                        required
-                                    />
-                                    <p className="text-xs text-subtle mt-2">
-                                        Required so a stolen session cannot
-                                        change your sign-in email.
-                                    </p>
-                                </div>
-                            ) : null}
-                        </div>
-
-                        <div>
-                            <FieldLabel>Default timezone</FieldLabel>
-                            <select
-                                value={timezone}
-                                onChange={(event) => setTimezone(event.target.value)}
-                                className={inputClass}
-                            >
-                                {timezones.map((zone) => (
-                                    <option key={zone} value={zone}>
-                                        {zone}
-                                    </option>
-                                ))}
-                            </select>
-                            <p className="text-xs text-subtle mt-2">
-                                Every Page posts at its scheduled times in this
-                                timezone. Changing it reschedules all Pages.
+    return (
+        <AppShell title="Profile" subtitle="Your account, your AI, and the services Meta-Bru runs on.">
+            <section className="rounded-2xl border border-line bg-surface p-5 shadow-card sm:p-6">
+                <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] lg:items-center">
+                    <div className="flex items-center gap-4">
+                        <span
+                            aria-hidden="true"
+                            className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 text-xl font-bold text-white shadow-card"
+                        >
+                            {initials(user.name || user.email)}
+                        </span>
+                        <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <h2 className="truncate text-lg font-bold text-fg">{user.name || 'Your account'}</h2>
+                                <span className="rounded-full border border-indigo-500/20 bg-indigo-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-indigo-700 dark:text-indigo-300">
+                                    {user.role}
+                                </span>
+                                <span
+                                    className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest ${
+                                        user.isActive === false
+                                            ? 'border-rose-500/20 bg-rose-500/10 text-rose-700 dark:text-rose-300'
+                                            : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                                    }`}
+                                >
+                                    {user.isActive === false ? 'Inactive' : 'Active'}
+                                </span>
+                            </div>
+                            <p className="mt-0.5 truncate text-sm text-muted">{user.email}</p>
+                            <p className="mt-0.5 text-xs text-subtle">
+                                {user.timezone || 'Asia/Kolkata'} · AI by {provider === 'claude' ? 'Claude' : 'Gemini'}
                             </p>
                         </div>
                     </div>
 
-                    <button
-                        type="submit"
-                        disabled={saving}
-                        className="mt-7 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white px-6 py-3 rounded-xl text-sm font-bold transition-all"
-                    >
-                        {saving ? 'Saving...' : 'Save account'}
-                    </button>
-
-                    <div className="mt-8 pt-6 border-t border-line text-xs text-subtle">
-                        Role:{' '}
-                        <span className="capitalize text-fg-2">{user.role}</span>
-                        <br />
-                        Status:{' '}
-                        <span
-                            className={
-                                user.isActive === false
-                                    ? 'text-rose-700 dark:text-rose-400'
-                                    : 'text-emerald-700 dark:text-emerald-400'
-                            }
-                        >
-                            {user.isActive === false ? 'Inactive' : 'Active'}
-                        </span>
+                    <div>
+                        <div className="flex items-center justify-between gap-3 text-xs">
+                            <span className="font-bold text-fg">
+                                Setup {credentialsLoading ? '…' : `${doneCount} of ${steps.length} done`}
+                            </span>
+                            {!credentialsLoading && doneCount === steps.length ? (
+                                <span className="font-semibold text-emerald-700 dark:text-emerald-300">Ready to post</span>
+                            ) : null}
+                        </div>
+                        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-sunken">
+                            <div
+                                className="h-full rounded-full bg-indigo-500 transition-[width] duration-500"
+                                style={{ width: credentialsLoading ? '0%' : `${(doneCount / steps.length) * 100}%` }}
+                            />
+                        </div>
+                        <ul className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                            {steps.map((step) => {
+                                const body = (
+                                    <>
+                                        <span
+                                            aria-hidden="true"
+                                            className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
+                                                credentialsLoading
+                                                    ? 'bg-sunken text-subtle'
+                                                    : step.done
+                                                      ? 'bg-emerald-500 text-white'
+                                                      : 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
+                                            }`}
+                                        >
+                                            {credentialsLoading ? '' : step.done ? '✓' : '!'}
+                                        </span>
+                                        <span className="min-w-0">
+                                            <span className="block truncate text-xs font-semibold text-fg">{step.label}</span>
+                                            <span className="block truncate text-[11px] text-subtle">
+                                                {credentialsLoading ? 'Checking…' : step.detail}
+                                            </span>
+                                        </span>
+                                        <span className="sr-only">{step.done ? 'done' : 'to do'}</span>
+                                    </>
+                                );
+                                const className =
+                                    'flex w-full items-start gap-2 rounded-xl border border-line bg-surface-2 px-3 py-2 text-left transition-colors hover:bg-hover';
+                                return (
+                                    <li key={step.key}>
+                                        {step.href ? (
+                                            <Link href={step.href} className={className}>
+                                                {body}
+                                            </Link>
+                                        ) : (
+                                            <button type="button" onClick={() => step.tab && changeTab(step.tab)} className={className}>
+                                                {body}
+                                            </button>
+                                        )}
+                                    </li>
+                                );
+                            })}
+                        </ul>
                     </div>
-                </section>
-
-                <PagesBrandSummary />
-            </form>
-
-            <AiModelsSection
-                onNotice={setNotice}
-                onError={setError}
-                keys={
-                    credentialStatus
-                        ? {
-                              gemini: credentialStatus.gemini.configured,
-                              anthropic: Boolean(credentialStatus.anthropic?.configured),
-                          }
-                        : null
-                }
-            />
-
-            <section className="mt-6 rounded-2xl border border-line bg-surface p-6 sm:p-8 shadow-card">
-                <h2 className="text-lg font-bold text-fg">Password</h2>
-                <p className="mt-1 mb-6 text-sm text-muted">
-                    Change your password. Every other signed-in session will be
-                    logged out; this session stays active.
-                </p>
-                <div className="max-w-xl">
-                    <PasswordChangeForm
-                        onSuccess={(data) => {
-                            updateSession(data.token, data.user);
-                            lockSecrets();
-                            setError('');
-                            setNotice(
-                                'Password updated. Other sessions were signed out.'
-                            );
-                        }}
-                    />
                 </div>
             </section>
 
-            <section className="mt-10">
-                <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
-                    <div>
-                        <h2 className="text-xl font-bold text-fg">
-                            Integration credentials
-                        </h2>
-                        <p className="text-sm text-muted mt-1 max-w-2xl">
-                            Each user brings their own Meta app, Cloudinary
-                            account, and Gemini and Anthropic API keys. Secrets are encrypted
-                            at rest. Use the eye icons to reveal saved secrets
-                            after confirming your password.
-                        </p>
-                    </div>
-                    <div className="flex items-center gap-4">
-                        {revealed ? (
-                            <button
-                                type="button"
-                                onClick={lockSecrets}
-                                className="text-xs font-bold text-amber-700 dark:text-amber-300 hover:text-amber-800 dark:hover:text-amber-200"
-                            >
-                                Lock revealed secrets
-                            </button>
-                        ) : null}
-                        <Link
-                            href="/connections"
-                            className="text-sm font-bold text-indigo-700 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
-                        >
-                            Manage Page connections →
-                        </Link>
-                    </div>
-                </div>
+            <div className="sticky top-0 z-10 -mx-1 mt-6 bg-canvas/90 px-1 py-2 backdrop-blur">
+                <Tabs
+                    label="Profile sections"
+                    items={TABS.map((item) => ({
+                        key: item.key,
+                        label: tabNeeds(item.key) ? (
+                            <span className="inline-flex items-center gap-1.5">
+                                {item.label}
+                                <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                                <span className="sr-only">(needs setup)</span>
+                            </span>
+                        ) : (
+                            item.label
+                        ),
+                    }))}
+                    value={tab}
+                    onChange={changeTab}
+                />
+            </div>
 
-                {credentialsLoading ? (
-                    <div className="flex justify-center py-16">
-                        <div className="animate-spin rounded-full h-9 w-9 border-[3px] border-indigo-500/20 border-t-indigo-500" />
-                    </div>
-                ) : (
-                    <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-                        <form
-                            onSubmit={saveMeta}
-                            className="lg:col-span-2 rounded-2xl border border-line bg-surface p-6 sm:p-8 shadow-card"
-                        >
-                            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+            {notice ? (
+                <div
+                    role="status"
+                    className="animate-fade-up mt-4 flex items-start justify-between gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-300"
+                >
+                    <span>{notice}</span>
+                    <button type="button" onClick={() => setNotice('')} aria-label="Dismiss" className="text-xs font-bold opacity-70 hover:opacity-100">
+                        ✕
+                    </button>
+                </div>
+            ) : null}
+            {error ? (
+                <div
+                    role="alert"
+                    className="animate-fade-up mt-4 flex items-start justify-between gap-3 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-300"
+                >
+                    <span>{error}</span>
+                    <button type="button" onClick={() => setError('')} aria-label="Dismiss" className="text-xs font-bold opacity-70 hover:opacity-100">
+                        ✕
+                    </button>
+                </div>
+            ) : null}
+
+            <div className="mt-4">
+                {tab === 'account' ? (
+                    <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
+                        <form onSubmit={save} className="rounded-2xl border border-line bg-surface p-6 shadow-card">
+                            <div className="flex items-start gap-3">
+                                <CardIcon name="user" />
                                 <div>
-                                    <h3 className="text-lg font-bold text-fg">
-                                        Meta app
-                                    </h3>
-                                    <p className="text-sm text-muted mt-1">
-                                        Used for Facebook Login and Page
-                                        connections. Create an app at{' '}
+                                    <h3 className="text-base font-bold text-fg">Account details</h3>
+                                    <p className="mt-0.5 text-sm text-muted">How you sign in, and the timezone your Pages post in.</p>
+                                </div>
+                            </div>
+
+                            <div className="mt-5 space-y-5">
+                                <div>
+                                    <FieldLabel>Full name</FieldLabel>
+                                    <input
+                                        value={name}
+                                        onChange={(event) => setName(event.target.value)}
+                                        autoComplete="name"
+                                        className={inputClass}
+                                    />
+                                </div>
+
+                                <div>
+                                    <FieldLabel>Email</FieldLabel>
+                                    <input
+                                        type="email"
+                                        value={email}
+                                        onChange={(event) => setEmail(event.target.value)}
+                                        autoComplete="email"
+                                        required
+                                        className={inputClass}
+                                    />
+                                    {emailChanged ? (
+                                        <div className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/5 p-3">
+                                            <FieldLabel>Current password to change email</FieldLabel>
+                                            <PasswordInput
+                                                value={currentPassword}
+                                                onChange={setCurrentPassword}
+                                                autoComplete="current-password"
+                                                placeholder="Confirm your password"
+                                                className={fieldInputClass}
+                                                wrapperClassName="mt-2"
+                                                required
+                                            />
+                                            <p className="text-xs text-subtle mt-2">
+                                                Required so a stolen session cannot change your sign-in email.
+                                            </p>
+                                        </div>
+                                    ) : null}
+                                </div>
+
+                                <div>
+                                    <FieldLabel>Timezone</FieldLabel>
+                                    <select
+                                        value={timezone}
+                                        onChange={(event) => setTimezone(event.target.value)}
+                                        className={inputClass}
+                                    >
+                                        {timezones.map((zone) => (
+                                            <option key={zone} value={zone}>
+                                                {zone}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <p className="text-xs text-subtle mt-2">
+                                        Every Page posts at its scheduled times in this timezone. Changing it
+                                        reschedules all Pages.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="mt-6 flex flex-wrap items-center gap-3 border-t border-line pt-4">
+                                <button type="submit" disabled={saving} className={primaryButtonClass}>
+                                    {saving ? 'Saving...' : 'Save account'}
+                                </button>
+                                {name !== (user.name || '') || emailChanged || timezone !== (user.timezone || 'Asia/Kolkata') ? (
+                                    <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">Unsaved changes</span>
+                                ) : null}
+                            </div>
+                        </form>
+
+                        <PagesBrandSummary />
+                    </div>
+                ) : null}
+
+                {tab === 'ai' ? (
+                    <div className="space-y-6">
+                        <AiModelsSection
+                            onNotice={setNotice}
+                            onError={setError}
+                            keys={
+                                credentialStatus
+                                    ? {
+                                          gemini: credentialStatus.gemini.configured,
+                                          anthropic: Boolean(credentialStatus.anthropic?.configured),
+                                      }
+                                    : null
+                            }
+                        />
+                        {credentialsLoading ? (
+                            <div className="skeleton h-48 rounded-2xl" />
+                        ) : (
+                            <div className="grid grid-cols-1 items-stretch gap-6 lg:grid-cols-2">
+                                {provider === 'claude' ? [claudeCard, geminiCard] : [geminiCard, claudeCard]}
+                            </div>
+                        )}
+                    </div>
+                ) : null}
+
+                {tab === 'integrations' ? (
+                    credentialsLoading ? (
+                        <div className="skeleton h-64 rounded-2xl" />
+                    ) : (
+                        <div className="space-y-6">
+                            <CredentialCard
+                                icon="meta"
+                                title="Meta app"
+                                description={
+                                    <>
+                                        Used for Facebook Login and Page connections. Create an app at{' '}
                                         <a
                                             href="https://developers.facebook.com/apps"
                                             target="_blank"
@@ -778,420 +1112,281 @@ export default function SettingsPage() {
                                             developers.facebook.com
                                         </a>
                                         .
+                                    </>
+                                }
+                                configured={Boolean(credentialStatus?.meta.configured)}
+                                onSubmit={saveMeta}
+                                actions={
+                                    <>
+                                        <button type="submit" disabled={savingCredential === 'meta'} className={primaryButtonClass}>
+                                            {savingCredential === 'meta' ? 'Saving...' : 'Save Meta app'}
+                                        </button>
+                                        {credentialStatus?.meta.configured ? (
+                                            <button
+                                                type="button"
+                                                onClick={() => setRemoveTarget('meta')}
+                                                disabled={savingCredential === 'meta'}
+                                                className={removeButtonClass}
+                                            >
+                                                Remove
+                                            </button>
+                                        ) : null}
+                                        <Link href="/connections" className={`${secondaryButtonClass} ml-auto self-center`}>
+                                            Manage Page connections →
+                                        </Link>
+                                    </>
+                                }
+                            >
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                                    <div>
+                                        <FieldLabel>Meta App ID</FieldLabel>
+                                        <input
+                                            value={metaAppId}
+                                            onChange={(event) => setMetaAppId(event.target.value)}
+                                            autoComplete="off"
+                                            spellCheck={false}
+                                            placeholder="e.g. 123456789012345"
+                                            className={inputClass}
+                                        />
+                                    </div>
+                                    <div>
+                                        <FieldLabel>Meta App Secret</FieldLabel>
+                                        <SecretInput
+                                            value={
+                                                showMetaSecret
+                                                    ? metaAppSecret || revealed?.meta?.appSecret || ''
+                                                    : metaAppSecret
+                                            }
+                                            onChange={setMetaAppSecret}
+                                            show={showMetaSecret}
+                                            onToggle={() => openSecretEye('meta', metaAppSecret)}
+                                            placeholder={
+                                                !credentialStatus?.meta.configured
+                                                    ? 'Paste your app secret'
+                                                    : credentialStatus.meta.appId === metaAppId.trim()
+                                                      ? 'Saved — leave blank to keep it'
+                                                      : 'Enter the new app secret'
+                                            }
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="mt-5">
+                                    <FieldLabel>OAuth callback URL</FieldLabel>
+                                    <div className="mt-2 flex flex-col sm:flex-row gap-2">
+                                        <div className="flex-1 bg-surface-2 border border-line rounded-xl px-4 py-3 text-xs text-fg-2 break-all font-mono">
+                                            {credentialStatus?.meta.redirectUri || 'Set META_REDIRECT_URI on the backend'}
+                                        </div>
+                                        <button type="button" onClick={copyCallbackUrl} className={secondaryButtonClass}>
+                                            Copy
+                                        </button>
+                                    </div>
+                                    <p className="text-xs text-subtle mt-2">
+                                        Add this exact URL under Facebook Login → Settings → Valid OAuth Redirect URIs in
+                                        your Meta app.
                                     </p>
                                 </div>
-                                <StatusPill
-                                    configured={Boolean(
-                                        credentialStatus?.meta.configured
-                                    )}
-                                />
-                            </div>
 
-                            <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-5">
-                                <div>
-                                    <FieldLabel>Meta App ID</FieldLabel>
-                                    <input
-                                        value={metaAppId}
-                                        onChange={(event) =>
-                                            setMetaAppId(event.target.value)
-                                        }
-                                        autoComplete="off"
-                                        spellCheck={false}
-                                        placeholder="e.g. 123456789012345"
-                                        className={inputClass}
-                                    />
-                                </div>
-                                <div>
-                                    <FieldLabel>Meta App Secret</FieldLabel>
-                                    <SecretInput
-                                        value={
-                                            showMetaSecret
-                                                ? metaAppSecret ||
-                                                  revealed?.meta?.appSecret ||
-                                                  ''
-                                                : metaAppSecret
-                                        }
-                                        onChange={setMetaAppSecret}
-                                        show={showMetaSecret}
-                                        onToggle={() =>
-                                            openSecretEye('meta', metaAppSecret)
-                                        }
-                                        placeholder={
-                                            !credentialStatus?.meta.configured
-                                                ? 'Paste your app secret'
-                                                : credentialStatus.meta.appId ===
-                                                    metaAppId.trim()
-                                                  ? 'Saved — leave blank to keep it'
-                                                  : 'Enter the new app secret'
-                                        }
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="mt-5">
-                                <FieldLabel>OAuth callback URL</FieldLabel>
-                                <div className="mt-2 flex flex-col sm:flex-row gap-2">
-                                    <div className="flex-1 bg-surface-2 border border-line rounded-xl px-4 py-3.5 text-xs text-fg-2 break-all font-mono">
-                                        {credentialStatus?.meta.redirectUri ||
-                                            'Set META_REDIRECT_URI on the backend'}
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={copyCallbackUrl}
-                                        className={secondaryButtonClass}
-                                    >
-                                        Copy
-                                    </button>
-                                </div>
-                                <p className="text-xs text-subtle mt-2">
-                                    Add this exact URL under Facebook Login →
-                                    Settings → Valid OAuth Redirect URIs in your
-                                    Meta app.
-                                </p>
-                            </div>
-
-                            <div className="mt-5">
-                                <FieldLabel>Required permissions</FieldLabel>
-                                <div className="mt-2 flex flex-wrap gap-2">
-                                    {(credentialStatus?.meta.scopes || []).map(
-                                        (scope) => (
+                                <details className="group mt-5 rounded-xl border border-line bg-surface-2 px-4 py-3">
+                                    <summary className="cursor-pointer list-none text-xs font-bold text-fg-2">
+                                        <span className="inline-block transition-transform group-open:rotate-90" aria-hidden="true">
+                                            ›
+                                        </span>{' '}
+                                        Permissions your Meta app needs ({credentialStatus?.meta.scopes.length ?? 0})
+                                    </summary>
+                                    <div className="mt-3 flex flex-wrap gap-2">
+                                        {(credentialStatus?.meta.scopes || []).map((scope) => (
                                             <span
                                                 key={scope}
-                                                className="rounded-lg border border-line bg-surface-2 px-2.5 py-1.5 text-[11px] font-mono text-muted"
+                                                className="rounded-lg border border-line bg-surface px-2.5 py-1.5 text-[11px] font-mono text-muted"
                                             >
                                                 {scope}
                                             </span>
-                                        )
-                                    )}
-                                </div>
-                            </div>
+                                        ))}
+                                    </div>
+                                </details>
 
-                            {credentialStatus?.meta.configured &&
-                            (!credentialStatus.meta.scopes.includes(
-                                'read_insights'
-                            ) ||
-                                !credentialStatus.meta.scopes.includes(
-                                    'instagram_manage_insights'
-                                )) ? (
-                                <div className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-700 dark:text-amber-200">
-                                    Add <code>read_insights</code> and{' '}
-                                    <code>instagram_manage_insights</code> to
-                                    your Meta app and reconnect your Pages to
-                                    enable analytics.
-                                </div>
-                            ) : null}
-
-                            {credentialStatus?.meta.needsReauthCount ? (
-                                <div className="mt-5 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-700 dark:text-amber-200">
-                                    {credentialStatus.meta.needsReauthCount} Page
-                                    {credentialStatus.meta.needsReauthCount === 1
-                                        ? ''
-                                        : 's'}{' '}
-                                    need reconnecting because the Meta app
-                                    credentials changed.
-                                </div>
-                            ) : null}
-
-                            <div className="mt-6 flex flex-wrap gap-3">
-                                <button
-                                    type="submit"
-                                    disabled={savingCredential === 'meta'}
-                                    className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white px-5 py-3 rounded-xl text-sm font-bold transition-all"
-                                >
-                                    {savingCredential === 'meta'
-                                        ? 'Saving...'
-                                        : 'Save Meta app'}
-                                </button>
-                                {credentialStatus?.meta.configured ? (
-                                    <button
-                                        type="button"
-                                        onClick={() => setRemoveTarget('meta')}
-                                        disabled={savingCredential === 'meta'}
-                                        className="bg-rose-500/10 hover:bg-rose-500/20 disabled:opacity-60 text-rose-700 dark:text-rose-300 border border-rose-500/20 px-5 py-3 rounded-xl text-sm font-bold transition-all"
-                                    >
-                                        Remove
-                                    </button>
+                                {credentialStatus?.meta.configured &&
+                                (!credentialStatus.meta.scopes.includes('read_insights') ||
+                                    !credentialStatus.meta.scopes.includes('instagram_manage_insights')) ? (
+                                    <div className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-700 dark:text-amber-200">
+                                        Add <code>read_insights</code> and <code>instagram_manage_insights</code> to your
+                                        Meta app and reconnect your Pages to enable analytics.
+                                    </div>
                                 ) : null}
-                            </div>
-                        </form>
 
-                        <form
-                            onSubmit={saveCloudinary}
-                            className="rounded-2xl border border-line bg-surface p-6 sm:p-8 shadow-card"
-                        >
-                            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                                {credentialStatus?.meta.needsReauthCount ? (
+                                    <div className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-700 dark:text-amber-200">
+                                        {credentialStatus.meta.needsReauthCount} Page
+                                        {credentialStatus.meta.needsReauthCount === 1 ? ' needs' : 's need'} reconnecting
+                                        because the Meta app credentials changed.
+                                    </div>
+                                ) : null}
+                            </CredentialCard>
+
+                            <CredentialCard
+                                icon="cloud"
+                                title="Cloudinary"
+                                description="Stores the images and reels you upload and the images AI creates."
+                                configured={Boolean(credentialStatus?.cloudinary.configured)}
+                                onSubmit={saveCloudinary}
+                                actions={
+                                    <>
+                                        <button type="submit" disabled={savingCredential === 'cloudinary'} className={primaryButtonClass}>
+                                            {savingCredential === 'cloudinary' ? 'Saving...' : 'Save Cloudinary'}
+                                        </button>
+                                        {credentialStatus?.cloudinary.configured ? (
+                                            <button
+                                                type="button"
+                                                onClick={() => setRemoveTarget('cloudinary')}
+                                                disabled={savingCredential === 'cloudinary'}
+                                                className={removeButtonClass}
+                                            >
+                                                Remove
+                                            </button>
+                                        ) : null}
+                                        <Link href="/storage" className={`${secondaryButtonClass} ml-auto self-center`}>
+                                            Open Storage →
+                                        </Link>
+                                    </>
+                                }
+                            >
+                                <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
+                                    <div>
+                                        <FieldLabel>Cloud name</FieldLabel>
+                                        <input
+                                            value={cloudName}
+                                            onChange={(event) => setCloudName(event.target.value)}
+                                            autoComplete="off"
+                                            spellCheck={false}
+                                            placeholder="Your Cloudinary cloud name"
+                                            className={inputClass}
+                                        />
+                                    </div>
+                                    <div>
+                                        <FieldLabel>API key</FieldLabel>
+                                        <SecretInput
+                                            value={
+                                                showCloudApiKey
+                                                    ? cloudApiKey || revealed?.cloudinary?.apiKey || ''
+                                                    : cloudApiKey
+                                            }
+                                            onChange={setCloudApiKey}
+                                            show={showCloudApiKey}
+                                            onToggle={() => openSecretEye('cloudinaryKey', cloudApiKey)}
+                                            placeholder={
+                                                !credentialStatus?.cloudinary.configured
+                                                    ? 'Cloudinary API key'
+                                                    : credentialStatus.cloudinary.cloudName === cloudName.trim()
+                                                      ? 'Saved — leave blank to keep it'
+                                                      : 'Enter the new cloud API key'
+                                            }
+                                        />
+                                    </div>
+                                    <div>
+                                        <FieldLabel>API secret</FieldLabel>
+                                        <SecretInput
+                                            value={
+                                                showCloudApiSecret
+                                                    ? cloudApiSecret || revealed?.cloudinary?.apiSecret || ''
+                                                    : cloudApiSecret
+                                            }
+                                            onChange={setCloudApiSecret}
+                                            show={showCloudApiSecret}
+                                            onToggle={() => openSecretEye('cloudinarySecret', cloudApiSecret)}
+                                            placeholder={
+                                                !credentialStatus?.cloudinary.configured
+                                                    ? 'Cloudinary API secret'
+                                                    : credentialStatus.cloudinary.cloudName === cloudName.trim()
+                                                      ? 'Saved — leave blank to keep it'
+                                                      : 'Enter the new cloud API secret'
+                                            }
+                                        />
+                                    </div>
+                                </div>
+                            </CredentialCard>
+                        </div>
+                    )
+                ) : null}
+
+                {tab === 'security' ? (
+                    <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+                        <section className="rounded-2xl border border-line bg-surface p-6 shadow-card">
+                            <div className="flex items-start gap-3">
+                                <CardIcon name="lock" />
                                 <div>
-                                    <h3 className="text-lg font-bold text-fg">
-                                        Cloudinary
-                                    </h3>
-                                    <p className="text-sm text-muted mt-1">
-                                        Stores the images you upload and the
-                                        images Gemini creates.
+                                    <h3 className="text-base font-bold text-fg">Password</h3>
+                                    <p className="mt-0.5 text-sm text-muted">
+                                        Every other signed-in session is logged out when you change it; this one stays
+                                        active.
                                     </p>
                                 </div>
-                                <StatusPill
-                                    configured={Boolean(
-                                        credentialStatus?.cloudinary.configured
-                                    )}
+                            </div>
+                            <div className="mt-5">
+                                <PasswordChangeForm
+                                    onSuccess={(data) => {
+                                        updateSession(data.token, data.user);
+                                        lockSecrets();
+                                        setError('');
+                                        setNotice('Password updated. Other sessions were signed out.');
+                                    }}
                                 />
                             </div>
+                        </section>
 
-                            <div className="mt-6 space-y-5">
-                                <div>
-                                    <FieldLabel>Cloud name</FieldLabel>
-                                    <input
-                                        value={cloudName}
-                                        onChange={(event) =>
-                                            setCloudName(event.target.value)
-                                        }
-                                        autoComplete="off"
-                                        spellCheck={false}
-                                        placeholder="Your Cloudinary cloud name"
-                                        className={inputClass}
-                                    />
-                                </div>
-                                <div>
-                                    <FieldLabel>API key</FieldLabel>
-                                    <SecretInput
-                                        value={
-                                            showCloudApiKey
-                                                ? cloudApiKey ||
-                                                  revealed?.cloudinary?.apiKey ||
-                                                  ''
-                                                : cloudApiKey
-                                        }
-                                        onChange={setCloudApiKey}
-                                        show={showCloudApiKey}
-                                        onToggle={() =>
-                                            openSecretEye(
-                                                'cloudinaryKey',
-                                                cloudApiKey
-                                            )
-                                        }
-                                        placeholder={
-                                            !credentialStatus?.cloudinary
-                                                .configured
-                                                ? 'Cloudinary API key'
-                                                : credentialStatus.cloudinary
-                                                        .cloudName ===
-                                                    cloudName.trim()
-                                                  ? 'Saved — leave blank to keep it'
-                                                  : 'Enter the new cloud API key'
-                                        }
-                                    />
-                                </div>
-                                <div>
-                                    <FieldLabel>API secret</FieldLabel>
-                                    <SecretInput
-                                        value={
-                                            showCloudApiSecret
-                                                ? cloudApiSecret ||
-                                                  revealed?.cloudinary
-                                                      ?.apiSecret ||
-                                                  ''
-                                                : cloudApiSecret
-                                        }
-                                        onChange={setCloudApiSecret}
-                                        show={showCloudApiSecret}
-                                        onToggle={() =>
-                                            openSecretEye(
-                                                'cloudinarySecret',
-                                                cloudApiSecret
-                                            )
-                                        }
-                                        placeholder={
-                                            !credentialStatus?.cloudinary
-                                                .configured
-                                                ? 'Cloudinary API secret'
-                                                : credentialStatus.cloudinary
-                                                        .cloudName ===
-                                                    cloudName.trim()
-                                                  ? 'Saved — leave blank to keep it'
-                                                  : 'Enter the new cloud API secret'
-                                        }
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="mt-6 flex flex-wrap gap-3">
-                                <button
-                                    type="submit"
-                                    disabled={savingCredential === 'cloudinary'}
-                                    className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white px-5 py-3 rounded-xl text-sm font-bold transition-all"
-                                >
-                                    {savingCredential === 'cloudinary'
-                                        ? 'Saving...'
-                                        : 'Save Cloudinary'}
-                                </button>
-                                {credentialStatus?.cloudinary.configured ? (
-                                    <button
-                                        type="button"
-                                        onClick={() =>
-                                            setRemoveTarget('cloudinary')
-                                        }
-                                        disabled={savingCredential === 'cloudinary'}
-                                        className="bg-rose-500/10 hover:bg-rose-500/20 disabled:opacity-60 text-rose-700 dark:text-rose-300 border border-rose-500/20 px-5 py-3 rounded-xl text-sm font-bold transition-all"
-                                    >
-                                        Remove
+                        <section className="rounded-2xl border border-line bg-surface p-6 shadow-card">
+                            <h3 className="text-base font-bold text-fg">Saved secrets</h3>
+                            <p className="mt-0.5 text-sm text-muted">
+                                Your Meta app secret, Cloudinary keys, and AI keys are encrypted at rest and used only for
+                                your account. To see one, press its eye icon and confirm your password.
+                            </p>
+                            <div
+                                className={`mt-4 flex items-center justify-between gap-3 rounded-xl border px-4 py-3 text-xs ${
+                                    revealed
+                                        ? 'border-amber-500/20 bg-amber-500/10 text-amber-800 dark:text-amber-200'
+                                        : 'border-line bg-surface-2 text-fg-2'
+                                }`}
+                            >
+                                <span className="font-semibold">
+                                    {revealed ? 'Secrets are unlocked on this page.' : 'Secrets are locked.'}
+                                </span>
+                                {revealed ? (
+                                    <button type="button" onClick={lockSecrets} className={secondaryButtonClass}>
+                                        Lock now
                                     </button>
                                 ) : null}
                             </div>
-                        </form>
-
-                        <form
-                            onSubmit={saveGemini}
-                            className="rounded-2xl border border-line bg-surface p-6 sm:p-8 shadow-card"
-                        >
-                            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-                                <div>
-                                    <h3 className="text-lg font-bold text-fg">
-                                        Gemini
-                                    </h3>
-                                    <p className="text-sm text-muted mt-1">
-                                        Writes captions and generates images for
-                                        your posts.
-                                    </p>
-                                </div>
-                                <StatusPill
-                                    configured={Boolean(
-                                        credentialStatus?.gemini.configured
-                                    )}
-                                />
-                            </div>
-
-                            <div className="mt-6">
-                                <FieldLabel>API key</FieldLabel>
-                                <SecretInput
-                                    value={
-                                        showGeminiKey
-                                            ? geminiKey ||
-                                              revealed?.gemini?.apiKey ||
-                                              ''
-                                            : geminiKey
-                                    }
-                                    onChange={setGeminiKey}
-                                    show={showGeminiKey}
-                                    onToggle={() =>
-                                        openSecretEye('gemini', geminiKey)
-                                    }
-                                    placeholder={
-                                        credentialStatus?.gemini.configured
-                                            ? 'Saved — enter a new key to replace it'
-                                            : 'Paste your Gemini API key'
-                                    }
-                                />
-                                <p className="text-xs text-subtle mt-2">
-                                    Create a key in Google AI Studio. It is used
-                                    only for your account.
-                                </p>
-                            </div>
-
-                            <div className="mt-6 flex flex-wrap gap-3">
-                                <button
-                                    type="submit"
-                                    disabled={savingCredential === 'gemini'}
-                                    className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white px-5 py-3 rounded-xl text-sm font-bold transition-all"
-                                >
-                                    {savingCredential === 'gemini'
-                                        ? 'Saving...'
-                                        : 'Save Gemini key'}
-                                </button>
-                                {credentialStatus?.gemini.configured ? (
-                                    <button
-                                        type="button"
-                                        onClick={() => setRemoveTarget('gemini')}
-                                        disabled={savingCredential === 'gemini'}
-                                        className="bg-rose-500/10 hover:bg-rose-500/20 disabled:opacity-60 text-rose-700 dark:text-rose-300 border border-rose-500/20 px-5 py-3 rounded-xl text-sm font-bold transition-all"
-                                    >
-                                        Remove
-                                    </button>
-                                ) : null}
-                            </div>
-                        </form>
-
-                        <form
-                            onSubmit={saveAnthropic}
-                            className="rounded-2xl border border-line bg-surface p-6 sm:p-8 shadow-card"
-                        >
-                            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-                                <div>
-                                    <h3 className="text-lg font-bold text-fg">
-                                        Claude (Anthropic)
-                                    </h3>
-                                    <p className="text-sm text-muted mt-1">
-                                        Writes captions, image text, image
-                                        prompts, and Analytics tips when Claude
-                                        is your AI provider.
-                                    </p>
-                                </div>
-                                <StatusPill
-                                    configured={Boolean(
-                                        credentialStatus?.anthropic?.configured
-                                    )}
-                                />
-                            </div>
-
-                            <div className="mt-6">
-                                <FieldLabel>API key</FieldLabel>
-                                <SecretInput
-                                    value={
-                                        showAnthropicKey
-                                            ? anthropicKey ||
-                                              revealed?.anthropic?.apiKey ||
-                                              ''
-                                            : anthropicKey
-                                    }
-                                    onChange={setAnthropicKey}
-                                    show={showAnthropicKey}
-                                    onToggle={() =>
-                                        openSecretEye('anthropic', anthropicKey)
-                                    }
-                                    placeholder={
-                                        credentialStatus?.anthropic?.configured
-                                            ? 'Saved — enter a new key to replace it'
-                                            : 'Paste your Anthropic API key (sk-ant-…)'
-                                    }
-                                />
-                                <p className="text-xs text-subtle mt-2">
-                                    Create a key in the{' '}
-                                    <a
-                                        href="https://platform.claude.com/settings/keys"
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="text-indigo-700 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300"
-                                    >
-                                        Claude Console
-                                    </a>
-                                    . It is used only for your account, and
-                                    its usage shows on the Usage page.
-                                </p>
-                            </div>
-
-                            <div className="mt-6 flex flex-wrap gap-3">
-                                <button
-                                    type="submit"
-                                    disabled={savingCredential === 'anthropic'}
-                                    className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white px-5 py-3 rounded-xl text-sm font-bold transition-all"
-                                >
-                                    {savingCredential === 'anthropic'
-                                        ? 'Saving...'
-                                        : 'Save Claude key'}
-                                </button>
-                                {credentialStatus?.anthropic?.configured ? (
-                                    <button
-                                        type="button"
-                                        onClick={() => setRemoveTarget('anthropic')}
-                                        disabled={savingCredential === 'anthropic'}
-                                        className="bg-rose-500/10 hover:bg-rose-500/20 disabled:opacity-60 text-rose-700 dark:text-rose-300 border border-rose-500/20 px-5 py-3 rounded-xl text-sm font-bold transition-all"
-                                    >
-                                        Remove
-                                    </button>
-                                ) : null}
-                            </div>
-                        </form>
+                            <dl className="mt-4 divide-y divide-line text-xs">
+                                {[
+                                    { label: 'Meta app secret', saved: Boolean(credentialStatus?.meta.appSecretConfigured) },
+                                    {
+                                        label: 'Cloudinary keys',
+                                        saved: Boolean(
+                                            credentialStatus?.cloudinary.apiKeyConfigured &&
+                                                credentialStatus.cloudinary.apiSecretConfigured
+                                        ),
+                                    },
+                                    { label: 'Gemini key', saved: Boolean(credentialStatus?.gemini.configured) },
+                                    { label: 'Anthropic key', saved: Boolean(credentialStatus?.anthropic?.configured) },
+                                ].map((item) => (
+                                    <div key={item.label} className="flex items-center justify-between py-2.5">
+                                        <dt className="text-fg-2">{item.label}</dt>
+                                        <dd
+                                            className={
+                                                item.saved
+                                                    ? 'font-semibold text-emerald-700 dark:text-emerald-300'
+                                                    : 'text-subtle'
+                                            }
+                                        >
+                                            {credentialsLoading ? '…' : item.saved ? 'Saved' : 'Not saved'}
+                                        </dd>
+                                    </div>
+                                ))}
+                            </dl>
+                        </section>
                     </div>
-                )}
-            </section>
+                ) : null}
+            </div>
 
             <PasswordPromptModal
                 isOpen={revealOpen}
@@ -1210,11 +1405,7 @@ export default function SettingsPage() {
                 onClose={() => setRemoveTarget(null)}
                 onConfirm={removeCredential}
                 title="Remove credentials?"
-                message={
-                    removeTarget
-                        ? REMOVE_MESSAGES[removeTarget]
-                        : 'Remove these credentials?'
-                }
+                message={removeTarget ? REMOVE_MESSAGES[removeTarget] : 'Remove these credentials?'}
                 confirmText="Remove"
                 type="danger"
             />
