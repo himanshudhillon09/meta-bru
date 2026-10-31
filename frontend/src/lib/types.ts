@@ -525,7 +525,31 @@ export interface AnalyticsActivityBucket {
     facebook: number;
     instagram: number;
     reach: number;
+    /** Older servers did not send views per bucket. */
+    views?: number;
     interactions: number;
+}
+
+export interface AnalyticsPageSummary {
+    connectionId: string;
+    pageName: string;
+    instagramUsername: string;
+    totals: AnalyticsSummary;
+}
+
+/** A post's results with its Facebook and Instagram copies combined. */
+export interface AnalyticsTopPost {
+    postId: string;
+    caption: string;
+    mediaUrl: string;
+    mediaType: MediaType;
+    pageName: string;
+    platforms: Platform[];
+    publishedAt: string;
+    reach: number;
+    views: number;
+    interactions: number;
+    engagementRate: number | null;
 }
 
 export interface AnalyticsBestTime {
@@ -562,6 +586,10 @@ export interface AnalyticsSyncState {
 export interface AnalyticsOverview {
     range: { from: string; to: string; preset: string; timezone: string };
     totals: AnalyticsSummary;
+    /** The same number of days just before the range, for deltas. */
+    previous?: { range: { from: string; to: string }; totals: AnalyticsSummary } | null;
+    byPage?: AnalyticsPageSummary[];
+    topPosts?: { byReach: AnalyticsTopPost[]; byEngagement: AnalyticsTopPost[] };
     byPlatform: { facebook: AnalyticsSummary; instagram: AnalyticsSummary };
     byContentType?: { image: AnalyticsSummary; reel: AnalyticsSummary };
     stories?: StorySummary;

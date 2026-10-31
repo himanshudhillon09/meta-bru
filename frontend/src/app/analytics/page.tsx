@@ -9,21 +9,23 @@ import React, {
 } from 'react';
 import Link from 'next/link';
 import { AppShell } from '@/components/AppShell';
-import { AnalyticsFormatComparison } from '@/components/AnalyticsFormatComparison';
 import { AnalyticsPostCard } from '@/components/AnalyticsPostCard';
 import { AnalyticsStories, StorySummaryCard } from '@/components/AnalyticsStories';
 import { StoryShareNotice, useStoryShare } from '@/components/ShareStory';
 import { AnalyticsTipCard } from '@/components/AnalyticsTipCard';
-import {
-    AnalyticsBarChart,
-    AnalyticsHeatmap,
-    MetricCard,
-} from '@/components/AnalyticsCharts';
 import { AnalyticsAiTips } from '@/components/AnalyticsAiTips';
+import { BestTimes } from '@/components/analytics/BestTimes';
+import { FormatCompare, PlatformCompare } from '@/components/analytics/Comparisons';
+import { changeBetween, formatCount, formatPercent, periodLabel } from '@/components/analytics/format';
+import { KpiTile } from '@/components/analytics/KpiTiles';
+import { PageBreakdown } from '@/components/analytics/PageBreakdown';
+import { TopPosts } from '@/components/analytics/TopPosts';
+import { TrendChart } from '@/components/analytics/TrendChart';
 import { AnalyticsMonitor } from '@/components/AnalyticsMonitor';
 import { AnalyticsTips } from '@/components/AnalyticsTips';
 import { PostTrackerCalendar } from '@/components/PostTrackerCalendar';
 import { Tabs } from '@/components/Tabs';
+import { useAuth } from '@/context/AuthContext';
 import { analyticsApi, connectionsApi } from '@/lib/apiClient';
 import {
     formatElapsed,
@@ -81,16 +83,6 @@ function daysAgoKey(days: number): string {
 function rangeFor(preset: RangeKey, customFrom: string, customTo: string) {
     if (preset === 'custom') return { from: customFrom, to: customTo };
     return { from: daysAgoKey(Number(preset) - 1), to: istTodayKey() };
-}
-
-function formatMetric(value: number | null, suffix = ''): string {
-    return value === null ? '—' : `${value}${suffix}`;
-}
-
-function formatNumber(value: number | null | undefined): string {
-    return value === null || value === undefined
-        ? '—'
-        : value.toLocaleString('en-IN');
 }
 
 const RECONNECT_HREF = '/connections?returnTo=/analytics';
@@ -173,6 +165,7 @@ function mergePermissionErrors(
 }
 
 export default function AnalyticsPage() {
+    const { user } = useAuth();
     const [tab, setTab] = useState<TabKey>('overview');
     const [range, setRange] = useState<RangeKey>('30');
     const [customFrom, setCustomFrom] = useState(daysAgoKey(29));
@@ -513,16 +506,16 @@ export default function AnalyticsPage() {
         }
     };
 
-    // The button always asks Gemini again; the daily automatic run reuses an
-    // analysis already made today.
+    // AI analysis runs only when the user presses the button, and always asks
+    // the AI again.
     const generateAi = useCallback(
-        async (automatic = false) => {
+        async () => {
             setAiLoading(true);
-            if (!automatic) setAiError('');
+            setAiError('');
             try {
                 const result: any = await analyticsApi.generateTips({
                     ...params,
-                    force: !automatic,
+                    force: true,
                 });
                 if (!result?.insight) {
                     throw new Error('AI analysis returned no tips.');
@@ -536,12 +529,11 @@ export default function AnalyticsPage() {
                     aiDueToday: false,
                 }));
             } catch (err: any) {
-                const message =
+                setAiError(
                     typeof err === 'string'
                         ? err
-                        : 'Could not generate AI tips. Rule-based tips are still available.';
-                // A missing Gemini key is not worth an error on a run nobody asked for.
-                if (!(automatic && /not configured/i.test(message))) setAiError(message);
+                        : 'Could not generate AI tips. Rule-based tips are still available.'
+                );
             } finally {
                 setAiLoading(false);
             }
@@ -549,10 +541,11 @@ export default function AnalyticsPage() {
         [params]
     );
 
-    // Analytics does its Meta refresh and AI analysis by itself at most once a
-    // day: on the first visit of the day, for the first view shown. Anything
-    // later happens only from the buttons. A reconnected Page is read again
-    // right away so its insights do not wait for tomorrow.
+    // Analytics reads Meta by itself at most once a day: on the first visit of
+    // the day, for the first view shown. Anything later happens only from
+    // Refresh insights. AI analysis never runs by itself; only its button runs
+    // it. A reconnected Page is read again right away so its insights do not
+    // wait for tomorrow.
     useEffect(() => {
         if (dailyRunRef.current || loading || !overview) return;
         if (overviewKey !== JSON.stringify(params)) return;
@@ -562,14 +555,20 @@ export default function AnalyticsPage() {
         const needsRefresh =
             !isTodayIst(overview.sync.lastSyncedAt) ||
             (overview.sync.reconnectPending ?? 0) > 0;
-        const needsAi = tips?.aiDueToday !== false;
         void (async () => {
             if (needsRefresh) await refresh(true);
-            if (needsAi) await generateAi(true);
         })();
-    }, [loading, overview, overviewKey, params, tips, refresh, generateAi]);
+    }, [loading, overview, overviewKey, params, refresh]);
 
     const aiNotConfigured = /(gemini|claude) api key is not configured/i.test(aiError);
+    const aiProviderLabel = user?.aiProvider === 'claude' ? 'Claude' : 'Gemini';
+    const previousLabel = overview?.previous
+        ? periodLabel(overview.previous.range.from, overview.previous.range.to)
+        : undefined;
+    const weekly =
+        overview !== null &&
+        Date.parse(`${overview.range.to}T00:00:00Z`) - Date.parse(`${overview.range.from}T00:00:00Z`) >
+            60 * 86_400_000;
     const selectedConnection = connectionId
         ? connections.find((item) => item._id === connectionId) ?? null
         : null;
@@ -597,15 +596,26 @@ export default function AnalyticsPage() {
     return (
         <AppShell
             title="Analytics"
-            subtitle="Published-post performance, engagement history, and posting timing. All times are IST."
+            subtitle="How your Pages, posts, reels, and Stories are growing, and what to post next. Times are IST."
             actions={
-                <button
-                    onClick={() => void refresh()}
-                    disabled={syncing}
-                    className="rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-bold text-white transition-all hover:bg-indigo-500 disabled:opacity-50"
-                >
-                    {syncing ? 'Refreshing...' : 'Refresh insights'}
-                </button>
+                <div className="flex flex-col items-start gap-1 sm:items-end">
+                    <button
+                        onClick={() => void refresh()}
+                        disabled={syncing}
+                        className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-bold text-white transition-all hover:bg-indigo-500 disabled:opacity-50"
+                    >
+                        {syncing ? (
+                            <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                        ) : null}
+                        {syncing ? 'Refreshing...' : 'Refresh insights'}
+                    </button>
+                    <span className="text-[11px] text-subtle">
+                        {overview?.sync.lastSyncedAt
+                            ? `Updated ${formatElapsed(overview.sync.lastSyncedAt, now) || 'recently'}`
+                            : 'Not updated yet'}{' '}
+                        · refreshes by itself once a day
+                    </span>
+                </div>
             }
         >
             {notice ? (
@@ -695,7 +705,7 @@ export default function AnalyticsPage() {
                 );
             })}
 
-            <div className="mb-6 flex flex-wrap items-center gap-2">
+            <div className="mb-5 flex flex-wrap items-center gap-2 rounded-2xl border border-line bg-surface p-2 shadow-card">
                 <Tabs
                     label="Date range"
                     variant="segmented"
@@ -703,6 +713,25 @@ export default function AnalyticsPage() {
                     value={range}
                     onChange={setRange}
                 />
+                {range === 'custom' ? (
+                    <div className="flex items-center gap-1.5">
+                        <input
+                            type="date"
+                            aria-label="From date"
+                            value={customFrom}
+                            onChange={(event) => setCustomFrom(event.target.value)}
+                            className="rounded-xl border border-line-strong bg-surface-2 px-3 py-2 text-xs text-fg"
+                        />
+                        <span className="text-xs text-subtle">to</span>
+                        <input
+                            type="date"
+                            aria-label="To date"
+                            value={customTo}
+                            onChange={(event) => setCustomTo(event.target.value)}
+                            className="rounded-xl border border-line-strong bg-surface-2 px-3 py-2 text-xs text-fg"
+                        />
+                    </div>
+                ) : null}
                 <Tabs
                     label="Content type"
                     variant="segmented"
@@ -710,33 +739,15 @@ export default function AnalyticsPage() {
                     value={contentType}
                     onChange={setContentType}
                 />
-                {range === 'custom' ? (
-                    <>
-                        <input
-                            type="date"
-                            aria-label="From date"
-                            value={customFrom}
-                            onChange={(event) =>
-                                setCustomFrom(event.target.value)
-                            }
-                            className="rounded-xl border border-line-strong bg-surface-2 px-3 py-2 text-xs text-fg"
-                        />
-                        <input
-                            type="date"
-                            aria-label="To date"
-                            value={customTo}
-                            onChange={(event) =>
-                                setCustomTo(event.target.value)
-                            }
-                            className="rounded-xl border border-line-strong bg-surface-2 px-3 py-2 text-xs text-fg"
-                        />
-                    </>
-                ) : null}
                 <select
                     aria-label="Page filter"
                     value={connectionId}
                     onChange={(event) => setConnectionId(event.target.value)}
-                    className="rounded-xl border border-line-strong bg-surface-2 px-3 py-2 text-xs text-fg"
+                    className={`rounded-xl border px-3 py-2 text-xs font-semibold ${
+                        connectionId
+                            ? 'border-indigo-500/40 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300'
+                            : 'border-line-strong bg-surface-2 text-fg'
+                    }`}
                 >
                     <option value="">All Pages</option>
                     {connections.map((connection) => (
@@ -749,23 +760,29 @@ export default function AnalyticsPage() {
                     aria-label="Platform filter"
                     value={platform}
                     onChange={(event) => setPlatform(event.target.value)}
-                    className="rounded-xl border border-line-strong bg-surface-2 px-3 py-2 text-xs text-fg"
+                    className={`rounded-xl border px-3 py-2 text-xs font-semibold ${
+                        platform
+                            ? 'border-indigo-500/40 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300'
+                            : 'border-line-strong bg-surface-2 text-fg'
+                    }`}
                 >
-                    <option value="">All platforms</option>
-                    <option value="facebook">Facebook</option>
-                    <option value="instagram">Instagram</option>
+                    <option value="">Facebook + Instagram</option>
+                    <option value="facebook">Facebook only</option>
+                    <option value="instagram">Instagram only</option>
                 </select>
-                <span className="ml-auto text-xs text-subtle">
-                    {overview?.sync.lastSyncedAt
-                        ? `Last synced ${
-                              formatElapsed(
-                                  overview.sync.lastSyncedAt,
-                                  now
-                              ) || 'recently'
-                          }`
-                        : 'Not synced yet'}
-                    {' · '}updates once a day, or tap Refresh insights
-                </span>
+                {connectionId || platform || contentType !== 'all' ? (
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setConnectionId('');
+                            setPlatform('');
+                            setContentType('all');
+                        }}
+                        className="rounded-xl px-3 py-2 text-xs font-bold text-subtle hover:bg-hover hover:text-fg"
+                    >
+                        Clear filters
+                    </button>
+                ) : null}
             </div>
 
             <Tabs
@@ -777,223 +794,191 @@ export default function AnalyticsPage() {
             />
 
             <div key={tab} className="animate-fade-in">
-            {loading ? (
-                <div className="flex justify-center py-24">
-                    <div className="h-10 w-10 animate-spin rounded-full border-[3px] border-indigo-500/20 border-t-indigo-500" />
+            {loading && !overview ? (
+                <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+                        {Array.from({ length: 5 }, (_, index) => (
+                            <div key={index} className="skeleton h-32 rounded-2xl" />
+                        ))}
+                    </div>
+                    <div className="skeleton h-80 rounded-2xl" />
                 </div>
             ) : tab === 'overview' && overview ? (
-                <div key="overview" className="stagger space-y-6">
-                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-                        <MetricCard
-                            label={contentType === 'reel' ? 'Published reels' : 'Published posts'}
-                            value={formatNumber(overview.totals.posts)}
+                <div
+                    key="overview"
+                    className={`space-y-5 transition-opacity duration-300 ${loading ? 'pointer-events-none opacity-50' : ''}`}
+                    aria-busy={loading}
+                >
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+                        <KpiTile
+                            label={contentType === 'reel' ? 'Reels published' : 'Posts published'}
+                            value={formatCount(overview.totals.posts)}
                             hint={
                                 contentType === 'all' && overview.totals.reels
-                                    ? `${formatNumber(overview.totals.reels)} reel${overview.totals.reels === 1 ? '' : 's'}`
+                                    ? `including ${formatCount(overview.totals.reels)} reel${overview.totals.reels === 1 ? '' : 's'}`
                                     : undefined
                             }
+                            change={changeBetween(overview.totals.posts, overview.previous?.totals.posts)}
+                            changeLabel={previousLabel}
+                            trend={overview.activity.map((bucket) => ({ date: bucket.date, value: bucket.posts }))}
+                            trendUnit="posts"
                         />
-                        <MetricCard
+                        <KpiTile
                             label="Reach"
-                            value={formatNumber(overview.totals.reach)}
-                            tone="sky"
+                            value={formatCount(overview.totals.reach)}
+                            hint="people who saw your posts"
+                            change={changeBetween(overview.totals.reach, overview.previous?.totals.reach)}
+                            changeLabel={previousLabel}
+                            trend={overview.activity.map((bucket) => ({ date: bucket.date, value: bucket.reach }))}
+                            trendUnit="reach"
                         />
-                        <MetricCard
+                        <KpiTile
                             label={contentType === 'reel' ? 'Plays' : 'Views'}
-                            value={formatNumber(overview.totals.views)}
-                            tone="sky"
+                            value={formatCount(overview.totals.views)}
+                            hint="times your posts were seen"
+                            change={changeBetween(overview.totals.views, overview.previous?.totals.views)}
+                            changeLabel={previousLabel}
+                            trend={overview.activity.map((bucket) => ({ date: bucket.date, value: bucket.views ?? 0 }))}
+                            trendUnit="views"
                         />
-                        <MetricCard
+                        <KpiTile
                             label="Interactions"
-                            value={formatNumber(overview.totals.interactions)}
-                            tone="emerald"
+                            value={formatCount(overview.totals.interactions)}
+                            hint="likes, comments, shares, saves"
+                            change={changeBetween(overview.totals.interactions, overview.previous?.totals.interactions)}
+                            changeLabel={previousLabel}
+                            trend={overview.activity.map((bucket) => ({ date: bucket.date, value: bucket.interactions }))}
+                            trendUnit="interactions"
                         />
-                        <MetricCard
+                        <KpiTile
                             label="Engagement rate"
-                            value={formatMetric(
+                            value={formatPercent(overview.totals.engagementRate)}
+                            hint="interactions per person reached"
+                            change={changeBetween(
                                 overview.totals.engagementRate,
-                                '%'
+                                overview.previous?.totals.engagementRate,
+                                'rate'
                             )}
-                            tone="amber"
+                            changeLabel={previousLabel}
                         />
                     </div>
-                    {overview.byContentType ? (
-                        <AnalyticsFormatComparison
-                            byContentType={overview.byContentType}
-                            filter={contentType}
-                        />
-                    ) : null}
-                    {overview.stories ? (
-                        <StorySummaryCard
-                            summary={overview.stories}
-                            onOpen={() => setTab('stories')}
-                        />
-                    ) : null}
-                    <section className="rounded-2xl border border-line bg-surface p-5">
-                        <h2 className="mb-4 text-sm font-bold text-fg">
-                            Facebook vs Instagram
-                        </h2>
-                        <div className="grid gap-3 sm:grid-cols-2">
-                            {[
-                                {
-                                    label: 'Facebook',
-                                    dot: 'bg-sky-400',
-                                    summary: overview.byPlatform.facebook,
-                                },
-                                {
-                                    label: 'Instagram',
-                                    dot: 'bg-pink-400',
-                                    summary: overview.byPlatform.instagram,
-                                },
-                            ].map((platform) => (
-                                <div
-                                    key={platform.label}
-                                    className="rounded-2xl border border-line bg-surface-2 p-4"
-                                >
-                                    <div className="flex items-center gap-2">
-                                        <span
-                                            className={`h-2 w-2 rounded-full ${platform.dot}`}
-                                        />
-                                        <span className="text-xs font-bold text-fg">
-                                            {platform.label}
-                                        </span>
-                                    </div>
-                                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
-                                        <div>
-                                            <span className="text-subtle">
-                                                Posts
-                                            </span>
-                                            <div className="font-bold text-fg">
-                                                {formatNumber(
-                                                    platform.summary.posts
-                                                )}
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <span className="text-subtle">
-                                                Reach
-                                            </span>
-                                            <div className="font-bold text-fg">
-                                                {formatNumber(
-                                                    platform.summary.reach
-                                                )}
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <span className="text-subtle">
-                                                Interactions
-                                            </span>
-                                            <div className="font-bold text-fg">
-                                                {formatNumber(
-                                                    platform.summary.interactions
-                                                )}
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <span className="text-subtle">
-                                                Rate
-                                            </span>
-                                            <div className="font-bold text-emerald-700 dark:text-emerald-300">
-                                                {formatMetric(
-                                                    platform.summary
-                                                        .engagementRate,
-                                                    '%'
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </section>
-                    <div className="grid gap-5 lg:grid-cols-2">
-                        <section className="rounded-2xl border border-line bg-surface p-5">
-                            <h2 className="mb-4 text-sm font-bold text-fg">
-                                Publishing activity
-                            </h2>
-                            <AnalyticsBarChart
-                                data={overview.activity.map((item) => ({
-                                    label: item.label,
-                                    value: item.posts,
-                                    secondary: item.instagram,
-                                }))}
-                                primaryLabel="posts"
-                                secondaryLabel="Instagram"
-                            />
-                        </section>
-                        <section className="rounded-2xl border border-line bg-surface p-5">
-                            <h2 className="mb-4 text-sm font-bold text-fg">
-                                Engagement by publish date
-                            </h2>
-                            <AnalyticsBarChart
-                                data={overview.activity.map((item) => ({
-                                    label: item.label,
-                                    value: item.interactions,
-                                    secondary: item.reach,
-                                }))}
-                                valueLabel="interactions"
-                                primaryLabel="interactions"
-                                secondaryLabel="reach"
-                            />
-                        </section>
-                    </div>
-                    <section className="rounded-2xl border border-line bg-surface p-5">
-                        <h2 className="mb-4 text-sm font-bold text-fg">
-                            Best posting times (IST)
-                        </h2>
-                        <AnalyticsHeatmap buckets={overview.bestTimes} />
-                    </section>
-                    <AnalyticsTips tips={tips?.ruleBased || []} />
-                    <section className="rounded-2xl border border-line bg-surface p-5">
-                        <div className="mb-3 flex flex-wrap items-center gap-2">
-                            <h2 className="text-sm font-bold text-fg">
-                                AI tips
-                            </h2>
-                            <span className="rounded-full bg-indigo-500/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest text-indigo-700 dark:text-indigo-300">
-                                Gemini
-                            </span>
-                            <button
-                                onClick={() => setTab('ai')}
-                                className="ml-auto text-xs font-bold text-indigo-700 dark:text-indigo-300"
+
+                    {overview.totals.posts === 0 ? (
+                        <div className="rounded-2xl border border-dashed border-line-strong bg-surface p-10 text-center text-sm text-muted">
+                            Nothing was published in this range{connectionId || platform || contentType !== 'all' ? ' with these filters' : ''}.{' '}
+                            <Link
+                                href={contentType === 'reel' ? '/reels' : '/composer'}
+                                className="font-bold text-indigo-700 dark:text-indigo-300"
                             >
-                                Open AI analysis
-                            </button>
+                                {contentType === 'reel' ? 'Make a reel' : 'Create a post'}
+                            </Link>{' '}
+                            or pick a wider range.
                         </div>
-                        {tips?.ai ? (
-                            <div>
-                                <p className="text-[11px] text-subtle">
-                                    From {formatIstDateTime(tips.ai.generatedAt)} · runs once a day
-                                </p>
-                                <div className="mt-2 grid gap-3 sm:grid-cols-2">
-                                    {tips.ai.tips.slice(0, 2).map((tip, index) => (
-                                        <AnalyticsTipCard
-                                            key={`${tip.title}-${index}`}
-                                            tip={tip}
-                                        />
-                                    ))}
-                                </div>
+                    ) : (
+                        <>
+                            <TrendChart activity={overview.activity} weekly={weekly} />
+
+                            {overview.topPosts ? <TopPosts topPosts={overview.topPosts} /> : null}
+
+                            {!connectionId && overview.byPage && connections.length > 1 ? (
+                                <PageBreakdown
+                                    byPage={overview.byPage}
+                                    connections={connections}
+                                    onSelectPage={(id) => {
+                                        setConnectionId(id);
+                                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                                    }}
+                                />
+                            ) : null}
+
+                            <div className="grid gap-5 lg:grid-cols-2">
+                                {!platform ? (
+                                    <PlatformCompare
+                                        facebook={overview.byPlatform.facebook}
+                                        instagram={overview.byPlatform.instagram}
+                                    />
+                                ) : null}
+                                {contentType === 'all' && overview.byContentType ? (
+                                    <FormatCompare
+                                        image={overview.byContentType.image}
+                                        reel={overview.byContentType.reel}
+                                    />
+                                ) : null}
                             </div>
-                        ) : (
-                            <p className="text-xs text-subtle">
-                                Run an AI analysis in the AI tab to turn your
-                                stored engagement data into recommendations.
-                            </p>
-                        )}
-                    </section>
-                    <div className="space-y-4">
-                        {posts.length === 0 ? (
-                            <div className="animate-fade-up rounded-2xl border border-dashed border-line-strong bg-surface p-12 text-center text-sm text-muted">
-                                No published {contentType === 'reel' ? 'reels' : 'posts'} in this range.{' '}
-                                <Link
-                                    href={contentType === 'reel' ? '/reels' : '/composer'}
-                                    className="font-bold text-indigo-700 dark:text-indigo-300"
+
+                            <BestTimes buckets={overview.bestTimes} />
+                        </>
+                    )}
+
+                    <div className="grid gap-5 lg:grid-cols-2">
+                        {overview.stories ? (
+                            <StorySummaryCard
+                                summary={overview.stories}
+                                onOpen={() => setTab('stories')}
+                            />
+                        ) : null}
+                        <section className="rounded-2xl border border-line bg-surface p-5 shadow-card">
+                            <div className="mb-3 flex flex-wrap items-center gap-2">
+                                <h2 className="text-sm font-bold text-fg">AI analysis</h2>
+                                <span className="rounded-full bg-indigo-500/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest text-indigo-700 dark:text-indigo-300">
+                                    {aiProviderLabel}
+                                </span>
+                                <button
+                                    onClick={() => setTab('ai')}
+                                    className="ml-auto text-xs font-bold text-indigo-700 dark:text-indigo-300"
                                 >
-                                    {contentType === 'reel' ? 'Make a reel' : 'Create a post'}
-                                </Link>
-                                .
+                                    Open →
+                                </button>
+                            </div>
+                            {tips?.ai ? (
+                                <div>
+                                    <p className="text-[11px] text-subtle">
+                                        From {formatIstDateTime(tips.ai.generatedAt)}
+                                    </p>
+                                    <div className="mt-2 grid gap-3">
+                                        {tips.ai.tips.slice(0, 2).map((tip, index) => (
+                                            <AnalyticsTipCard
+                                                key={`${tip.title}-${index}`}
+                                                tip={tip}
+                                            />
+                                        ))}
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="rounded-xl border border-dashed border-line-strong p-5 text-center">
+                                    <p className="text-xs text-muted">
+                                        Get a ranked plan from your numbers: when to post, reels or
+                                        images, and ideas to make next. It runs only when you ask.
+                                    </p>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setTab('ai');
+                                            void generateAi();
+                                        }}
+                                        disabled={aiLoading}
+                                        className="mt-3 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white hover:bg-indigo-500 disabled:opacity-60"
+                                    >
+                                        {aiLoading ? 'Analyzing...' : 'Run AI analysis'}
+                                    </button>
+                                </div>
+                            )}
+                        </section>
+                    </div>
+
+                    <AnalyticsTips tips={tips?.ruleBased || []} />
+
+                    <section>
+                        <div className="mb-3 flex items-baseline justify-between gap-3">
+                            <h2 className="text-sm font-bold text-fg">All published posts</h2>
+                            <span className="text-xs text-subtle">Newest first</span>
+                        </div>
+                        {posts.length === 0 ? (
+                            <div className="rounded-2xl border border-dashed border-line-strong bg-surface p-10 text-center text-sm text-muted">
+                                No published {contentType === 'reel' ? 'reels' : 'posts'} in this range.
                             </div>
                         ) : (
-                            <div className="stagger space-y-4">
+                            <div className="space-y-4">
                                 {posts.map((post) => (
                                     <AnalyticsPostCard
                                         key={post.postId}
@@ -1005,16 +990,16 @@ export default function AnalyticsPage() {
                                 ))}
                             </div>
                         )}
-                    </div>
-                    {hasMore ? (
-                        <button
-                            onClick={loadMore}
-                            disabled={loadingMore}
-                            className="w-full rounded-xl border border-line-strong bg-surface px-4 py-3 text-sm font-bold text-fg-2 disabled:opacity-50"
-                        >
-                            {loadingMore ? 'Loading...' : 'Load more'}
-                        </button>
-                    ) : null}
+                        {hasMore ? (
+                            <button
+                                onClick={loadMore}
+                                disabled={loadingMore}
+                                className="mt-4 w-full rounded-xl border border-line-strong bg-surface px-4 py-3 text-sm font-bold text-fg-2 hover:bg-hover disabled:opacity-50"
+                            >
+                                {loadingMore ? 'Loading...' : 'Load more posts'}
+                            </button>
+                        ) : null}
+                    </section>
                 </div>
             ) : tab === 'overview' ? (
                 <div className="animate-fade-up rounded-2xl border border-dashed border-line-strong bg-surface p-12 text-center text-sm text-muted">

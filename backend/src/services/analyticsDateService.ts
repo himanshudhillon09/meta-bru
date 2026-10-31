@@ -157,3 +157,25 @@ export function buildAnalyticsBuckets(
 
     return buckets;
 }
+
+/**
+ * The same number of days just before `range`, for comparing a period with
+ * the one before it. Null when that period cannot be read.
+ */
+export function previousAnalyticsRange(
+    range: Pick<AnalyticsRange, 'fromKey' | 'toKey'>
+): AnalyticsRange | null {
+    const start = ist(range.fromKey).startOf('day');
+    const end = ist(range.toKey).startOf('day');
+    const days = Math.round(end.diff(start, 'days').days) + 1;
+    const previousEnd = start.minus({ days: 1 });
+    const previousStart = previousEnd.minus({ days: days - 1 });
+    try {
+        return parseAnalyticsRange(
+            previousStart.toFormat('yyyy-MM-dd'),
+            previousEnd.toFormat('yyyy-MM-dd')
+        );
+    } catch {
+        return null;
+    }
+}

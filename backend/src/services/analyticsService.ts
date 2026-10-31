@@ -13,6 +13,7 @@ import {
     istHour,
     istHourBlock,
     istWeekday,
+    previousAnalyticsRange,
     type AnalyticsRange,
 } from './analyticsDateService.js';
 
@@ -97,6 +98,7 @@ export interface ActivityBucket {
     facebook: number;
     instagram: number;
     reach: number;
+    views: number;
     interactions: number;
 }
 
@@ -325,6 +327,7 @@ export function buildActivity(
                 facebook: 0,
                 instagram: 0,
                 reach: 0,
+                views: 0,
                 interactions: 0,
             },
         ])
@@ -340,6 +343,7 @@ export function buildActivity(
         const metrics = latest.get(targetKey(target.postId, target.platform))?.metrics;
         if (metrics) {
             bucket.reach += finiteOrZero(metrics.reach);
+            bucket.views += finiteOrZero(metrics.views);
             bucket.interactions += availableInteractions(metrics) ?? 0;
         }
     }
@@ -353,9 +357,113 @@ export function buildActivity(
             facebook: value.facebook,
             instagram: value.instagram,
             reach: value.reach,
+            views: value.views,
             interactions: value.interactions,
         };
     });
+}
+
+export interface PageSummary {
+    connectionId: string;
+    pageName: string;
+    instagramUsername: string;
+    totals: AnalyticsSummary;
+}
+
+/** Each Page's results, highest reach first, for comparing Pages. */
+export function summarizeByPage(
+    targets: PublishedTarget[],
+    latest: Map<string, IPostMetricSnapshot>
+): PageSummary[] {
+    const byPage = new Map<string, PublishedTarget[]>();
+    for (const target of targets) {
+        byPage.set(target.connectionId, [...(byPage.get(target.connectionId) ?? []), target]);
+    }
+    return [...byPage.entries()]
+        .map(([connectionId, pageTargets]) => ({
+            connectionId,
+            pageName: pageTargets[0]?.pageName || 'Page',
+            instagramUsername: pageTargets[0]?.instagramUsername || '',
+            totals: summarizeTargets(pageTargets, latest),
+        }))
+        .sort((a, b) => b.totals.reach - a.totals.reach);
+}
+
+export interface TopPost {
+    postId: string;
+    caption: string;
+    mediaUrl: string;
+    mediaType: MediaType;
+    pageName: string;
+    platforms: Platform[];
+    publishedAt: string;
+    reach: number;
+    views: number;
+    interactions: number;
+    engagementRate: number | null;
+}
+
+/** Posts need this much reach before a high engagement rate counts. */
+const MIN_REACH_FOR_RATE = 10;
+
+/**
+ * The best posts in the range, Facebook and Instagram copies combined: by
+ * reach, and by engagement rate among posts that reached enough people.
+ */
+export function topPosts(
+    targets: PublishedTarget[],
+    latest: Map<string, IPostMetricSnapshot>,
+    limit = 5
+): { byReach: TopPost[]; byEngagement: TopPost[] } {
+    const posts = new Map<string, TopPost & { rateInteractions: number; rateDenominator: number }>();
+    for (const target of targets) {
+        const metrics = latest.get(targetKey(target.postId, target.platform))?.metrics;
+        if (!metrics) continue;
+        const post = posts.get(target.postId) ?? {
+            postId: target.postId,
+            caption: target.caption.slice(0, 160),
+            mediaUrl: target.mediaUrl,
+            mediaType: target.mediaType,
+            pageName: target.pageName,
+            platforms: [],
+            publishedAt: target.publishedAt.toISOString(),
+            reach: 0,
+            views: 0,
+            interactions: 0,
+            engagementRate: null,
+            rateInteractions: 0,
+            rateDenominator: 0,
+        };
+        if (!post.platforms.includes(target.platform)) post.platforms.push(target.platform);
+        if (target.publishedAt.toISOString() < post.publishedAt) {
+            post.publishedAt = target.publishedAt.toISOString();
+        }
+        const interactions = availableInteractions(metrics);
+        post.reach += finiteOrZero(metrics.reach);
+        post.views += finiteOrZero(metrics.views);
+        post.interactions += interactions ?? 0;
+        const denominator = rateDenominator(metrics);
+        if (denominator > 0 && interactions !== null) {
+            post.rateInteractions += interactions;
+            post.rateDenominator += denominator;
+        }
+        posts.set(target.postId, post);
+    }
+
+    const rows = [...posts.values()].map(({ rateInteractions, rateDenominator, ...post }) => ({
+        ...post,
+        engagementRate: rateFrom(rateInteractions, rateDenominator),
+    }));
+    return {
+        byReach: rows
+            .filter((post) => post.reach > 0 || post.views > 0)
+            .sort((a, b) => b.reach - a.reach || b.views - a.views)
+            .slice(0, limit),
+        byEngagement: rows
+            .filter((post) => post.engagementRate !== null && post.reach >= MIN_REACH_FOR_RATE)
+            .sort((a, b) => (b.engagementRate ?? 0) - (a.engagementRate ?? 0))
+            .slice(0, limit),
+    };
 }
 
 export function buildBestTimes(
@@ -1025,12 +1133,33 @@ export async function resolvePageName(
     return connection?.pageName || 'Page';
 }
 
-export async function getAnalyticsOverview(
+/** Totals for the same number of days before `range`, for deltas. */
+async function previousPeriod(
     userId: string,
     range: AnalyticsRange,
     filters: AnalyticsFilters
+): Promise<{ range: { from: string; to: string }; totals: AnalyticsSummary } | null> {
+    const previous = previousAnalyticsRange(range);
+    if (!previous) return null;
+    const targets = await loadPublishedTargets(userId, previous, filters);
+    const snapshots = await loadLatestSnapshots(userId, targets, previous);
+    return {
+        range: { from: previous.fromKey, to: previous.toKey },
+        totals: summarizeTargets(targets, latestSnapshotsByTarget(snapshots)),
+    };
+}
+
+export async function getAnalyticsOverview(
+    userId: string,
+    range: AnalyticsRange,
+    filters: AnalyticsFilters,
+    /** Also total the period before, for "vs previous period". */
+    options: { compare?: boolean } = {}
 ) {
-    const targets = await loadPublishedTargets(userId, range, filters);
+    const [targets, previous] = await Promise.all([
+        loadPublishedTargets(userId, range, filters),
+        options.compare ? previousPeriod(userId, range, filters) : Promise.resolve(null),
+    ]);
     const snapshots = await loadLatestSnapshots(userId, targets, range);
     const latest = latestSnapshotsByTarget(snapshots);
     const summary = summarizeTargets(targets, latest);
@@ -1055,7 +1184,10 @@ export async function getAnalyticsOverview(
             timezone: 'Asia/Kolkata',
         },
         totals: summary,
+        previous,
         byPlatform,
+        byPage: summarizeByPage(targets, latest),
+        topPosts: topPosts(targets, latest),
         activity: buildActivity(targets, latest, range),
         bestTimes: buildBestTimes(targets, latest),
         sync: {

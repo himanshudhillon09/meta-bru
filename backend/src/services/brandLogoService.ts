@@ -115,6 +115,24 @@ const PREVIEW_SAMPLES = [
     },
 ];
 
+// Rendered previews per Page and logo version. Rendering takes a few seconds
+// on a small server, and the logo rarely changes, so the Brand tab reuses them.
+const PREVIEW_CACHE_LIMIT = 50;
+const previewCache = new Map<string, BrandFramePreview[]>();
+
+async function cachedPreviews(connectionId: string, logo: StoredLogo): Promise<BrandFramePreview[]> {
+    const key = `${connectionId}:${logo.updatedAt?.getTime?.() ?? 0}:${logo.bytes}`;
+    const cached = previewCache.get(key);
+    if (cached) return cached;
+    const previews = await renderPreviews(logo.data);
+    if (previewCache.size >= PREVIEW_CACHE_LIMIT) {
+        const oldest = previewCache.keys().next().value;
+        if (oldest !== undefined) previewCache.delete(oldest);
+    }
+    previewCache.set(key, previews);
+    return previews;
+}
+
 async function renderPreviews(logo: Buffer): Promise<BrandFramePreview[]> {
     return Promise.all(
         PREVIEW_SAMPLES.map(async (sample) => {
@@ -161,7 +179,7 @@ export async function getBrandLogoDetails(
     const logo = await readStoredLogo(userId, connectionId);
     if (!logo) return { logo: null, previews: [] };
 
-    return { logo: summary(logo), previews: await renderPreviews(logo.data) };
+    return { logo: summary(logo), previews: await cachedPreviews(connectionId, logo) };
 }
 
 export async function saveBrandLogo(
@@ -185,7 +203,7 @@ export async function saveBrandLogo(
         { $set: { brandLogo: { ...stored, thumb } } }
     );
 
-    return { logo: summary(stored), previews: await renderPreviews(stored.data), thumb };
+    return { logo: summary(stored), previews: await cachedPreviews(connectionId, stored), thumb };
 }
 
 export async function removeBrandLogo(userId: string, connectionId: string): Promise<void> {

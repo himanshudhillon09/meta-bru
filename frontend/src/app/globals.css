@@ -28,6 +28,19 @@
   --focus: #6366f1;
   --card-shadow: 0 1px 2px rgb(15 23 42 / 0.04), 0 2px 6px rgb(15 23 42 / 0.04);
   --card-shadow-hover: 0 4px 10px rgb(15 23 42 / 0.06), 0 12px 28px rgb(15 23 42 / 0.08);
+  /* Chart colours, validated for colour blindness against this surface. */
+  --viz-1: #2a78d6;
+  --viz-facebook: #2a78d6;
+  --viz-instagram: #e87ba4;
+  --viz-reel: #1baf7a;
+  --viz-up: #006300;
+  --viz-down: #d03b3b;
+  --viz-heat-1: #cde2fb;
+  --viz-heat-2: #9ec5f4;
+  --viz-heat-3: #6da7ec;
+  --viz-heat-4: #3987e5;
+  --viz-heat-5: #256abf;
+  --viz-heat-6: #184f95;
 }
 
 /* Dark surfaces step up clearly from the canvas so cards, tabs, and outlined
@@ -50,6 +63,19 @@
   --focus: #818cf8;
   --card-shadow: 0 1px 2px rgb(0 0 0 / 0.35);
   --card-shadow-hover: 0 6px 16px rgb(0 0 0 / 0.35), 0 0 0 1px rgb(129 140 248 / 0.12);
+  --viz-1: #3987e5;
+  --viz-facebook: #3987e5;
+  --viz-instagram: #d55181;
+  --viz-reel: #199e70;
+  --viz-up: #0ca30c;
+  --viz-down: #e66767;
+  /* Low values recede into the dark surface; high ones brighten. */
+  --viz-heat-1: #0d366b;
+  --viz-heat-2: #184f95;
+  --viz-heat-3: #256abf;
+  --viz-heat-4: #3987e5;
+  --viz-heat-5: #6da7ec;
+  --viz-heat-6: #9ec5f4;
 }
 
 @theme inline {

@@ -30,7 +30,7 @@ interface ConnectionCardProps {
 
 const VIEWS = [
     { key: 'schedule', label: 'Publishing & schedule' },
-    { key: 'brand', label: 'Brand & logo' },
+    { key: 'brand', label: 'Brand voice & logo' },
 ] as const;
 
 type ViewKey = (typeof VIEWS)[number]['key'];
