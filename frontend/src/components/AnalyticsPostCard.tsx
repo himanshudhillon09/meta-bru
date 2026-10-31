@@ -229,6 +229,8 @@ export function AnalyticsPostCard({
     sharing?: boolean;
 }) {
     const reel = post.mediaType === 'reel';
+    // A post made outside Meta-Bru cannot be shared to Story from here.
+    const native = post.source === 'native';
     // Analytics only lists published platforms, which is all sharing needs.
     const shareSubject: StoryShareSubject = {
         _id: post.postId,
@@ -268,10 +270,26 @@ export function AnalyticsPostCard({
                                 Reel
                             </span>
                         ) : null}
-                        <span className="text-[10px] uppercase tracking-widest text-subtle">
-                            {post.status}
-                        </span>
-                        {onShareStory ? (
+                        {native ? (
+                            <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-amber-700 dark:text-amber-300">
+                                Posted directly
+                            </span>
+                        ) : (
+                            <span className="rounded-full border border-indigo-500/20 bg-indigo-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-indigo-700 dark:text-indigo-300">
+                                Meta-Bru
+                            </span>
+                        )}
+                        {native && post.permalink ? (
+                            <a
+                                href={post.permalink}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="ml-auto text-xs font-bold text-indigo-700 hover:underline dark:text-indigo-300"
+                            >
+                                Open on {post.targets[0]?.platform === 'instagram' ? 'Instagram' : 'Facebook'} ↗
+                            </a>
+                        ) : null}
+                        {onShareStory && !native ? (
                             <div className="ml-auto">
                                 <ShareStoryButton
                                     post={shareSubject}

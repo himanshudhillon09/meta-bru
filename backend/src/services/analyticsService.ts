@@ -1,4 +1,5 @@
 import { Types, type PipelineStage, type QueryFilter } from 'mongoose';
+import { ImportedPost, type IImportedPost } from '../models/importedPostModel.js';
 import { Post } from '../models/postModel.js';
 import type { IPost, MediaType, Platform, PostStatus } from '../models/postModel.js';
 import {
@@ -17,11 +18,15 @@ import {
     type AnalyticsRange,
 } from './analyticsDateService.js';
 
+export type ContentSource = 'metabru' | 'native';
+
 export interface AnalyticsFilters {
     connectionId?: string;
     platform?: Platform;
     /** Only image posts or only reels. */
     mediaType?: MediaType;
+    /** Only posts made in Meta-Bru, or only posts made directly on Facebook or Instagram. */
+    source?: ContentSource;
 }
 
 export interface PublishedTarget {
@@ -49,6 +54,10 @@ export interface PublishedTarget {
     tokenUpdatedAt: Date | null;
     /** Permissions Meta granted at that login. Empty when unknown. */
     grantedScopes: string[];
+    /** Made in Meta-Bru, or published directly on Facebook or Instagram. */
+    source: ContentSource;
+    /** Link to the post on Meta, when known (posts made outside Meta-Bru). */
+    permalink: string;
 }
 
 export interface PermissionErrorSummary {
@@ -108,7 +117,10 @@ export interface BestTimeBucket {
     block: number;
     label: string;
     posts: number;
+    /** Only once 2 or more posts share the slot; tips rely on this. */
     avgEngagementRate: number | null;
+    /** The rate from however many posts the slot has, for the heatmap. */
+    engagementRate: number | null;
 }
 
 export interface MonitorPoint {
@@ -368,6 +380,8 @@ export interface PageSummary {
     pageName: string;
     instagramUsername: string;
     totals: AnalyticsSummary;
+    facebook: AnalyticsSummary;
+    instagram: AnalyticsSummary;
 }
 
 /** Each Page's results, highest reach first, for comparing Pages. */
@@ -385,12 +399,21 @@ export function summarizeByPage(
             pageName: pageTargets[0]?.pageName || 'Page',
             instagramUsername: pageTargets[0]?.instagramUsername || '',
             totals: summarizeTargets(pageTargets, latest),
+            facebook: summarizeTargets(
+                pageTargets.filter((target) => target.platform === 'facebook'),
+                latest
+            ),
+            instagram: summarizeTargets(
+                pageTargets.filter((target) => target.platform === 'instagram'),
+                latest
+            ),
         }))
         .sort((a, b) => b.totals.reach - a.totals.reach);
 }
 
 export interface TopPost {
     postId: string;
+    source: ContentSource;
     caption: string;
     mediaUrl: string;
     mediaType: MediaType;
@@ -421,6 +444,7 @@ export function topPosts(
         if (!metrics) continue;
         const post = posts.get(target.postId) ?? {
             postId: target.postId,
+            source: target.source,
             caption: target.caption.slice(0, 160),
             mediaUrl: target.mediaUrl,
             mediaType: target.mediaType,
@@ -519,6 +543,7 @@ export function buildBestTimes(
                     value.postIds.size >= 2
                         ? rateFrom(value.rateInteractions, value.rateDenominator)
                         : null,
+                engagementRate: rateFrom(value.rateInteractions, value.rateDenominator),
             });
         }
     }
@@ -725,12 +750,82 @@ function targetsFromPost(
             })),
             tokenUpdatedAt: connection?.tokenUpdatedAt ?? null,
             grantedScopes: connection?.grantedScopes ?? [],
+            source: 'metabru',
+            permalink: '',
         });
     }
     return targets;
 }
 
+/**
+ * Posts and reels published on the user's Pages outside Meta-Bru, as targets
+ * so every summary, chart, and insights sync treats them like any other.
+ */
+export async function loadImportedTargets(
+    userId: string,
+    range: Pick<AnalyticsRange, 'from' | 'to'>,
+    filters: AnalyticsFilters
+): Promise<PublishedTarget[]> {
+    if (filters.source === 'metabru') return [];
+    const query: Record<string, unknown> = {
+        userId,
+        kind: filters.mediaType === 'reel' ? 'reel' : filters.mediaType === 'image' ? 'post' : { $in: ['post', 'reel'] },
+        publishedAt: { $gte: range.from, $lte: range.to },
+    };
+    if (filters.connectionId) query.connectionId = filters.connectionId;
+    if (filters.platform) query.platform = filters.platform;
+    const [imported, connections] = await Promise.all([
+        ImportedPost.find(query as QueryFilter<IImportedPost>).sort({ publishedAt: -1 }).lean<IImportedPost[]>(),
+        SocialConnection.find({ userId }, 'pageName pageId instagram tokenUpdatedAt grantedScopes').lean<
+            Array<ConnectionLike & { _id: { toString(): string } }>
+        >(),
+    ]);
+    const byId = new Map(connections.map((connection) => [String(connection._id), connection]));
+    return imported.flatMap((item) => {
+        const connection = byId.get(String(item.connectionId));
+        if (!connection) return [];
+        const reel = item.kind === 'reel';
+        return [
+            {
+                postId: String(item._id),
+                connectionId: String(item.connectionId),
+                pageId: connection.pageId || '',
+                pageName: connection.pageName || 'Connected page',
+                platform: item.platform,
+                externalId: item.externalId,
+                publishedAt: item.publishedAt,
+                caption: item.caption,
+                mediaUrl: item.mediaUrl,
+                postStatus: 'published' as PostStatus,
+                instagramUsername: connection.instagram?.username || '',
+                mediaType: (reel ? 'reel' : 'image') as MediaType,
+                mediaDuration: null,
+                videoId: reel && item.platform === 'facebook' ? item.videoId || item.externalId : '',
+                sharedToStory: false,
+                hasTextOverlay: false,
+                storyTargets: [],
+                tokenUpdatedAt: connection.tokenUpdatedAt ?? null,
+                grantedScopes: connection.grantedScopes ?? [],
+                source: 'native' as ContentSource,
+                permalink: item.permalink,
+            },
+        ];
+    });
+}
+
 export async function loadPublishedTargets(
+    userId: string,
+    range: AnalyticsRange,
+    filters: AnalyticsFilters
+): Promise<PublishedTarget[]> {
+    const [own, imported] = await Promise.all([
+        filters.source === 'native' ? Promise.resolve([]) : loadOwnTargets(userId, range, filters),
+        loadImportedTargets(userId, range, filters),
+    ]);
+    return [...own, ...imported].sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime());
+}
+
+async function loadOwnTargets(
     userId: string,
     range: AnalyticsRange,
     filters: AnalyticsFilters
@@ -757,137 +852,6 @@ export async function loadPublishedTargets(
         targets.push(...targetsFromPost(raw, ownedConnection, filters, range));
     }
     return targets;
-}
-
-export function buildPublishedTargetsPagePipeline(
-    userId: string,
-    range: AnalyticsRange,
-    filters: AnalyticsFilters,
-    page: number,
-    limit: number
-): PipelineStage[] {
-    const safePage = Math.min(MAX_POST_PAGE, Math.max(1, Math.floor(page) || 1));
-    const safeLimit = Math.min(100, Math.max(1, Math.floor(limit) || 25));
-    const match: Record<string, unknown> = {
-        userId: new Types.ObjectId(userId),
-        status: { $in: ['published', 'partial'] },
-        $or: [
-            { 'targets.publishedAt': { $gte: range.from, $lte: range.to } },
-            { publishedAt: { $gte: range.from, $lte: range.to } },
-        ],
-    };
-    if (filters.connectionId) {
-        match.connectionId = new Types.ObjectId(filters.connectionId);
-    }
-    Object.assign(match, mediaTypeMatch(filters.mediaType));
-
-    const targetPublishedAt = { $ifNull: ['$$target.publishedAt', '$publishedAt'] };
-    const targetConditions: Record<string, unknown>[] = [
-        { $eq: ['$$target.status', 'published'] },
-        { $gte: [targetPublishedAt, range.from] },
-        { $lte: [targetPublishedAt, range.to] },
-    ];
-    if (filters.platform) {
-        targetConditions.push({ $eq: ['$$target.platform', filters.platform] });
-    }
-
-    return [
-        { $match: match },
-        {
-            $addFields: {
-                latestPublishedAt: {
-                    $max: {
-                        $map: {
-                            input: {
-                                $filter: {
-                                    input: '$targets',
-                                    as: 'target',
-                                    cond: { $and: targetConditions },
-                                },
-                            },
-                            as: 'target',
-                            in: targetPublishedAt,
-                        },
-                    },
-                },
-            },
-        },
-        { $match: { latestPublishedAt: { $ne: null } } },
-        {
-            $facet: {
-                metadata: [{ $count: 'total' }],
-                data: [
-                    { $sort: { latestPublishedAt: -1, _id: -1 } },
-                    { $skip: (safePage - 1) * safeLimit },
-                    { $limit: safeLimit },
-                    {
-                        $lookup: {
-                            from: SocialConnection.collection.name,
-                            let: { connectionId: '$connectionId' },
-                            pipeline: [
-                                {
-                                    $match: {
-                                        $expr: {
-                                            $and: [
-                                                { $eq: ['$_id', '$$connectionId'] },
-                                                {
-                                                    $eq: [
-                                                        '$userId',
-                                                        new Types.ObjectId(userId),
-                                                    ],
-                                                },
-                                            ],
-                                        },
-                                    },
-                                },
-                                {
-                                    $project: {
-                                        pageName: 1,
-                                        pageId: 1,
-                                        instagram: 1,
-                                        userId: 1,
-                                        tokenUpdatedAt: 1,
-                                        grantedScopes: 1,
-                                    },
-                                },
-                            ],
-                            as: 'connection',
-                        },
-                    },
-                    {
-                        $unwind: {
-                            path: '$connection',
-                            preserveNullAndEmptyArrays: true,
-                        },
-                    },
-                ],
-            },
-        },
-    ];
-}
-
-export async function loadPublishedTargetsPage(
-    userId: string,
-    range: AnalyticsRange,
-    filters: AnalyticsFilters,
-    page: number,
-    limit: number
-): Promise<{ targets: PublishedTarget[]; total: number }> {
-    const rows = await Post.aggregate<{
-        metadata: Array<{ total: number }>;
-        data: PostLike[];
-    }>(buildPublishedTargetsPagePipeline(userId, range, filters, page, limit));
-    const result = rows[0];
-    const total = result?.metadata[0]?.total ?? 0;
-    const targets = (result?.data ?? []).flatMap((post) => {
-        const connection = post.connection ?? null;
-        const ownedConnection =
-            connection && (!connection.userId || String(connection.userId) === userId)
-                ? connection
-                : null;
-        return targetsFromPost(post, ownedConnection, filters, range);
-    });
-    return { targets, total };
 }
 
 export function buildSnapshotQuery(
@@ -1187,6 +1151,10 @@ export async function getAnalyticsOverview(
         previous,
         byPlatform,
         byPage: summarizeByPage(targets, latest),
+        bySource: {
+            metabru: summarizeTargets(targets.filter((target) => target.source === 'metabru'), latest),
+            native: summarizeTargets(targets.filter((target) => target.source === 'native'), latest),
+        },
         topPosts: topPosts(targets, latest),
         activity: buildActivity(targets, latest, range),
         bestTimes: buildBestTimes(targets, latest),
@@ -1293,13 +1261,20 @@ export async function getAnalyticsPosts(
 ) {
     const safePage = Math.min(MAX_POST_PAGE, Math.max(1, Math.floor(page) || 1));
     const safeLimit = Math.min(100, Math.max(1, Math.floor(limit) || 25));
-    const { targets, total } = await loadPublishedTargetsPage(
-        userId,
-        range,
-        filters,
-        safePage,
-        safeLimit
-    );
+    // Posts made outside Meta-Bru live in their own collection, so the page is
+    // cut after merging both: newest first, a post's copies kept together.
+    const allTargets = await loadPublishedTargets(userId, range, filters);
+    const order: string[] = [];
+    const newest = new Map<string, number>();
+    for (const target of allTargets) {
+        const time = target.publishedAt.getTime();
+        if (!newest.has(target.postId)) order.push(target.postId);
+        newest.set(target.postId, Math.max(newest.get(target.postId) ?? 0, time));
+    }
+    order.sort((a, b) => (newest.get(b) ?? 0) - (newest.get(a) ?? 0));
+    const total = order.length;
+    const pageIds = new Set(order.slice((safePage - 1) * safeLimit, safePage * safeLimit));
+    const targets = allTargets.filter((target) => pageIds.has(target.postId));
     const snapshots = await loadLatestSnapshots(userId, targets, range);
     const latest = latestSnapshotsByTarget(snapshots);
     const grouped = new Map<string, PublishedTarget[]>();
@@ -1319,6 +1294,8 @@ export async function getAnalyticsPosts(
             mediaDuration: postTargets[0]?.mediaDuration ?? null,
             storyTargets: postTargets[0]?.storyTargets ?? [],
             status: postTargets[0]?.postStatus || 'published',
+            source: postTargets[0]?.source ?? 'metabru',
+            permalink: postTargets[0]?.permalink || '',
             connection: {
                 id: postTargets[0]?.connectionId || '',
                 pageId: postTargets[0]?.pageId || '',

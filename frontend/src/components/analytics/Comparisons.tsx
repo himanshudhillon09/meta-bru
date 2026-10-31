@@ -75,7 +75,16 @@ function perPost(summary: AnalyticsSummary, key: 'reach' | 'interactions'): numb
     return summary.posts > 0 ? Math.round(summary[key] / summary.posts) : null;
 }
 
-export function PlatformCompare({ facebook, instagram }: { facebook: AnalyticsSummary; instagram: AnalyticsSummary }) {
+export function PlatformCompare({
+    facebook,
+    instagram,
+    scope,
+}: {
+    facebook: AnalyticsSummary;
+    instagram: AnalyticsSummary;
+    /** What the numbers cover, e.g. "All 2 Pages combined" or one Page name. */
+    scope: string;
+}) {
     const both = facebook.posts > 0 && instagram.posts > 0;
     const fbRate = facebook.engagementRate;
     const igRate = instagram.engagementRate;
@@ -90,13 +99,38 @@ export function PlatformCompare({ facebook, instagram }: { facebook: AnalyticsSu
     } else if (both) {
         verdict = 'Both platforms engage about the same.';
     } else if (facebook.posts > 0 || instagram.posts > 0) {
-        verdict = `Only ${facebook.posts > 0 ? 'Facebook' : 'Instagram'} has posts in this range.`;
+        verdict = `Only ${facebook.posts > 0 ? 'Facebook' : 'Instagram'} has posts in this range, so there is nothing to compare yet.`;
     }
+    const oneSided = !both;
+    const only = facebook.posts > 0 ? { name: 'Facebook', summary: facebook } : { name: 'Instagram', summary: instagram };
 
     return (
         <section className="rounded-2xl border border-line bg-surface p-5 shadow-card">
-            <h2 className="text-sm font-bold text-fg">Facebook vs Instagram</h2>
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <h2 className="text-sm font-bold text-fg">Facebook vs Instagram</h2>
+                <span className="rounded-full bg-sunken px-2 py-0.5 text-[10px] font-semibold text-muted">{scope}</span>
+            </div>
             <p className="mt-0.5 text-xs text-muted">{verdict}</p>
+            {oneSided ? (
+                <div className="mt-4 grid grid-cols-3 gap-3 rounded-xl border border-line bg-surface-2 p-4 text-xs">
+                    <div>
+                        <div className="text-subtle">{only.name} posts</div>
+                        <div className="mt-0.5 text-base font-bold text-fg">{formatCompact(only.summary.posts)}</div>
+                    </div>
+                    <div>
+                        <div className="text-subtle">Reach</div>
+                        <div className="mt-0.5 text-base font-bold text-fg">{formatCompact(only.summary.reach)}</div>
+                    </div>
+                    <div>
+                        <div className="text-subtle">Engagement</div>
+                        <div className="mt-0.5 text-base font-bold text-fg">{formatPercent(only.summary.engagementRate)}</div>
+                    </div>
+                    <p className="col-span-3 text-[11px] text-subtle">
+                        Turn on {facebook.posts > 0 ? 'Instagram' : 'Facebook'} for a Page in Pages &amp; Schedule to
+                        publish there too and compare.
+                    </p>
+                </div>
+            ) : (
             <div className="mt-4">
                 <PairedBars
                     a={{ name: 'Facebook', color: 'var(--viz-facebook)' }}
@@ -109,6 +143,7 @@ export function PlatformCompare({ facebook, instagram }: { facebook: AnalyticsSu
                     ]}
                 />
             </div>
+            )}
         </section>
     );
 }
@@ -174,6 +209,44 @@ export function FormatCompare({ image, reel }: { image: AnalyticsSummary; reel: 
                     </div>
                 </div>
             ) : null}
+        </section>
+    );
+}
+
+/** Posts made in Meta-Bru against posts made directly in the Facebook and Instagram apps. */
+export function SourceCompare({ metabru, native }: { metabru: AnalyticsSummary; native: AnalyticsSummary }) {
+    const ownReach = perPost(metabru, 'reach');
+    const nativeReach = perPost(native, 'reach');
+    let verdict = 'Posts made directly on Facebook or Instagram show up here after Refresh insights.';
+    if (native.posts > 0 && metabru.posts > 0 && ownReach !== null && nativeReach !== null && ownReach !== nativeReach) {
+        verdict =
+            ownReach > nativeReach
+                ? nativeReach > 0
+                    ? `Meta-Bru posts reach ${ratio(ownReach, nativeReach)} more people per post than posts made directly.`
+                    : 'Meta-Bru posts are reaching people; posts made directly are not yet.'
+                : ownReach > 0
+                  ? `Posts made directly reach ${ratio(nativeReach, ownReach)} more people per post than Meta-Bru posts.`
+                  : 'Posts made directly are reaching people; Meta-Bru posts are not yet.';
+    } else if (native.posts > 0 && metabru.posts === 0) {
+        verdict = 'Everything in this range was posted directly on Facebook or Instagram.';
+    }
+
+    return (
+        <section className="rounded-2xl border border-line bg-surface p-5 shadow-card">
+            <h2 className="text-sm font-bold text-fg">Made in Meta-Bru vs posted directly</h2>
+            <p className="mt-0.5 text-xs text-muted">{verdict}</p>
+            <div className="mt-4">
+                <PairedBars
+                    a={{ name: `Meta-Bru (${metabru.posts})`, color: 'var(--viz-1)' }}
+                    b={{ name: `Posted directly (${native.posts})`, color: 'var(--viz-reel)' }}
+                    rows={[
+                        { label: 'Reach', a: metabru.reach, b: native.reach, format: formatCompact },
+                        { label: 'Average reach per post', a: ownReach, b: nativeReach, format: formatCompact },
+                        { label: 'Interactions', a: metabru.interactions, b: native.interactions, format: formatCompact },
+                        { label: 'Engagement rate', a: metabru.engagementRate, b: native.engagementRate, format: formatPercent },
+                    ]}
+                />
+            </div>
         </section>
     );
 }

@@ -58,6 +58,8 @@ export interface ISocialConnection extends mongoose.Document {
     grantedScopes: string[];
     brandProfile: IPageBrandProfile;
     brandLogo: IPageBrandLogo | null;
+    /** When posts made outside Meta-Bru were last read from Meta, for Analytics. */
+    nativeImportedAt: Date | null;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -109,6 +111,7 @@ const socialConnectionSchema = new mongoose.Schema<ISocialConnection>(
         nextRunAt: { type: Date, default: null },
         lastRunAt: { type: Date, default: null },
         lastError: { type: String, default: '' },
+        nativeImportedAt: { type: Date, default: null },
         lockedAt: { type: Date, default: null },
         tokenUpdatedAt: { type: Date, default: null },
         grantedScopes: { type: [String], default: [] },

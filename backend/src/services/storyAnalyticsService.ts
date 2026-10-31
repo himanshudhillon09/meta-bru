@@ -1,5 +1,7 @@
 import type { QueryFilter } from 'mongoose';
+import { ImportedPost, type IImportedPost } from '../models/importedPostModel.js';
 import { Post, type IPost, type MediaType, type Platform } from '../models/postModel.js';
+import { SocialConnection } from '../models/socialConnectionModel.js';
 import type { SnapshotStatus } from '../models/postMetricSnapshotModel.js';
 import {
     StoryMetricSnapshot,
@@ -44,6 +46,8 @@ export interface StoryRow {
     metricsAt: string | null;
     status: SnapshotStatus | 'waiting';
     error: string;
+    /** Shared from Meta-Bru, or posted directly on Facebook or Instagram. */
+    source: 'metabru' | 'native';
 }
 
 interface PopulatedConnection {
@@ -85,7 +89,7 @@ export async function getStoryAnalytics(
     filters: AnalyticsFilters,
     now = new Date()
 ): Promise<{ summary: StorySummary; stories: StoryRow[] }> {
-    const posts = await Post.find({
+    const posts = filters.source === 'native' ? [] : await Post.find({
         userId,
         storyTargets: {
             $elemMatch: {
@@ -141,10 +145,70 @@ export async function getStoryAnalytics(
                     : syncable
                       ? ''
                       : 'This Story expired before Meta-Bru could read its insights.',
+                source: 'metabru',
             });
         }
     }
 
+    rows.push(...(await importedStoryRows(userId, range, filters, now)));
+
     rows.sort((a, b) => b.publishedAt.localeCompare(a.publishedAt));
     return { summary: summarizeStories(rows, now.getTime()), stories: rows };
+}
+
+/** Stories posted directly on Facebook or Instagram, found by the import. */
+async function importedStoryRows(
+    userId: string,
+    range: Pick<AnalyticsRange, 'from' | 'to'>,
+    filters: AnalyticsFilters,
+    now: Date
+): Promise<StoryRow[]> {
+    if (filters.source === 'metabru' || filters.mediaType === 'reel') return [];
+    const stories = await ImportedPost.find({
+        userId,
+        kind: 'story',
+        publishedAt: { $gte: range.from, $lte: range.to },
+        ...(filters.connectionId ? { connectionId: filters.connectionId } : {}),
+        ...(filters.platform ? { platform: filters.platform } : {}),
+    } as QueryFilter<IImportedPost>)
+        .sort({ publishedAt: -1 })
+        .limit(MAX_STORY_POSTS)
+        .lean<IImportedPost[]>();
+    if (stories.length === 0) return [];
+
+    const [snapshots, connections] = await Promise.all([
+        StoryMetricSnapshot.find({
+            userId,
+            postId: { $in: stories.map((story) => story._id) },
+        } as QueryFilter<IStoryMetricSnapshot>).lean<IStoryMetricSnapshot[]>(),
+        SocialConnection.find({ userId }, 'pageName').lean<Array<{ _id: unknown; pageName: string }>>(),
+    ]);
+    const byPost = new Map(snapshots.map((snapshot) => [`${snapshot.postId}:${snapshot.platform}`, snapshot]));
+    const names = new Map(connections.map((connection) => [String(connection._id), connection.pageName]));
+
+    return stories.map((story) => {
+        const snapshot = byPost.get(`${story._id}:${story.platform}`);
+        const expiresAt = new Date(story.publishedAt.getTime() + STORY_LIFETIME_MS);
+        const syncable = now.getTime() - story.publishedAt.getTime() < STORY_INSIGHT_WINDOW_MS;
+        return {
+            postId: String(story._id),
+            caption: story.caption,
+            mediaUrl: story.mediaUrl,
+            mediaType: 'image' as MediaType,
+            platform: story.platform,
+            pageName: names.get(String(story.connectionId)) || '',
+            publishedAt: story.publishedAt.toISOString(),
+            expiresAt: expiresAt.toISOString(),
+            live: expiresAt > now,
+            metrics: snapshot?.metricsCapturedAt ? snapshot.metrics : null,
+            metricsAt: snapshot?.metricsCapturedAt?.toISOString() ?? null,
+            status: snapshot ? snapshot.status : syncable ? 'waiting' : 'unavailable',
+            error: snapshot
+                ? snapshot.error
+                : syncable
+                  ? ''
+                  : 'This Story expired before Meta-Bru could read its insights.',
+            source: 'native' as const,
+        };
+    });
 }

@@ -107,12 +107,19 @@ function StoryCard({ story, now }: { story: StoryRow; now: number }) {
                             Reel
                         </span>
                     ) : null}
+                    {story.source === 'native' ? (
+                        <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-amber-700 dark:text-amber-300">
+                            Posted directly
+                        </span>
+                    ) : null}
                     <span className="text-[11px] text-subtle">
                         {story.pageName ? `${story.pageName} · ` : ''}
                         {formatIstDateTime(story.publishedAt)}
                     </span>
                 </div>
-                <p className="mt-1 line-clamp-1 text-sm text-fg-2">{story.caption}</p>
+                <p className="mt-1 line-clamp-1 text-sm text-fg-2">
+                    {story.caption || (story.source === 'native' ? 'Story posted in the app' : '')}
+                </p>
 
                 {metrics ? (
                     <div className="mt-3 grid grid-cols-3 gap-2 text-xs sm:grid-cols-6">
@@ -234,8 +241,26 @@ export function StorySummaryCard({
     summary: StorySummary;
     onOpen: () => void;
 }) {
+    // Facebook reports views, reach, replies, and shares for Page Stories;
+    // taps and exits come only from Instagram.
+    const hasNavigation = summary.exitRate !== null;
+    const quiet = summary.stories > 0 && summary.views === 0 && summary.reach === 0;
+    const tiles: Array<[string, string, string]> = [
+        ['Shared', formatNumber(summary.stories), summary.live > 0 ? `${summary.live} live now` : 'in this range'],
+        ['Views', formatNumber(summary.views), 'times watched'],
+        ['Reach', formatNumber(summary.reach), 'people'],
+        ['Replies', formatNumber(summary.replies), 'messages'],
+        ['Shares', formatNumber(summary.shares), 'sent on'],
+        ...(hasNavigation
+            ? ([
+                  ['Exit rate', `${summary.exitRate}%`, 'left early; lower is better'],
+                  ['Taps forward', formatNumber(summary.tapsForward), 'skipped ahead'],
+              ] as Array<[string, string, string]>)
+            : []),
+    ];
+
     return (
-        <section className="rounded-2xl border border-line bg-surface p-5">
+        <section className="rounded-2xl border border-line bg-surface p-5 shadow-card">
             <div className="mb-4 flex flex-wrap items-center gap-2">
                 <h2 className="text-sm font-bold text-fg">Stories</h2>
                 {summary.live > 0 ? (
@@ -248,7 +273,7 @@ export function StorySummaryCard({
                     onClick={onOpen}
                     className="ml-auto text-xs font-bold text-indigo-700 dark:text-indigo-300"
                 >
-                    Open Stories →
+                    Each Story →
                 </button>
             </div>
             {summary.stories === 0 ? (
@@ -256,22 +281,23 @@ export function StorySummaryCard({
                     No Stories shared in this range. Use Share to Story on a published post to add one.
                 </p>
             ) : (
-                <div className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-5">
-                    {(
-                        [
-                            ['Shared', formatNumber(summary.stories)],
-                            ['Reach', formatNumber(summary.reach)],
-                            ['Views', formatNumber(summary.views)],
-                            ['Replies', formatNumber(summary.replies)],
-                            ['Exit rate', summary.exitRate === null ? '—' : `${summary.exitRate}%`],
-                        ] as const
-                    ).map(([label, value]) => (
-                        <div key={label} className="rounded-xl border border-line bg-surface-2 p-3">
-                            <span className="text-subtle">{label}</span>
-                            <div className="mt-0.5 text-base font-bold text-fg">{value}</div>
-                        </div>
-                    ))}
-                </div>
+                <>
+                    <div className="grid grid-cols-2 gap-2.5 text-xs sm:grid-cols-3">
+                        {tiles.map(([label, value, hint]) => (
+                            <div key={label} className="rounded-xl border border-line bg-surface-2 p-3">
+                                <div className="text-subtle">{label}</div>
+                                <div className="mt-0.5 text-base font-bold text-fg">{value}</div>
+                                <div className="text-[10px] text-faint">{hint}</div>
+                            </div>
+                        ))}
+                    </div>
+                    <p className="mt-3 text-[11px] text-subtle">
+                        {quiet
+                            ? 'Meta has not counted any views yet. Story numbers update while a Story is live (24 hours); press Refresh insights to read them now.'
+                            : 'Meta shares Story numbers only while a Story is live (24 hours), so they are saved every 30 minutes.'}
+                        {hasNavigation ? '' : ' Exit rate and taps are Instagram-only, so they appear once you share to Instagram Stories.'}
+                    </p>
+                </>
             )}
         </section>
     );

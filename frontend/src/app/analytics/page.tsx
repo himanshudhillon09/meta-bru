@@ -15,7 +15,7 @@ import { StoryShareNotice, useStoryShare } from '@/components/ShareStory';
 import { AnalyticsTipCard } from '@/components/AnalyticsTipCard';
 import { AnalyticsAiTips } from '@/components/AnalyticsAiTips';
 import { BestTimes } from '@/components/analytics/BestTimes';
-import { FormatCompare, PlatformCompare } from '@/components/analytics/Comparisons';
+import { FormatCompare, PlatformCompare, SourceCompare } from '@/components/analytics/Comparisons';
 import { changeBetween, formatCount, formatPercent, periodLabel } from '@/components/analytics/format';
 import { KpiTile } from '@/components/analytics/KpiTiles';
 import { PageBreakdown } from '@/components/analytics/PageBreakdown';
@@ -58,6 +58,17 @@ const CONTENT_TYPES = [
 
 type ContentKey = (typeof CONTENT_TYPES)[number]['key'];
 
+const SOURCES = [
+    { key: '', label: 'All content' },
+    { key: 'metabru', label: 'Made in Meta-Bru' },
+    { key: 'native', label: 'Posted directly' },
+] as const;
+
+type SourceKey = (typeof SOURCES)[number]['key'];
+
+/** Refresh insights keeps reading until everything has insights, up to this many rounds. */
+const MAX_SYNC_ROUNDS = 6;
+
 const RANGES: Array<{ key: RangeKey; label: string }> = [
     { key: '7', label: '7 days' },
     { key: '30', label: '30 days' },
@@ -95,21 +106,28 @@ function isTodayIst(value: string | null | undefined): boolean {
     return day(new Date(value)) === day(new Date());
 }
 
-function syncNotice(
-    result: {
-        synced?: number;
-        failed?: number;
-        skipped?: number;
-        remaining?: number;
-        removed?: { postsDeleted?: number; copiesDropped?: number; mediaDeleted?: number };
-    },
-    automatic = false
-): string {
+interface SyncResponse {
+    synced?: number;
+    failed?: number;
+    skipped?: number;
+    remaining?: number;
+    removed?: { postsDeleted?: number; copiesDropped?: number; mediaDeleted?: number };
+    imported?: { found?: number; errors?: string[] } | null;
+}
+
+function syncNotice(result: SyncResponse, automatic = false): string {
     const synced = Number(result.synced) || 0;
     const failed = Number(result.failed) || 0;
     const skipped = Number(result.skipped) || 0;
     const remaining = Number(result.remaining) || 0;
     const parts: string[] = [];
+    const found = Number(result.imported?.found) || 0;
+    if (found > 0) {
+        parts.push(`Found ${found} post${found === 1 ? '' : 's'}, reel${found === 1 ? '' : 's'}, or Stor${found === 1 ? 'y' : 'ies'} made outside Meta-Bru`);
+    }
+    for (const error of result.imported?.errors ?? []) {
+        parts.push(`Could not read other posts for ${error}`);
+    }
     if (synced > 0) {
         parts.push(
             `Updated ${synced} insight${synced === 1 ? '' : 's'}`
@@ -126,7 +144,7 @@ function syncNotice(
         );
     }
     if (remaining > 0) {
-        parts.push(`${remaining} remaining; refresh again`);
+        parts.push(`${remaining} still loading; press Refresh insights to continue`);
     }
     // Posts deleted on Facebook or Instagram are flushed during the refresh.
     const postsDeleted = Number(result.removed?.postsDeleted) || 0;
@@ -173,6 +191,7 @@ export default function AnalyticsPage() {
     const [connectionId, setConnectionId] = useState('');
     const [platform, setPlatform] = useState('');
     const [contentType, setContentType] = useState<ContentKey>('all');
+    const [source, setSource] = useState<SourceKey>('');
     const [connections, setConnections] = useState<SocialConnection[]>([]);
     const [overview, setOverview] = useState<AnalyticsOverview | null>(null);
     // The filter selection the loaded overview belongs to.
@@ -243,8 +262,9 @@ export default function AnalyticsPage() {
             ...(connectionId ? { connectionId } : {}),
             ...(platform ? { platform } : {}),
             ...(contentType !== 'all' ? { mediaType: contentType } : {}),
+            ...(source ? { source } : {}),
         };
-    }, [range, customFrom, customTo, connectionId, platform, contentType]);
+    }, [range, customFrom, customTo, connectionId, platform, contentType, source]);
 
     useEffect(() => {
         setAiError('');
@@ -375,6 +395,7 @@ export default function AnalyticsPage() {
                 ...(connectionId ? { connectionId } : {}),
                 ...(platform ? { platform } : {}),
                 ...(contentType !== 'all' ? { mediaType: contentType } : {}),
+                ...(source ? { source } : {}),
                 page: '1',
                 limit: '100',
             });
@@ -384,7 +405,7 @@ export default function AnalyticsPage() {
         } finally {
             setTrackerLoading(false);
         }
-    }, [trackerMonth, connectionId, platform, contentType]);
+    }, [trackerMonth, connectionId, platform, contentType, source]);
 
     useEffect(() => {
         if (tab === 'tracker') void loadTracker();
@@ -446,12 +467,22 @@ export default function AnalyticsPage() {
                 setError('');
             }
             try {
-                const result: any = await analyticsApi.sync({
+                // The first round also reads posts made outside Meta-Bru; later
+                // rounds keep loading insights until none are left.
+                let result = (await analyticsApi.sync({
                     ...params,
                     mode: 'stale',
-                });
-                const message = syncNotice(result, automatic);
-                if (message) setNotice(message);
+                    ...(automatic ? {} : { force: true }),
+                })) as SyncResponse;
+                let synced = Number(result.synced) || 0;
+                for (let round = 1; round < MAX_SYNC_ROUNDS && Number(result.remaining) > 0; round += 1) {
+                    setNotice(`Loading insights: ${result.remaining} left...`);
+                    const next = (await analyticsApi.sync({ ...params, mode: 'stale' })) as SyncResponse;
+                    result = { ...next, imported: result.imported ?? null };
+                    synced += Number(result.synced) || 0;
+                }
+                const message = syncNotice({ ...result, synced }, automatic);
+                setNotice(message);
                 if (tab === 'monitor') {
                     await loadMonitor();
                 } else if (tab === 'tracker') {
@@ -550,7 +581,8 @@ export default function AnalyticsPage() {
         if (dailyRunRef.current || loading || !overview) return;
         if (overviewKey !== JSON.stringify(params)) return;
         dailyRunRef.current = true;
-        if (overview.totals.posts === 0) return;
+        // Runs even with nothing published here: posts made directly on
+        // Facebook or Instagram are found by this refresh.
 
         const needsRefresh =
             !isTodayIst(overview.sync.lastSyncedAt) ||
@@ -770,13 +802,30 @@ export default function AnalyticsPage() {
                     <option value="facebook">Facebook only</option>
                     <option value="instagram">Instagram only</option>
                 </select>
-                {connectionId || platform || contentType !== 'all' ? (
+                <select
+                    aria-label="Source filter"
+                    value={source}
+                    onChange={(event) => setSource(event.target.value as SourceKey)}
+                    className={`rounded-xl border px-3 py-2 text-xs font-semibold ${
+                        source
+                            ? 'border-indigo-500/40 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300'
+                            : 'border-line-strong bg-surface-2 text-fg'
+                    }`}
+                >
+                    {SOURCES.map((item) => (
+                        <option key={item.key} value={item.key}>
+                            {item.label}
+                        </option>
+                    ))}
+                </select>
+                {connectionId || platform || contentType !== 'all' || source ? (
                     <button
                         type="button"
                         onClick={() => {
                             setConnectionId('');
                             setPlatform('');
                             setContentType('all');
+                            setSource('');
                         }}
                         className="rounded-xl px-3 py-2 text-xs font-bold text-subtle hover:bg-hover hover:text-fg"
                     >
@@ -814,9 +863,16 @@ export default function AnalyticsPage() {
                             label={contentType === 'reel' ? 'Reels published' : 'Posts published'}
                             value={formatCount(overview.totals.posts)}
                             hint={
-                                contentType === 'all' && overview.totals.reels
-                                    ? `including ${formatCount(overview.totals.reels)} reel${overview.totals.reels === 1 ? '' : 's'}`
-                                    : undefined
+                                [
+                                    contentType === 'all' && overview.totals.reels
+                                        ? `${formatCount(overview.totals.reels)} reel${overview.totals.reels === 1 ? '' : 's'}`
+                                        : '',
+                                    !source && overview.bySource?.native.posts
+                                        ? `${formatCount(overview.bySource.native.posts)} posted directly`
+                                        : '',
+                                ]
+                                    .filter(Boolean)
+                                    .join(' · ') || undefined
                             }
                             change={changeBetween(overview.totals.posts, overview.previous?.totals.posts)}
                             changeLabel={previousLabel}
@@ -880,7 +936,7 @@ export default function AnalyticsPage() {
 
                             {overview.topPosts ? <TopPosts topPosts={overview.topPosts} /> : null}
 
-                            {!connectionId && overview.byPage && connections.length > 1 ? (
+                            {!connectionId && overview.byPage && connections.length > 0 ? (
                                 <PageBreakdown
                                     byPage={overview.byPage}
                                     connections={connections}
@@ -896,12 +952,23 @@ export default function AnalyticsPage() {
                                     <PlatformCompare
                                         facebook={overview.byPlatform.facebook}
                                         instagram={overview.byPlatform.instagram}
+                                        scope={
+                                            selectedConnection
+                                                ? selectedConnection.pageName
+                                                : `All ${connections.length} Pages combined`
+                                        }
                                     />
                                 ) : null}
                                 {contentType === 'all' && overview.byContentType ? (
                                     <FormatCompare
                                         image={overview.byContentType.image}
                                         reel={overview.byContentType.reel}
+                                    />
+                                ) : null}
+                                {!source && overview.bySource ? (
+                                    <SourceCompare
+                                        metabru={overview.bySource.metabru}
+                                        native={overview.bySource.native}
                                     />
                                 ) : null}
                             </div>

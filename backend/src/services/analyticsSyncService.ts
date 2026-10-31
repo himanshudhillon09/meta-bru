@@ -3,6 +3,7 @@ import {
     SocialConnection,
     type ISocialConnection,
 } from '../models/socialConnectionModel.js';
+import { ImportedPost, type IImportedPost } from '../models/importedPostModel.js';
 import { PostMetricSnapshot } from '../models/postMetricSnapshotModel.js';
 import type { IPostMetricSnapshot } from '../models/postMetricSnapshotModel.js';
 import type { Platform } from '../models/postModel.js';
@@ -71,7 +72,7 @@ const TOKEN_ERROR =
     'Meta access token is invalid or was revoked. Reconnect this Page.';
 
 export function syncCapForMode(mode: SyncMode): number {
-    return mode === 'live' ? 10 : 20;
+    return mode === 'live' ? 10 : 40;
 }
 
 export function selectStaleTargets(
@@ -209,6 +210,8 @@ export async function syncAnalytics(
     const fetchInstagramReel = deps.fetchInstagramReel ?? fetchInstagramReelMetrics;
     const checkRemoved = deps.checkRemoved ?? checkRemovedOnMeta;
     const removedTargets: Array<{ postId: string; platform: Platform }> = [];
+    // Posts made outside Meta-Bru that were deleted on Facebook or Instagram.
+    const removedImported: string[] = [];
 
     const targets = await loadPublishedTargets(userId, range, filters);
     const snapshots = await loadLatestSnapshots(userId, targets, range);
@@ -311,7 +314,8 @@ export async function syncAnalytics(
                     token
                 );
                 if (check === 'deleted') {
-                    removedTargets.push({ postId: target.postId, platform: target.platform });
+                    if (target.source === 'native') removedImported.push(target.postId);
+                    else removedTargets.push({ postId: target.postId, platform: target.platform });
                     return;
                 }
             }
@@ -348,6 +352,12 @@ export async function syncAnalytics(
         removedTargets.length > 0
             ? await removeDeletedTargets(userId, removedTargets)
             : { postsDeleted: 0, copiesDropped: 0, mediaDeleted: 0 };
+    if (removedImported.length > 0) {
+        await Promise.all([
+            ImportedPost.deleteMany({ userId, _id: { $in: removedImported } } as QueryFilter<IImportedPost>),
+            PostMetricSnapshot.deleteMany({ userId, postId: { $in: removedImported } } as QueryFilter<IPostMetricSnapshot>),
+        ]);
+    }
 
     return {
         synced,

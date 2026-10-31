@@ -1,4 +1,5 @@
 import type { QueryFilter } from 'mongoose';
+import { ImportedPost, type IImportedPost } from '../models/importedPostModel.js';
 import { Post, type IPost, type Platform } from '../models/postModel.js';
 import {
     SocialConnection,
@@ -122,7 +123,27 @@ export async function syncStoryInsights(
         .select('userId connectionId storyTargets')
         .limit(MAX_STORIES_PER_SYNC);
 
-    const stories = liveStories(posts, since);
+    // Stories posted directly on Facebook or Instagram, found by the import.
+    const imported = await ImportedPost.find({
+        ...(options.userId ? { userId: options.userId } : {}),
+        kind: 'story',
+        publishedAt: { $gte: since },
+    } as QueryFilter<IImportedPost>)
+        .select('userId connectionId platform externalId publishedAt')
+        .limit(MAX_STORIES_PER_SYNC)
+        .lean<IImportedPost[]>();
+
+    const stories = [
+        ...liveStories(posts, since),
+        ...imported.map((story) => ({
+            userId: String(story.userId),
+            connectionId: String(story.connectionId),
+            postId: String(story._id),
+            platform: story.platform,
+            externalId: story.externalId,
+            publishedAt: story.publishedAt,
+        })),
+    ];
     if (stories.length === 0) return { synced: 0, failed: 0 };
 
     const connections = await SocialConnection.find({

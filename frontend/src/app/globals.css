@@ -41,6 +41,13 @@
   --viz-heat-4: #3987e5;
   --viz-heat-5: #256abf;
   --viz-heat-6: #184f95;
+  /* Text on each heat step: dark on the pale steps, white on the deep ones. */
+  --viz-heat-ink-1: #0f172a;
+  --viz-heat-ink-2: #0f172a;
+  --viz-heat-ink-3: #0f172a;
+  --viz-heat-ink-4: #ffffff;
+  --viz-heat-ink-5: #ffffff;
+  --viz-heat-ink-6: #ffffff;
 }
 
 /* Dark surfaces step up clearly from the canvas so cards, tabs, and outlined
@@ -76,6 +83,12 @@
   --viz-heat-4: #3987e5;
   --viz-heat-5: #6da7ec;
   --viz-heat-6: #9ec5f4;
+  --viz-heat-ink-1: #ffffff;
+  --viz-heat-ink-2: #ffffff;
+  --viz-heat-ink-3: #ffffff;
+  --viz-heat-ink-4: #0b1220;
+  --viz-heat-ink-5: #0b1220;
+  --viz-heat-ink-6: #0b1220;
 }
 
 @theme inline {
