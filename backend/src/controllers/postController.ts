@@ -24,6 +24,7 @@ import { getCloudinaryCredentials } from '../services/credentialService.js';
 import { applyImageText } from '../services/imageTextService.js';
 import { REEL_LIMITS } from '../services/mediaDerivativeService.js';
 import { musicInputSchema, resolvePostMusic } from '../services/musicLibraryService.js';
+import { rereadRemovedPosts } from '../services/nativeImportService.js';
 import { toPhotoReel, withMixUrls, type PostMediaWithMusic } from '../services/postMusicService.js';
 import { publishPost, sharePostToStory } from '../services/publishService.js';
 import { deletePostAnalytics } from '../services/removedPostService.js';
@@ -807,6 +808,8 @@ export async function deletePost(req: Request, res: Response): Promise<void> {
     }
 
     await deletePostAnalytics(req.user.id, [post._id]);
+    // It is still live on Meta; the next insights refresh reads it back.
+    await rereadRemovedPosts(req.user.id, [post]);
     const cleanup = await deletePostMediaIfUnused(req.user.id, {
         publicId: post.mediaPublicId,
         resourceType: post.mediaType === 'reel' ? 'video' : 'image',
@@ -834,7 +837,7 @@ export async function clearActivity(req: Request, res: Response): Promise<void> 
         userId: req.user.id,
         status: { $in: ACTIVITY_STATUSES[filter] },
         ...(connectionId ? { connectionId } : {}),
-    }).select('_id mediaPublicId mediaType photo');
+    }).select('_id connectionId mediaPublicId mediaType photo targets publishedAt');
 
     const ids = posts.map((post) => post._id);
     const { deletedCount } = await Post.deleteMany({
@@ -843,6 +846,9 @@ export async function clearActivity(req: Request, res: Response): Promise<void> 
         status: { $in: ACTIVITY_STATUSES[filter] },
     });
     await deletePostAnalytics(req.user.id, ids);
+    // What went out is still live on Meta; the next insights refresh reads it
+    // back as posted directly.
+    await rereadRemovedPosts(req.user.id, posts);
 
     // One cleanup per file; several posts can share one upload.
     const files = new Map(
