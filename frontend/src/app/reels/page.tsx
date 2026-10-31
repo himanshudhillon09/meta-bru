@@ -360,7 +360,7 @@ export default function ReelsPage() {
         if (selectedConnection?.tokenStatus !== 'active') {
             setError(
                 selectedConnection?.tokenStatus === 'disconnected'
-                    ? 'This Page is disconnected. Reconnect it under Connections.'
+                    ? 'This Page is disconnected. Reconnect it under Pages & Schedule.'
                     : 'Reconnect this Page before publishing.'
             );
             return;
@@ -533,7 +533,7 @@ export default function ReelsPage() {
                 <div className="animate-fade-up rounded-2xl border border-dashed border-line-strong bg-surface p-12 text-center">
                     <div className="text-xl font-bold text-fg">No active Pages</div>
                     <p className="text-sm text-muted mt-2">
-                        Reconnect a Page under Connections to create and publish a reel.
+                        Reconnect a Page under Pages & Schedule to create and publish a reel.
                     </p>
                     <Link
                         href="/connections"
@@ -573,7 +573,7 @@ export default function ReelsPage() {
                             {selectedConnection && !selectedConnection.isActive ? (
                                 <div className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-700 dark:text-amber-200">
                                     This Page is paused. Scheduled reels wait until you
-                                    reactivate it under Connections.
+                                    reactivate it under Pages & Schedule.
                                 </div>
                             ) : null}
 
@@ -748,7 +748,7 @@ export default function ReelsPage() {
                                 {selectedConnection ? `${selectedConnection.pageName}'s` : 'the chosen Page’s'} brand
                                 voice from{' '}
                                 <Link href="/connections" className="text-indigo-700 dark:text-indigo-400">
-                                    Connections
+                                    Pages &amp; Schedule
                                 </Link>
                                 . It does not watch the video.
                             </p>

@@ -38,7 +38,7 @@ const NAV_GROUPS: NavGroup[] = [
     {
         label: 'Setup',
         items: [
-            { href: '/connections', label: 'Connections', icon: 'link' },
+            { href: '/connections', label: 'Pages & Schedule', icon: 'link' },
             { href: '/storage', label: 'Storage', icon: 'cloud' },
             { href: '/usage', label: 'Usage', icon: 'gauge' },
             { href: '/settings', label: 'Profile', icon: 'settings' },

@@ -58,7 +58,7 @@ export function queuedPostTiming(
     if (!page.isActive) {
         return {
             kind: 'waiting',
-            reason: `${page.pageName}'s schedule is paused. Turn it on in Connections, or use Post now.`,
+            reason: `${page.pageName}'s schedule is paused. Turn it on in Pages & Schedule, or use Post now.`,
         };
     }
 
@@ -182,7 +182,7 @@ export function ScheduleSummary({
                     <div className="pt-2.5 text-[11px] text-subtle">
                         Want posts to go out sooner? Add more posting times in{' '}
                         <Link href="/connections" className="text-indigo-700 dark:text-indigo-400">
-                            Connections
+                            Pages &amp; Schedule
                         </Link>
                         , or use Post now.
                     </div>

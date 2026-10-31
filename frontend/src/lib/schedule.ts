@@ -99,3 +99,40 @@ export function addSlot(times: string[]): string[] {
 export function formatDailyTimes(times: string[] | undefined): string {
     return times && times.length > 0 ? times.join(', ') : '—';
 }
+
+function dayKey(date: Date, timezone: string): string {
+    try {
+        return date.toLocaleDateString('en-CA', { timeZone: timezone });
+    } catch {
+        return date.toLocaleDateString('en-CA');
+    }
+}
+
+/**
+ * "Today, 7:00 pm", "Tomorrow, 9:00 am", or "Sat, 2 Nov, 9:00 am" in the
+ * Page's timezone. Without `now` (0 before mount) it always names the day.
+ */
+export function friendlySlot(value: string, timezone: string, now = 0): string {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    const options = (extra: Intl.DateTimeFormatOptions): Intl.DateTimeFormatOptions => ({
+        ...extra,
+        timeZone: timezone,
+    });
+    let time: string;
+    let day: string;
+    // en-IN gives "7:00 pm", matching the rest of the app's times.
+    try {
+        time = date.toLocaleTimeString('en-IN', options({ hour: 'numeric', minute: '2-digit' }));
+        day = date.toLocaleDateString('en-IN', options({ weekday: 'short', day: 'numeric', month: 'short' }));
+    } catch {
+        time = date.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
+        day = date.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+    }
+    if (now > 0) {
+        const target = dayKey(date, timezone);
+        if (target === dayKey(new Date(now), timezone)) return `Today, ${time}`;
+        if (target === dayKey(new Date(now + 86_400_000), timezone)) return `Tomorrow, ${time}`;
+    }
+    return `${day}, ${time}`;
+}

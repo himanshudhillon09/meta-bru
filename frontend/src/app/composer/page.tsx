@@ -629,7 +629,7 @@ export default function ComposerPage() {
         if (selectedConnection?.tokenStatus !== 'active') {
             setError(
                 selectedConnection?.tokenStatus === 'disconnected'
-                    ? 'This Page is disconnected. Reconnect it under Connections.'
+                    ? 'This Page is disconnected. Reconnect it under Pages & Schedule.'
                     : 'Reconnect this Page before publishing.'
             );
             return;
@@ -813,7 +813,7 @@ export default function ComposerPage() {
                         No active Pages
                     </div>
                     <p className="text-sm text-muted mt-2">
-                        Reconnect a Page under Connections to create and publish
+                        Reconnect a Page under Pages & Schedule to create and publish
                         a new post.
                     </p>
                     <Link
@@ -870,7 +870,7 @@ export default function ComposerPage() {
                             {selectedConnection && !selectedConnection.isActive ? (
                                 <div className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-700 dark:text-amber-200">
                                     This Page is paused. Scheduled posts wait
-                                    until you reactivate it under Connections.
+                                    until you reactivate it under Pages & Schedule.
                                 </div>
                             ) : null}
 
@@ -937,7 +937,7 @@ export default function ComposerPage() {
                                 {selectedConnection ? `${selectedConnection.pageName}'s` : 'the chosen Page’s'} brand
                                 voice from{' '}
                                 <Link href="/connections" className="text-indigo-700 dark:text-indigo-400">
-                                    Connections
+                                    Pages &amp; Schedule
                                 </Link>
                                 .
                             </p>
