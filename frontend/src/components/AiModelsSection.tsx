@@ -169,7 +169,7 @@ export function AiModelsSection({ onNotice, onError, keys }: AiModelsSectionProp
         keys === null ? false : provider === 'claude' ? !keys.anthropic : !keys.gemini;
 
     return (
-        <section className="mt-6 rounded-2xl border border-line bg-surface p-6 sm:p-8 shadow-card">
+        <section className="rounded-2xl border border-line bg-surface p-6 sm:p-8 shadow-card">
             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                 <div>
                     <h2 className="text-lg font-bold text-fg">AI provider and models</h2>
@@ -183,7 +183,7 @@ export function AiModelsSection({ onNotice, onError, keys }: AiModelsSectionProp
                     type="button"
                     onClick={() => void load(provider)}
                     disabled={loading}
-                    className="self-start px-4 py-2.5 rounded-xl text-xs font-bold border border-line-strong bg-hover text-fg hover:bg-hover-strong disabled:opacity-50 transition-all"
+                    className="self-start whitespace-nowrap px-4 py-2.5 rounded-xl text-xs font-bold border border-line-strong bg-hover text-fg hover:bg-hover-strong disabled:opacity-50 transition-all"
                 >
                     {loading ? 'Loading...' : 'Refresh list'}
                 </button>
@@ -226,8 +226,8 @@ export function AiModelsSection({ onNotice, onError, keys }: AiModelsSectionProp
             {missingKey ? (
                 <div className="mt-4 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-700 dark:text-amber-200">
                     {provider === 'claude'
-                        ? 'Add your Anthropic API key under Integration credentials below to use Claude.'
-                        : 'Add your Gemini API key under Integration credentials below to use Gemini.'}
+                        ? 'Add your Anthropic API key below to use Claude.'
+                        : 'Add your Gemini API key below to use Gemini.'}
                 </div>
             ) : null}
             {provider === 'claude' && keys !== null && !keys.gemini ? (
@@ -237,12 +237,13 @@ export function AiModelsSection({ onNotice, onError, keys }: AiModelsSectionProp
                 </div>
             ) : null}
 
-            {loadError ? (
+            {/* A missing key is already explained above; skip the list error it causes. */}
+            {loadError && keys?.gemini !== false ? (
                 <div className="mt-4 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-700 dark:text-amber-200">
                     {loadError} You can still type a model ID with “Other model ID…”.
                 </div>
             ) : null}
-            {provider === 'claude' && claudeError ? (
+            {provider === 'claude' && claudeError && keys?.anthropic !== false ? (
                 <div className="mt-4 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-700 dark:text-amber-200">
                     {claudeError} You can still type a model ID with “Other model ID…”.
                 </div>

@@ -11,6 +11,7 @@ import authRoutes from './routes/authRoutes.js';
 import connectionRoutes from './routes/connectionRoutes.js';
 import mediaRoutes from './routes/mediaRoutes.js';
 import musicRoutes from './routes/musicRoutes.js';
+import overviewRoutes from './routes/overviewRoutes.js';
 import postRoutes from './routes/postRoutes.js';
 import { errorHandler, notFound } from './middlewares/errorMiddleware.js';
 import { schedulerStatus, startScheduler, stopScheduler } from './services/schedulerService.js';
@@ -61,6 +62,7 @@ app.use('/api/music', musicRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/usage', usageRoutes);
+app.use('/api/overview', overviewRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

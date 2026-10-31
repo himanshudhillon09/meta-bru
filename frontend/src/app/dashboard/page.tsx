@@ -2,7 +2,8 @@
 
 import React from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { AdminDashboard, UserDashboard } from '@/components/Dashboards';
+import { AdminDashboard } from '@/components/Dashboards';
+import { UserOverview } from '@/components/overview/UserOverview';
 
 export default function DashboardPage() {
     const { user, loading } = useAuth();
@@ -22,5 +23,5 @@ export default function DashboardPage() {
         return null; // AuthContext handles redirect
     }
 
-    return user.role === 'admin' ? <AdminDashboard /> : <UserDashboard />;
+    return user.role === 'admin' ? <AdminDashboard /> : <UserOverview />;
 }

@@ -297,6 +297,14 @@ export default function ActivityPage() {
         }
     }, []);
 
+    // Overview links straight to a filter, e.g. /activity?filter=failed.
+    useEffect(() => {
+        const requested = new URLSearchParams(window.location.search).get('filter');
+        const match = FILTERS.find((item) => item.key === requested);
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        if (match) setFilter(match.key);
+    }, []);
+
     useEffect(() => {
         // Initial data load; state updates happen after the request resolves.
         // eslint-disable-next-line react-hooks/set-state-in-effect
