@@ -127,6 +127,13 @@ export async function removeDeletedTargets(
             resourceType: deleted.mediaType === 'reel' ? 'video' : 'image',
         });
         if (cleanup.mediaDeleted) summary.mediaDeleted += 1;
+        // A photo reel also leaves the image it was made from.
+        if (deleted.photo?.publicId) {
+            await deletePostMediaIfUnused(userId, {
+                publicId: deleted.photo.publicId,
+                resourceType: 'image',
+            });
+        }
     }
 
     return summary;

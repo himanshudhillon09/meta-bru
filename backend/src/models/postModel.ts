@@ -20,6 +20,38 @@ export interface IPostTarget {
     publishedAt: Date | null;
 }
 
+/** One of the user's own tracks, copied from their music library. */
+export interface IMusicTrackRef {
+    trackId: mongoose.Types.ObjectId;
+    publicId: string;
+    title: string;
+    artist: string;
+    duration: number;
+}
+
+export interface IPostMusic {
+    /** Mixed into the video, so it plays on every platform. */
+    track: IMusicTrackRef;
+    /** Where the track starts, in seconds. */
+    trackStart: number;
+    /** 1-100. */
+    musicVolume: number;
+    /** The video's own sound, 0-100; 0 mutes it. */
+    videoVolume: number;
+    /** The reel with the track mixed in. */
+    mixUrl: string;
+    /** The Story video with the track mixed in. */
+    storyMixUrl: string;
+}
+
+/** The image a photo reel was made from. */
+export interface IPostPhoto {
+    publicId: string;
+    url: string;
+    jpegUrl: string;
+    hasTextOverlay: boolean;
+}
+
 export interface IPost extends mongoose.Document {
     userId: mongoose.Types.ObjectId;
     connectionId: mongoose.Types.ObjectId;
@@ -36,6 +68,9 @@ export interface IPost extends mongoose.Document {
     hasTextOverlay: boolean;
     /** Publish with Meta's "AI info" label where the platform supports it. */
     aiGenerated: boolean;
+    music: IPostMusic | null;
+    /** Set on a photo reel: an image post published as a video with music. */
+    photo: IPostPhoto | null;
     shareToStory: boolean;
     /** Story shares. They never change status, lastError, or publishedAt. */
     storyTargets: IPostTarget[];
@@ -65,6 +100,39 @@ const targetSchema = new mongoose.Schema<IPostTarget>(
     { _id: false }
 );
 
+const musicTrackRefSchema = new mongoose.Schema<IMusicTrackRef>(
+    {
+        trackId: { type: mongoose.Schema.Types.ObjectId, ref: 'MusicTrack', required: true },
+        publicId: { type: String, required: true },
+        title: { type: String, default: '' },
+        artist: { type: String, default: '' },
+        duration: { type: Number, default: 0 },
+    },
+    { _id: false }
+);
+
+const musicSchema = new mongoose.Schema<IPostMusic>(
+    {
+        track: { type: musicTrackRefSchema, required: true },
+        trackStart: { type: Number, default: 0, min: 0 },
+        musicVolume: { type: Number, default: 80, min: 1, max: 100 },
+        videoVolume: { type: Number, default: 30, min: 0, max: 100 },
+        mixUrl: { type: String, default: '' },
+        storyMixUrl: { type: String, default: '' },
+    },
+    { _id: false }
+);
+
+const photoSchema = new mongoose.Schema<IPostPhoto>(
+    {
+        publicId: { type: String, default: '' },
+        url: { type: String, required: true },
+        jpegUrl: { type: String, default: '' },
+        hasTextOverlay: { type: Boolean, default: false },
+    },
+    { _id: false }
+);
+
 const postSchema = new mongoose.Schema<IPost>(
     {
         userId: {
@@ -89,6 +157,8 @@ const postSchema = new mongoose.Schema<IPost>(
         mediaCoverUrl: { type: String, default: '' },
         hasTextOverlay: { type: Boolean, default: false },
         aiGenerated: { type: Boolean, default: false },
+        music: { type: musicSchema, default: null },
+        photo: { type: photoSchema, default: null },
         shareToStory: { type: Boolean, default: false },
         storyTargets: { type: [targetSchema], default: [] },
         platforms: {
@@ -112,5 +182,7 @@ const postSchema = new mongoose.Schema<IPost>(
 postSchema.index({ connectionId: 1, status: 1, createdAt: 1 });
 postSchema.index({ userId: 1, createdAt: -1 });
 postSchema.index({ userId: 1, mediaPublicId: 1 });
+postSchema.index({ userId: 1, 'photo.publicId': 1 });
+postSchema.index({ userId: 1, 'music.track.trackId': 1 });
 
 export const Post = mongoose.model<IPost>('Post', postSchema);

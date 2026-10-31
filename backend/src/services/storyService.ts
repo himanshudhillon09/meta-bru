@@ -74,8 +74,7 @@ async function storyMedia(
     if (post.mediaType !== 'reel') {
         return { kind: 'image', url: storyImageUrl(cloudName, post.mediaPublicId) };
     }
-
-    const url = storyVideoUrl(cloudName, post.mediaPublicId);
+    const url = post.music?.storyMixUrl || storyVideoUrl(cloudName, post.mediaPublicId);
     if (!(await deps.waitForDerivative(url, deadline))) {
         throw new MetaApiError(
             'Cloudinary is still preparing this Story. Share it again in a few minutes.',

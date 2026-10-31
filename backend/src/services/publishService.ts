@@ -240,8 +240,11 @@ async function publishReel(
     ) {
         throw new MetaApiError('Facebook Reels can be at most 90 seconds long.', 400);
     }
+    // The user's track is mixed into the file, so every platform plays it.
+    const videoUrl = post.music?.mixUrl || post.mediaUrl;
+
     // 425 (Too Early): nothing reached Meta, so a retry cannot duplicate it.
-    if (!(await deps.waitForDerivative(post.mediaUrl, deadline))) {
+    if (!(await deps.waitForDerivative(videoUrl, deadline))) {
         throw new MetaApiError(
             'Cloudinary is still preparing this reel. Retry in a few minutes.',
             425
@@ -254,7 +257,7 @@ async function publishReel(
                 pageId: connection.pageId,
                 accessToken,
                 edge: 'video_reels',
-                fileUrl: post.mediaUrl,
+                fileUrl: videoUrl,
                 finishParams: { video_state: 'PUBLISHED', description: post.caption },
                 target,
                 statusWaitMs: FACEBOOK_REEL_STATUS_WAIT_MS,
@@ -280,7 +283,7 @@ async function publishReel(
             target,
             params: {
                 media_type: 'REELS',
-                video_url: post.mediaUrl,
+                video_url: videoUrl,
                 caption: post.caption,
                 share_to_feed: 'true',
                 thumb_offset: REEL_THUMB_OFFSET_MS,

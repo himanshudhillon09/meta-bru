@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AppShell } from '@/components/AppShell';
 import { AiLabelToggle, useAiLabelPreference } from '@/components/AiLabelToggle';
+import { MusicPicker } from '@/components/MusicPicker';
 import { postPageId } from '@/components/PageFilter';
 import { ShareToStoryToggle } from '@/components/ShareToStoryToggle';
 import { ToggleChip } from '@/components/ToggleChip';
@@ -24,6 +25,14 @@ import {
     readVideoFileInfo,
     reelFileProblem,
 } from '@/lib/reels';
+import {
+    NO_MUSIC,
+    hasMusic,
+    musicFromPost,
+    musicInput,
+    musicProblem,
+    type MusicChoice,
+} from '@/lib/music';
 import { isEditLink, useEditId, useEditedPost } from '@/lib/usePostEditing';
 import {
     formatBytes,
@@ -42,6 +51,7 @@ interface ReelDraft {
     facebook: boolean;
     instagram: boolean;
     shareToStory: boolean;
+    music?: MusicChoice;
 }
 
 export default function ReelsPage() {
@@ -59,6 +69,7 @@ export default function ReelsPage() {
     const [facebook, setFacebook] = useState(true);
     const [instagram, setInstagram] = useState(false);
     const [shareToStory, setShareToStory] = useState(true);
+    const [music, setMusic] = useState<MusicChoice>(NO_MUSIC);
     const [aiLabel, setAiLabel] = useAiLabelPreference(!editId);
     const [loading, setLoading] = useState(true);
     const [uploadProgress, setUploadProgress] = useState<number | null>(null);
@@ -94,6 +105,7 @@ export default function ReelsPage() {
             setFacebook(true);
             setInstagram(false);
             setShareToStory(true);
+            setMusic(NO_MUSIC);
         }
 
         try {
@@ -127,6 +139,9 @@ export default function ReelsPage() {
                 }
                 if (typeof draft.shareToStory === 'boolean') {
                     setShareToStory(draft.shareToStory);
+                }
+                if (draft.music && typeof draft.music === 'object') {
+                    setMusic({ ...NO_MUSIC, ...draft.music });
                 }
             }
         } catch {
@@ -201,6 +216,7 @@ export default function ReelsPage() {
             facebook,
             instagram,
             shareToStory,
+            music,
         };
 
         try {
@@ -219,6 +235,7 @@ export default function ReelsPage() {
         facebook,
         instagram,
         shareToStory,
+        music,
     ]);
 
     // Fill the form from the reel the Queue's Edit opened.
@@ -246,6 +263,7 @@ export default function ReelsPage() {
             setInstagram(post.platforms.instagram);
             setShareToStory(Boolean(post.shareToStory));
             setAiLabel(Boolean(post.aiGenerated));
+            setMusic(musicFromPost(post));
         },
         setError
     );
@@ -367,6 +385,15 @@ export default function ReelsPage() {
             setError('This Page has no linked Instagram Business account.');
             return;
         }
+        const musicIssue = musicProblem(music);
+        if (musicIssue) {
+            setError(musicIssue);
+            return;
+        }
+        // Only send music that changed, so an edit does not rebuild the mix for nothing.
+        const musicBody = musicInput(music);
+        const musicEdited =
+            !editPost || JSON.stringify(musicBody) !== JSON.stringify(musicInput(musicFromPost(editPost)));
 
         setSubmitting(action);
         try {
@@ -379,6 +406,7 @@ export default function ReelsPage() {
                     shareToStory,
                     aiGenerated: aiLabel,
                     action: action === 'draft' ? 'draft' : 'queue',
+                    ...(musicEdited ? { music: musicBody } : {}),
                     // Only a new upload replaces the reel's video.
                     ...(isPostVideo
                         ? {}
@@ -394,6 +422,7 @@ export default function ReelsPage() {
                     platforms: { facebook: publishFacebook, instagram },
                     shareToStory,
                     aiGenerated: aiLabel,
+                    ...(hasMusic(music) ? { music: musicBody } : {}),
                     action,
                 });
             }
@@ -723,6 +752,17 @@ export default function ReelsPage() {
                                 </Link>
                                 . It does not watch the video.
                             </p>
+                        </section>
+
+                        <section className="rounded-2xl border border-line bg-surface p-6 sm:p-8 shadow-card">
+                            <label className="text-xs font-bold uppercase tracking-widest text-subtle">
+                                Music
+                            </label>
+                            <p className="mt-1 mb-4 text-xs text-subtle">
+                                Optional. Add your own music; it is mixed into the video for Facebook, Instagram and
+                                Stories.
+                            </p>
+                            <MusicPicker value={music} onChange={setMusic} isImage={false} />
                         </section>
 
                         <div className="flex flex-col sm:flex-row sm:flex-wrap gap-3">

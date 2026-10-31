@@ -3,6 +3,8 @@ import { z } from 'zod';
 import {
     Post,
     type IPost,
+    type IPostMusic,
+    type IPostPhoto,
     type IPostTarget,
     type MediaType,
     type Platform,
@@ -21,6 +23,8 @@ import { deletePostMediaIfUnused } from '../services/cloudinaryStorageService.js
 import { getCloudinaryCredentials } from '../services/credentialService.js';
 import { applyImageText } from '../services/imageTextService.js';
 import { REEL_LIMITS } from '../services/mediaDerivativeService.js';
+import { musicInputSchema, resolvePostMusic } from '../services/musicLibraryService.js';
+import { toPhotoReel, withMixUrls, type PostMediaWithMusic } from '../services/postMusicService.js';
 import { publishPost, sharePostToStory } from '../services/publishService.js';
 import { deletePostAnalytics } from '../services/removedPostService.js';
 import { storyPlatforms } from '../services/storyService.js';
@@ -52,6 +56,10 @@ const postFields = {
     shareToStory: z.boolean().default(false),
     /** Meta's "AI info" label (Instagram). */
     aiGenerated: z.boolean().default(false),
+    /** An image post with music is published as a photo reel. */
+    music: musicInputSchema.optional(),
+    /** How long a photo reel plays, in seconds. */
+    photoSeconds: z.number().int().min(5).max(60).optional(),
 };
 
 const imageMediaFields = {
@@ -169,6 +177,31 @@ async function resolvePostMedia(
     };
 }
 
+/**
+ * Adds a new post's music to its media. An image with music becomes a photo
+ * reel, since neither platform plays sound on a photo.
+ */
+async function withPostMusic(
+    userId: string,
+    media: Omit<PostMediaFields, 'replacedPublicId'>,
+    music: IPostMusic | null,
+    photoSeconds: number | undefined
+): Promise<PostMediaWithMusic> {
+    if (!music) return { ...media, music: null, photo: null };
+
+    const video =
+        media.mediaType === 'image'
+            ? await toPhotoReel(userId, photoFromImage(media), photoSeconds)
+            : { ...media, photo: null };
+    return {
+        ...video,
+        music: await withMixUrls(userId, music, {
+            publicId: video.mediaPublicId,
+            duration: video.mediaDuration,
+        }),
+    };
+}
+
 // Every field is optional; the editor sends the whole post, the Queue only
 // what changed. `media` replaces the post's image or video.
 const updatePostSchema = z.object({
@@ -179,6 +212,9 @@ const updatePostSchema = z.object({
     shareToStory: z.boolean().optional(),
     aiGenerated: z.boolean().optional(),
     media: mediaSchema.optional(),
+    /** null removes the music. */
+    music: musicInputSchema.nullable().optional(),
+    photoSeconds: z.number().int().min(5).max(60).optional(),
 });
 
 const EDITABLE_STATUSES: PostStatus[] = ['draft', 'queued', 'failed'];
@@ -394,10 +430,13 @@ export async function createPost(req: Request, res: Response): Promise<void> {
         }
     }
 
-    const { replacedPublicId, ...media } = await resolvePostMedia(req.user.id, parsed, {
+    const music = parsed.music ? await resolvePostMusic(req.user.id, parsed.music) : null;
+
+    const { replacedPublicId, ...resolved } = await resolvePostMedia(req.user.id, parsed, {
         connectionId: parsed.connectionId,
         facebook: parsed.platforms.facebook,
     });
+    const media = await withPostMusic(req.user.id, resolved, music, parsed.photoSeconds);
     // The plain image is only a Composer working copy once the text is burned in.
     const cleanUpReplaced = () =>
         cleanUpMedia(req.user.id, replacedPublicId ? [replacedPublicId] : [], 'image');
@@ -495,14 +534,17 @@ export async function getPost(req: Request, res: Response): Promise<void> {
 export async function updatePost(req: Request, res: Response): Promise<void> {
     const parsed = parseBody(updatePostSchema, req);
     const existing = await ownedPost(String(req.params.id), req.user.id);
+    const stored = existing.toObject() as { music: IPostMusic | null; photo: IPostPhoto | null };
 
     if (!EDITABLE_STATUSES.includes(existing.status)) {
         throw new AppError(409, 'This post can no longer be edited', 'POST_LOCKED');
     }
-    if (parsed.media && parsed.media.mediaType !== existing.mediaType) {
+    // A photo reel is edited as the image it was made from.
+    const editedAs: MediaType = stored.photo ? 'image' : existing.mediaType;
+    if (parsed.media && parsed.media.mediaType !== editedAs) {
         throw new AppError(
             400,
-            existing.mediaType === 'reel'
+            editedAs === 'reel'
                 ? 'A reel can only be replaced with another video.'
                 : 'A post can only be replaced with another image.',
             'MEDIA_TYPE_CHANGED'
@@ -514,9 +556,31 @@ export async function updatePost(req: Request, res: Response): Promise<void> {
         facebook: existing.platforms.facebook,
         instagram: existing.platforms.instagram,
     };
-    // A new Page, platform set, or file means a fresh publish on every target.
-    const retarget =
+
+    const musicChanged = parsed.music !== undefined;
+    const music = !parsed.music
+        ? musicChanged
+            ? null
+            : stored.music
+        : await resolvePostMusic(req.user.id, parsed.music);
+    const photoReel = editedAs === 'image' && music !== null;
+
+    // An image post gets a new photo reel when it gains music, its image
+    // changes, or its length changes; losing its music makes it an image again.
+    const photoSecondsChanged =
+        parsed.photoSeconds !== undefined &&
+        Boolean(stored.photo) &&
+        parsed.photoSeconds !== Math.round(existing.mediaDuration);
+    const mediaChanged =
         parsed.media !== undefined ||
+        (editedAs === 'image' &&
+            (Boolean(stored.photo) !== photoReel || (photoReel && photoSecondsChanged)));
+
+    // A new Page, platform set, file, or music means a fresh publish on every
+    // target. Editable posts have no published target, so nothing is lost.
+    const retarget =
+        mediaChanged ||
+        musicChanged ||
         (parsed.connectionId !== undefined && connectionId !== existing.connectionId.toString()) ||
         (parsed.platforms !== undefined &&
             (platforms.facebook !== existing.platforms.facebook ||
@@ -544,7 +608,7 @@ export async function updatePost(req: Request, res: Response): Promise<void> {
                 'CLOUDINARY_MEDIA_REQUIRED'
             );
         }
-        if (!parsed.media && existing.mediaType === 'reel') {
+        if (!parsed.media && editedAs === 'reel') {
             assertFacebookReelLength(platforms.facebook, existing.mediaDuration);
         }
     }
@@ -555,13 +619,36 @@ export async function updatePost(req: Request, res: Response): Promise<void> {
               facebook: platforms.facebook,
           })
         : null;
-    const newPublicId = resolved?.mediaPublicId ?? '';
+
+    let next: Omit<PostMediaWithMusic, 'music'> | null = null;
+    if (editedAs === 'image') {
+        const image: IPostPhoto = resolved
+            ? photoFromImage(resolved)
+            : (stored.photo ?? photoFromImage(existing));
+        if (photoReel && mediaChanged) {
+            next = await toPhotoReel(
+                req.user.id,
+                image,
+                parsed.photoSeconds ?? (stored.photo ? existing.mediaDuration : undefined)
+            );
+        } else if (!photoReel && mediaChanged) {
+            next = { ...imageFields(image), photo: null };
+        }
+    } else if (resolved) {
+        const { replacedPublicId: _replaced, ...fields } = resolved;
+        next = { ...fields, photo: null };
+    }
+
+    const video =
+        (next ?? existing).mediaType === 'reel'
+            ? { publicId: (next ?? existing).mediaPublicId, duration: (next ?? existing).mediaDuration }
+            : null;
+    const finalMusic =
+        music && video && (musicChanged || next) ? await withMixUrls(req.user.id, music, video) : music;
 
     const updates: Record<string, unknown> = {};
-    if (resolved) {
-        Object.assign(updates, resolved);
-        delete updates.replacedPublicId;
-    }
+    if (next) Object.assign(updates, next);
+    if (musicChanged || next) updates.music = finalMusic;
     if (parsed.caption !== undefined) updates.caption = parsed.caption;
     if (parsed.connectionId !== undefined) updates.connectionId = connectionId;
     if (parsed.platforms !== undefined) updates.platforms = platforms;
@@ -611,24 +698,77 @@ export async function updatePost(req: Request, res: Response): Promise<void> {
         { new: true, runValidators: true }
     );
 
-    const resourceType = existing.mediaType === 'reel' ? 'video' : 'image';
+    const before = [
+        ...postFiles(existing.mediaType, existing.mediaPublicId, stored.photo),
+        ...(resolved?.replacedPublicId ? [{ publicId: resolved.replacedPublicId, resourceType: 'image' as const }] : []),
+    ];
+    const after = next ? postFiles(next.mediaType, next.mediaPublicId, next.photo) : [];
+
     if (!post) {
-        // The new file was never attached to the post.
-        if (newPublicId) await cleanUpMedia(req.user.id, [newPublicId], resourceType);
+        // The new files were never attached to the post.
+        await removeFiles(req.user.id, after, before);
         throw new AppError(409, 'This post can no longer be edited', 'POST_LOCKED');
     }
 
-    if (resolved) {
+    await removeFiles(req.user.id, before, postFiles(post.mediaType, post.mediaPublicId, post.photo));
+    res.json({ success: true, post });
+}
+
+function photoFromImage(media: {
+    mediaPublicId: string;
+    mediaUrl: string;
+    mediaJpegUrl: string;
+    hasTextOverlay: boolean;
+}): IPostPhoto {
+    return {
+        publicId: media.mediaPublicId,
+        url: media.mediaUrl,
+        jpegUrl: media.mediaJpegUrl,
+        hasTextOverlay: media.hasTextOverlay,
+    };
+}
+
+function imageFields(photo: IPostPhoto): Omit<PostMediaWithMusic, 'music' | 'photo'> {
+    return {
+        mediaType: 'image',
+        mediaUrl: photo.url,
+        mediaJpegUrl: photo.jpegUrl,
+        mediaPublicId: photo.publicId,
+        mediaDuration: 0,
+        mediaCoverUrl: '',
+        hasTextOverlay: photo.hasTextOverlay,
+    };
+}
+
+interface PostFile {
+    publicId: string;
+    resourceType: 'image' | 'video';
+}
+
+/** The Cloudinary files a post uses: its image or video, and a photo reel's image. */
+function postFiles(
+    mediaType: MediaType,
+    mediaPublicId: string,
+    photo: IPostPhoto | null | undefined
+): PostFile[] {
+    return [
+        { publicId: mediaPublicId, resourceType: mediaType === 'reel' ? 'video' : 'image' },
+        ...(photo?.publicId ? [{ publicId: photo.publicId, resourceType: 'image' as const }] : []),
+    ].filter((file) => file.publicId) as PostFile[];
+}
+
+/** Removes `files` that are not in `keep`, unless another post uses them. */
+async function removeFiles(userId: string, files: PostFile[], keep: PostFile[]): Promise<void> {
+    const kept = new Set(keep.map((file) => file.publicId));
+    for (const resourceType of ['image', 'video'] as const) {
         await cleanUpMedia(
-            req.user.id,
-            [existing.mediaPublicId, resolved.replacedPublicId ?? ''].filter(
-                (publicId) => publicId !== newPublicId
-            ),
+            userId,
+            files
+                .filter((file) => file.resourceType === resourceType && !kept.has(file.publicId))
+                .map((file) => file.publicId),
             resourceType
         );
     }
-
-    res.json({ success: true, post });
 }
 
 /** Every status except "publishing", which a publish run still owns. */
@@ -671,6 +811,14 @@ export async function deletePost(req: Request, res: Response): Promise<void> {
         publicId: post.mediaPublicId,
         resourceType: post.mediaType === 'reel' ? 'video' : 'image',
     });
+    // A photo reel also leaves the image it was made from.
+    if (post.photo?.publicId) {
+        const photo = await deletePostMediaIfUnused(req.user.id, {
+            publicId: post.photo.publicId,
+            resourceType: 'image',
+        });
+        if (photo.mediaError && !cleanup.mediaError) cleanup.mediaError = photo.mediaError;
+    }
 
     res.json({ success: true, message: 'Post deleted', ...cleanup });
 }
@@ -686,7 +834,7 @@ export async function clearActivity(req: Request, res: Response): Promise<void> 
         userId: req.user.id,
         status: { $in: ACTIVITY_STATUSES[filter] },
         ...(connectionId ? { connectionId } : {}),
-    }).select('_id mediaPublicId mediaType');
+    }).select('_id mediaPublicId mediaType photo');
 
     const ids = posts.map((post) => post._id);
     const { deletedCount } = await Post.deleteMany({
@@ -698,12 +846,11 @@ export async function clearActivity(req: Request, res: Response): Promise<void> 
 
     // One cleanup per file; several posts can share one upload.
     const files = new Map(
-        posts
-            .filter((post) => post.mediaPublicId)
-            .map((post) => [
-                post.mediaPublicId,
-                post.mediaType === 'reel' ? ('video' as const) : ('image' as const),
-            ])
+        posts.flatMap((post) =>
+            postFiles(post.mediaType, post.mediaPublicId, post.photo).map(
+                (file) => [file.publicId, file.resourceType] as const
+            )
+        )
     );
     let mediaDeleted = 0;
     let mediaErrors = 0;
