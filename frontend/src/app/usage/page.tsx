@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AnalyticsBarChart } from '@/components/AnalyticsCharts';
 import { AppShell } from '@/components/AppShell';
+import { ClaudeUsageSection } from '@/components/ClaudeUsageSection';
 import { usageApi } from '@/lib/apiClient';
 import {
     formatBytes,
@@ -243,7 +244,7 @@ export default function UsagePage() {
     return (
         <AppShell
             title="Usage"
-            subtitle="How much of your own Gemini and Cloudinary limits Meta-Bru has used."
+            subtitle="How much of your own Gemini, Claude, and Cloudinary limits Meta-Bru has used."
             actions={
                 <button
                     type="button"
@@ -277,7 +278,22 @@ export default function UsagePage() {
                     </div>
                 ) : null
             ) : (
-                <div className="stagger space-y-8">
+                <div className="stagger flex flex-col gap-8">
+                    {/* Claude, shown first while it is the AI provider */}
+                    <div className={report.claude.active ? 'order-first' : ''}>
+                        <ClaudeUsageSection
+                            claude={report.claude}
+                            now={now}
+                            onLimitsSaved={(limits) =>
+                                setReport((current) =>
+                                    current ? { ...current, claude: { ...current.claude, limits } } : current
+                                )
+                            }
+                            onNotice={setNotice}
+                            onError={setError}
+                        />
+                    </div>
+
                     {/* Gemini */}
                     <section className="space-y-4">
                         <div className="flex flex-wrap items-end justify-between gap-3">

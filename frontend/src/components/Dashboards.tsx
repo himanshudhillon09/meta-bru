@@ -260,7 +260,7 @@ export function UserDashboard() {
                         Build your next post
                     </div>
                     <div className="text-sm text-muted mt-1">
-                        Write a caption, upload an image, or ask Gemini for a
+                        Write a caption, upload an image, or ask AI for a
                         draft. Then add it to a connection&apos;s daily queue.
                     </div>
                     <Link

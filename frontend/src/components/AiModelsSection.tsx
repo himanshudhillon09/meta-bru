@@ -3,11 +3,19 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { aiApi, authApi } from '@/lib/apiClient';
-import type { AiModels, GeminiModelList, GeminiModelOption } from '@/lib/types';
+import type {
+    AiModels,
+    AiProvider,
+    ClaudeModelList,
+    GeminiModelList,
+    GeminiModelOption,
+} from '@/lib/types';
 
 interface AiModelsSectionProps {
     onNotice: (message: string) => void;
     onError: (message: string) => void;
+    /** Which API keys are saved, from the credentials below; null while loading. */
+    keys: { gemini: boolean; anthropic: boolean } | null;
 }
 
 const CUSTOM = '__custom__';
@@ -18,10 +26,11 @@ interface PickerProps {
     value: string;
     defaultModel: string;
     options: GeminiModelOption[];
+    placeholder: string;
     onChange: (value: string) => void;
 }
 
-function ModelPicker({ label, hint, value, defaultModel, options, onChange }: PickerProps) {
+function ModelPicker({ label, hint, value, defaultModel, options, placeholder, onChange }: PickerProps) {
     const listed = value === '' || options.some((option) => option.id === value);
     const [custom, setCustom] = useState(!listed);
     const showCustom = custom || !listed;
@@ -55,7 +64,7 @@ function ModelPicker({ label, hint, value, defaultModel, options, onChange }: Pi
                 <input
                     value={value}
                     onChange={(event) => onChange(event.target.value.trim())}
-                    placeholder="e.g. gemini-2.5-flash"
+                    placeholder={placeholder}
                     maxLength={80}
                     className="mt-2 w-full bg-surface-2 border border-line-strong rounded-xl px-4 py-3 text-sm text-fg placeholder:text-faint focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
                 />
@@ -65,35 +74,76 @@ function ModelPicker({ label, hint, value, defaultModel, options, onChange }: Pi
     );
 }
 
-export function AiModelsSection({ onNotice, onError }: AiModelsSectionProps) {
+const PROVIDERS: Array<{ id: AiProvider; name: string; detail: string }> = [
+    { id: 'gemini', name: 'Gemini', detail: 'Google · your Gemini key' },
+    { id: 'claude', name: 'Claude', detail: 'Anthropic · your Claude key' },
+];
+
+export function AiModelsSection({ onNotice, onError, keys }: AiModelsSectionProps) {
     const { user, updateUser } = useAuth();
+    const provider: AiProvider = user?.aiProvider === 'claude' ? 'claude' : 'gemini';
     const [models, setModels] = useState<AiModels>({
         text: user?.aiModels?.text || '',
         image: user?.aiModels?.image || '',
+        claude: user?.aiModels?.claude || '',
     });
     const [list, setList] = useState<GeminiModelList | null>(null);
+    const [claudeList, setClaudeList] = useState<ClaudeModelList | null>(null);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState('');
+    const [claudeError, setClaudeError] = useState('');
     const [saving, setSaving] = useState(false);
+    const [switching, setSwitching] = useState(false);
 
-    const load = useCallback(async () => {
+    const load = useCallback(async (which: AiProvider) => {
         setLoading(true);
         setLoadError('');
-        try {
-            const data = await aiApi.models();
-            setList({ defaults: data.defaults, text: data.text, image: data.image });
-        } catch (err: any) {
-            setLoadError(typeof err === 'string' ? err : 'Could not load Gemini models');
-        } finally {
-            setLoading(false);
-        }
+        setClaudeError('');
+        const gemini = aiApi
+            .models()
+            .then((data) => setList({ defaults: data.defaults, text: data.text, image: data.image }))
+            .catch((err) => setLoadError(typeof err === 'string' ? err : 'Could not load Gemini models'));
+        // Claude's list needs the Claude key, so it loads only when Claude is chosen.
+        const claude =
+            which === 'claude'
+                ? aiApi
+                      .claudeModels()
+                      .then((data) => setClaudeList({ default: data.default, models: data.models }))
+                      .catch((err) =>
+                          setClaudeError(typeof err === 'string' ? err : 'Could not load Claude models')
+                      )
+                : Promise.resolve();
+        await Promise.all([gemini, claude]);
+        setLoading(false);
     }, []);
 
+    // Saving or removing a key below changes which lists can load.
+    const keyState = keys ? `${keys.gemini}-${keys.anthropic}` : '';
     useEffect(() => {
         // Initial data load; state updates happen after the request resolves.
         // eslint-disable-next-line react-hooks/set-state-in-effect
-        void load();
-    }, [load]);
+        void load(provider);
+    }, [load, provider, keyState]);
+
+    const choose = async (next: AiProvider) => {
+        if (next === provider || switching) return;
+        setSwitching(true);
+        try {
+            const data: any = await authApi.updateProfile({ aiProvider: next });
+            if (data.success) {
+                updateUser(data.user);
+                onNotice(
+                    next === 'claude'
+                        ? 'Claude now writes captions, image text, image prompts, and Analytics tips. Gemini still draws AI images.'
+                        : 'Gemini now handles every AI feature.'
+                );
+            }
+        } catch (err: any) {
+            onError(typeof err === 'string' ? err : 'Could not switch the AI provider');
+        } finally {
+            setSwitching(false);
+        }
+    };
 
     const save = async () => {
         setSaving(true);
@@ -104,6 +154,7 @@ export function AiModelsSection({ onNotice, onError }: AiModelsSectionProps) {
                 setModels({
                     text: data.user.aiModels?.text || '',
                     image: data.user.aiModels?.image || '',
+                    claude: data.user.aiModels?.claude || '',
                 });
                 onNotice('AI models saved.');
             }
@@ -114,19 +165,23 @@ export function AiModelsSection({ onNotice, onError }: AiModelsSectionProps) {
         }
     };
 
+    const missingKey =
+        keys === null ? false : provider === 'claude' ? !keys.anthropic : !keys.gemini;
+
     return (
         <section className="mt-6 rounded-2xl border border-line bg-surface p-6 sm:p-8 shadow-card">
             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                 <div>
-                    <h2 className="text-lg font-bold text-fg">AI models</h2>
+                    <h2 className="text-lg font-bold text-fg">AI provider and models</h2>
                     <p className="mt-1 text-sm text-muted">
-                        Choose which Gemini model handles each AI feature. The list
-                        shows the models your own Gemini key can use.
+                        Choose which AI writes captions, the bold text on images, image
+                        prompts, and Analytics tips. Claude can&apos;t draw pictures, so
+                        Gemini always draws AI images.
                     </p>
                 </div>
                 <button
                     type="button"
-                    onClick={() => void load()}
+                    onClick={() => void load(provider)}
                     disabled={loading}
                     className="self-start px-4 py-2.5 rounded-xl text-xs font-bold border border-line-strong bg-hover text-fg hover:bg-hover-strong disabled:opacity-50 transition-all"
                 >
@@ -134,29 +189,101 @@ export function AiModelsSection({ onNotice, onError }: AiModelsSectionProps) {
                 </button>
             </div>
 
+            <div
+                role="radiogroup"
+                aria-label="AI provider"
+                className="mt-6 grid grid-cols-2 gap-2 rounded-2xl border border-line bg-surface-2 p-1.5 sm:max-w-md"
+            >
+                {PROVIDERS.map((option) => {
+                    const selected = option.id === provider;
+                    return (
+                        <button
+                            key={option.id}
+                            type="button"
+                            role="radio"
+                            aria-checked={selected}
+                            onClick={() => void choose(option.id)}
+                            disabled={switching}
+                            className={`rounded-xl px-4 py-2.5 text-left transition-all disabled:opacity-60 ${
+                                selected
+                                    ? 'bg-indigo-600 text-white shadow-card'
+                                    : 'text-fg hover:bg-hover'
+                            }`}
+                        >
+                            <span className="block text-sm font-bold">{option.name}</span>
+                            <span
+                                className={`block text-[11px] ${
+                                    selected ? 'text-indigo-100' : 'text-subtle'
+                                }`}
+                            >
+                                {option.detail}
+                            </span>
+                        </button>
+                    );
+                })}
+            </div>
+
+            {missingKey ? (
+                <div className="mt-4 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-700 dark:text-amber-200">
+                    {provider === 'claude'
+                        ? 'Add your Anthropic API key under Integration credentials below to use Claude.'
+                        : 'Add your Gemini API key under Integration credentials below to use Gemini.'}
+                </div>
+            ) : null}
+            {provider === 'claude' && keys !== null && !keys.gemini ? (
+                <div className="mt-3 rounded-2xl border border-line bg-surface-2 px-4 py-3 text-xs text-muted">
+                    AI images still need a Gemini key: Claude writes the art direction and
+                    Gemini draws it.
+                </div>
+            ) : null}
+
             {loadError ? (
                 <div className="mt-4 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-700 dark:text-amber-200">
                     {loadError} You can still type a model ID with “Other model ID…”.
                 </div>
             ) : null}
+            {provider === 'claude' && claudeError ? (
+                <div className="mt-4 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-700 dark:text-amber-200">
+                    {claudeError} You can still type a model ID with “Other model ID…”.
+                </div>
+            ) : null}
 
             <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-                <ModelPicker
-                    key={`text-${list ? 'loaded' : 'empty'}`}
-                    label="Captions and image text"
-                    hint="Writes post captions and the bold line on images."
-                    value={models.text}
-                    defaultModel={list?.defaults.text || ''}
-                    options={list?.text || []}
-                    onChange={(text) => setModels((current) => ({ ...current, text }))}
-                />
+                {provider === 'claude' ? (
+                    <ModelPicker
+                        key={`claude-${claudeList ? 'loaded' : 'empty'}`}
+                        label="Claude model"
+                        hint="Writes captions, the bold line on images, image prompts, and Analytics tips. It reads your uploaded or generated image too."
+                        value={models.claude || ''}
+                        defaultModel={claudeList?.default || 'claude-opus-5-5'}
+                        options={claudeList?.models || []}
+                        placeholder="e.g. claude-opus-5-5"
+                        onChange={(claude) => setModels((current) => ({ ...current, claude }))}
+                    />
+                ) : (
+                    <ModelPicker
+                        key={`text-${list ? 'loaded' : 'empty'}`}
+                        label="Captions and image text"
+                        hint="Writes post captions and the bold line on images."
+                        value={models.text}
+                        defaultModel={list?.defaults.text || ''}
+                        options={list?.text || []}
+                        placeholder="e.g. gemini-2.5-flash"
+                        onChange={(text) => setModels((current) => ({ ...current, text }))}
+                    />
+                )}
                 <ModelPicker
                     key={`image-${list ? 'loaded' : 'empty'}`}
-                    label="Image generation"
-                    hint="Makes AI images. Google has no free tier for image models, so your key's project needs billing turned on."
+                    label="Image generation (Gemini)"
+                    hint={
+                        provider === 'claude'
+                            ? "Draws the picture from Claude's art direction. Google has no free tier for image models, so your Gemini key's project needs billing turned on."
+                            : "Makes AI images. Google has no free tier for image models, so your key's project needs billing turned on."
+                    }
                     value={models.image}
                     defaultModel={list?.defaults.image || ''}
                     options={list?.image || []}
+                    placeholder="e.g. gemini-2.5-flash-image"
                     onChange={(image) => setModels((current) => ({ ...current, image }))}
                 />
             </div>
